@@ -1010,7 +1010,7 @@ textarea.fi{resize:vertical;min-height:60px}
 
     <button class="nb" id="nb-finance" onclick="showMod('finance',this)">
       <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><text x="4" y="17" font-size="16" font-family="Arial" fill="currentColor" stroke="none">£</text></svg>
       </div>
       <span class="sb-label">Finance &amp; Billing</span>
       <span class="nb-tip">Finance</span>
@@ -1228,11 +1228,21 @@ textarea.fi{resize:vertical;min-height:60px}
 // Full brand objects — configurable in Settings > Brands
 // channel: 'Partner' | 'Account' | 'Domestic'
 var BRAND_DATA = [
-  {name:'SIRVA',     col:'#0073EA',channel:'Partner', logo:''},
-  {name:'BRITANNIA', col:'#C8102E',channel:'Partner', logo:''},
-  {name:'MOVESQUAD', col:'#00C875',channel:'Account', logo:''},
-  {name:'EMS',       col:'#7B2FBE',channel:'Account', logo:''},
-  {name:'STERLING',  col:'#E07B00',channel:'Account', logo:''},
+  {name:'SIRVA',          col:'#0073EA',channel:'Partner', logo:''},
+  {name:'BRITANNIA',      col:'#C8102E',channel:'Partner', logo:''},
+  {name:'MOVESQUAD',      col:'#00C875',channel:'Account', logo:''},
+  {name:'EMS',            col:'#7B2FBE',channel:'Account', logo:''},
+  {name:'STERLING',       col:'#E07B00',channel:'Account', logo:''},
+  {name:'DOREE BONNER',   col:'#00897B',channel:'Partner', logo:''},
+  {name:'DALEYSMOVE',     col:'#E91E8C',channel:'Partner', logo:''},
+  {name:'BTR',            col:'#FF5630',channel:'Account', logo:''},
+  {name:'ECKERSLEYS',     col:'#6554C0',channel:'Account', logo:''},
+  {name:'JOHN MASON',     col:'#0052CC',channel:'Partner', logo:''},
+  {name:'BAXTERS',        col:'#36B37E',channel:'Partner', logo:''},
+  {name:'SOLARIS',        col:'#FF8B00',channel:'Partner', logo:''},
+  {name:'GOSSELIN',       col:'#253858',channel:'Partner', logo:''},
+  {name:'CROWN WORKSPACE',col:'#0065FF',channel:'Partner', logo:''},
+  {name:'ANYVAN',         col:'#57D9A3',channel:'Partner', logo:''},
 ];
 
 // Derived lookup dicts (rebuilt by buildBrandMaps())
@@ -1706,7 +1716,22 @@ function showMod(mod,btn){
   btn.classList.add('on');
   var titles={calendar:'Job Calendar',crew:'Crew Scheduler',finance:'Finance & Billing',settings:'Settings',bookings:'Booking Manager',storage:'Storage',warehouse:'Warehouse'};
   el('tb-title').textContent=titles[mod]||mod;
-  el('vtabs').style.display=mod==='calendar'?'flex':'none';
+  el('vtabs').style.display=(mod==='calendar'||mod==='crew'||mod==='finance')?'flex':'none';
+  // Update vtab buttons to match module
+  var vtabs = document.querySelectorAll('.vt');
+  if(mod==='crew'||mod==='finance'){
+    vtabs.forEach(function(t){ t.style.display='none'; });
+    // Show only week/month/list for crew and finance
+    ['week','month','list'].forEach(function(v){
+      var btn = document.querySelector('.vt[onclick*="\''+v+'\'"]') || document.querySelector('.vt[onclick*=\'"'+v+'"\']');
+      if(btn) btn.style.display='';
+    });
+  } else {
+    vtabs.forEach(function(t){ t.style.display=''; });
+  }
+  // Hide top cnav for warehouse (it has its own)
+  var cnav = document.querySelector('.topbar .cnav');
+  if(cnav) cnav.style.display = mod==='warehouse'?'none':'flex';
   if(mod==='crew') renderCrew();
   if(mod==='finance') renderFinance();
   if(mod==='storage') renderStorage();
@@ -1720,7 +1745,7 @@ function setView(v,btn){
   curView=v;
   document.querySelectorAll('.vt').forEach(function(t){t.classList.remove('on');});
   btn.classList.add('on');
-  renderCal();
+  renderActiveMod();
 }
 function renderCal(){
   if(curView==='week')    renderWeek(false);
@@ -1736,7 +1761,12 @@ function navPrev(){
   else if(curView==='list') curDate=addDays(curDate,-30);
   else if(curView==='twoweek') curDate=addDays(curDate,-14);
   else curDate=addDays(curDate,-7);
-  renderCal();
+  renderActiveMod();
+}
+function renderActiveMod(){
+  if(curMod==='crew') renderCrew();
+  else if(curMod==='finance') renderFinance();
+  else renderCal();
 }
 function navNext(){
   if(curView==='month') curDate=new Date(curDate.getFullYear(),curDate.getMonth()+1,1);
@@ -1744,7 +1774,7 @@ function navNext(){
   else if(curView==='list') curDate=addDays(curDate,30);
   else if(curView==='twoweek') curDate=addDays(curDate,14);
   else curDate=addDays(curDate,7);
-  renderCal();
+  renderActiveMod();
 }
 function goToday(){ curDate=new Date(); renderCal(); }
 function jumpDay(ds){
@@ -2054,6 +2084,7 @@ function calCellClick(e, jid, ds) {
 
 // ── CREW VIEW ─────────────────────────────────────────────────────────
 function renderCrew(){
+  el('cn-lbl').textContent = calNavLabel(curView);
   var ws=weekMon(curDate);
   var cols=[];
   for(var i=0;i<7;i++) cols.push(addDays(ws,i));
@@ -2075,7 +2106,7 @@ function renderCrew(){
     h+=crewAvatar(c,28);
     h+='<div><div style="font-weight:600;font-size:13px">'+c.name+'</div>';
     h+='<div style="font-size:10px;color:var(--t3)">'+c.role+'</div>';
-    h+='<div style="font-size:10.5px;color:var(--blue);font-weight:700">&pound;'+c.rate+'/day</div>';
+    // rate hidden from main scheduler view
     h+='<div class="ubar"><div class="ufill" style="width:'+util+'%;background:'+ucol+'"></div></div>';
     h+='</div></div></td>';
     for(var ci3=0;ci3<cols.length;ci3++){
@@ -2114,6 +2145,7 @@ function renderCrew(){
 
 // ── FINANCE VIEW ──────────────────────────────────────────────────────
 function renderFinance(){
+  el('cn-lbl').textContent = calNavLabel(curView);
   var gross=0,billed=0,pending=0;
   for(var i=0;i<jobs.length;i++){
     var t=totalRev(jobs[i]);
@@ -2804,7 +2836,14 @@ function renderSettingsComms() {
   // Data management section
   h+='<div class="settings-card" style="margin-top:16px"><div class="sc-head"><div class="sc-title">Data Management</div></div>';
   h+='<div class="sc-body">';
-  h+='<div style="font-size:12.5px;color:var(--t2);margin-bottom:12px">All data is saved automatically to your browser\'s local storage. It persists across page refreshes and browser sessions on this device.</div>';
+  h+='<div style="font-size:12.5px;color:var(--t2);margin-bottom:12px">All data is saved automatically to Azure and persists across all devices and users.</div>';
+  h+='<div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:8px">Legacy OPS Plan Import</div>';
+  h+='<div style="font-size:12px;color:var(--t2);margin-bottom:10px">Import jobs from your weekly Excel OPS Plan spreadsheet. Export as CSV from Excel first, then upload here. Duplicate refs will be skipped.</div>';
+  h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px">';
+  h+='<button class="btn btn-p btn-sm" onclick="importOPSPlan()">&#8593; Import OPS Plan CSV</button>';
+  h+='<span id="csv-import-status" style="font-size:12px;color:var(--t2)"></span>';
+  h+='</div>';
+  h+='<div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:8px">Backup &amp; Restore</div>';
   h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">';
   h+='<button class="btn btn-s btn-sm" onclick="exportDataBackup()">&#8595; Export Backup (JSON)</button>';
   h+='<button class="btn btn-s btn-sm" onclick="importDataBackup()">&#8593; Import Backup (JSON)</button>';
@@ -8792,6 +8831,183 @@ function importDataBackup() {
     reader.readAsText(file);
   };
   inp.click();
+}
+
+function importOPSPlan() {
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.csv,text/csv';
+  inp.onchange = function() {
+    var file = inp.files[0]; if (!file) return;
+    var status = document.getElementById('csv-import-status');
+    if (status) status.textContent = 'Reading file...';
+    var reader = new FileReader();
+    reader.onload = function(ev) {
+      try {
+        var text = ev.target.result;
+        var parsed = parseOPSPlanCSV(text);
+        if (!parsed.length) { toast('No jobs found in file'); if(status) status.textContent = 'No jobs found.'; return; }
+        if (!confirm('Import ' + parsed.length + ' jobs from OPS Plan?\n\nExisting jobs with matching refs will be skipped.')) return;
+
+        // Check for duplicates
+        var existingRefs = {};
+        for (var i = 0; i < jobs.length; i++) existingRefs[jobs[i].ref] = true;
+
+        var added = 0, skipped = 0;
+        for (var j = 0; j < parsed.length; j++) {
+          var job = parsed[j];
+          if (existingRefs[job.ref]) { skipped++; continue; }
+          // Generate unique ID
+          job.id = 'IMP' + Date.now() + '_' + j;
+          jobs.push(job);
+          saveData('job', job.id, job);
+          added++;
+        }
+
+        setBadge('job-badge', jobs.length);
+        renderCal();
+        var msg = added + ' jobs imported' + (skipped ? ', ' + skipped + ' skipped (duplicate refs)' : '') + ' ✓';
+        toast(msg);
+        if (status) status.textContent = msg;
+      } catch(e) {
+        toast('Import failed: ' + e.message);
+        if (status) status.textContent = 'Error: ' + e.message;
+      }
+    };
+    reader.readAsText(file, 'latin1');
+  };
+  inp.click();
+}
+
+function parseOPSPlanCSV(text) {
+  // Parse the weekly OPS Plan CSV format
+  var lines = text.split('\n');
+  var jobs = [];
+  var currentDate = null;
+  var seqOnDay = {};
+
+  function cleanMoney(v) {
+    if (!v) return 0;
+    v = String(v).replace(/[£,"]/g,'').trim();
+    return parseFloat(v) || 0;
+  }
+
+  function parseDate(header) {
+    var months = {JANUARY:'01',FEBRUARY:'02',MARCH:'03',APRIL:'04',MAY:'05',JUNE:'06',
+                  JULY:'07',AUGUST:'08',SEPTEMBER:'09',OCTOBER:'10',NOVEMBER:'11',DECEMBER:'12'};
+    var m = header.toUpperCase().match(/(\d+)(?:ST|ND|RD|TH)?\s+(\w+)(?:\s+(\d{4}))?/);
+    if (!m) return null;
+    var day = m[1].padStart(2,'0');
+    var mon = months[m[2]] || '01';
+    var yr  = m[3] || '2025';
+    return yr + '-' + mon + '-' + day;
+  }
+
+  function parseCSVLine(line) {
+    var result = [], current = '', inQuotes = false;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (c === '"') { inQuotes = !inQuotes; }
+      else if (c === ',' && !inQuotes) { result.push(current.trim()); current = ''; }
+      else { current += c; }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  function parseCrew(s) {
+    if (!s) return [];
+    return s.split(/[,\/&]/).map(function(x){ return x.replace(/£\d+/,'').trim().toUpperCase(); }).filter(Boolean);
+  }
+
+  for (var li = 0; li < lines.length; li++) {
+    var row = parseCSVLine(lines[li]);
+    while (row.length < 65) row.push('');
+
+    // Day header
+    if (row[1] && row[1].toUpperCase().indexOf('OPS PLAN') >= 0) {
+      currentDate = parseDate(row[1]);
+      continue;
+    }
+    // Skip header/summary/empty rows
+    if (!row[1] || !row[2]) continue;
+    if (row[0] === 'SERVICE' || row[0] === 'TOTALS') continue;
+
+    var brand  = row[1].trim();
+    var client = row[2].trim();
+    if (!brand || !client) continue;
+
+    // Skip non-job rows
+    var skip = ['WAREHOUSE','DAYLE OFF','MARTYN 2PM','SKYPE','OCVS DROP','ANYVAN','DAYLE OFF'];
+    var isSkip = false;
+    for (var si = 0; si < skip.length; si++) {
+      if (client.toUpperCase().indexOf(skip[si]) >= 0) { isSkip = true; break; }
+    }
+    if (isSkip) continue;
+
+    var origin   = row[3].trim();
+    var dest     = row[4].trim();
+    var volCbft  = parseFloat(row[5]) || 0;
+    var vehicles = row[9].trim();
+    var drivers  = parseCrew(row[10]);
+    var porters  = parseCrew(row[11]);
+    var ref      = row[14].trim();
+    var cbm      = parseFloat(row[15]) || Math.round(volCbft * 0.02832 * 100) / 100;
+    var moveMgr  = row[16].trim();
+    var miles    = parseFloat(row[17]) || 0;
+
+    // Billing pairs cols 29-50
+    var billing = [];
+    for (var bc = 29; bc <= 49; bc += 2) {
+      var item = row[bc] ? row[bc].trim() : '';
+      var amt  = cleanMoney(row[bc+1]);
+      if (item && amt > 0) billing.push({ item: item, amt: amt });
+    }
+
+    var total  = cleanMoney(row[52]) || cleanMoney(row[62]) || billing.reduce(function(s,b){ return s+b.amt; }, 0);
+    var margin = row[63] ? row[63].replace('%','').trim() : '';
+
+    var status = 'Completed';
+    if (total > 0 && margin === '100') status = 'Billed';
+    else if (total > 0) status = 'Billed';
+
+    var channel  = (brand==='MOVESQUAD'||brand==='BTR'||brand==='ECKERSLEYS') ? 'Account' : 'Partner';
+    var jobType  = 'Door to Door';
+    if (origin.toUpperCase().indexOf('STORE') >= 0 && dest.toUpperCase().indexOf('STORE') < 0) jobType = 'Delivery';
+    else if (dest.toUpperCase().indexOf('STORE') >= 0) jobType = 'Collection';
+    if (origin.toUpperCase().indexOf('CONTAINER') >= 0 || origin.toUpperCase().indexOf('ACCESSING') >= 0) jobType = 'Other';
+
+    var ds = currentDate || '2025-01-01';
+    seqOnDay[ds] = (seqOnDay[ds] || 0) + 1;
+
+    jobs.push({
+      id:          '', // set on import
+      ref:         ref || ('IMP-' + brand + '-' + client.substring(0,10)).replace(/\s+/g,'-'),
+      brand:       brand,
+      channel:     channel,
+      jobType:     jobType,
+      clientRef:   '',
+      moveManager: moveMgr,
+      client:      client,
+      origin:      origin,
+      dest:        dest,
+      start:       ds,
+      end:         ds,
+      vol:         volCbft,
+      cbm:         cbm,
+      drivers:     drivers,
+      porters:     porters,
+      mileage:     miles,
+      veh:         vehicles ? vehicles.split(',').map(function(v){ return v.trim(); }).filter(Boolean) : [],
+      status:      status,
+      billing:     billing,
+      notes:       '',
+      journeyId:   '',
+      storageId:   '',
+      seqInDay:    seqOnDay[ds],
+      materials:   []
+    });
+  }
+  return jobs;
 }
 
 function clearData() {
