@@ -230,6 +230,9 @@ html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size
   font-weight:700;font-size:15px;color:var(--t1);
   letter-spacing:-.2px;
 }
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.page{display:none;flex:1;overflow:hidden;flex-direction:column}
+.page.on{display:flex}
 
 /* ══════════════════════════════════════════════════════════════════
    MOBILE — bottom tab bar + responsive layout
@@ -299,7 +302,7 @@ html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size
 
   /* Full-width content on mobile */
   .content{overflow-y:auto;overflow-x:hidden}
-  .page{overflow-y:auto}
+  .page.on{overflow-y:auto}
 
   /* vtabs scroll on mobile */
   .vtabs{overflow-x:auto;flex-shrink:0;-webkit-overflow-scrolling:touch}
