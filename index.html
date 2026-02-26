@@ -1976,7 +1976,7 @@ function renderCalVertical(mode) {
       h += '</div>'; // jcard-title
       // Zone 3 — Status badge
       var stCls = {'Pending':'st-pending','Confirmed':'st-confirmed','In Progress':'st-inprog','Completed':'st-done','Billed':'st-billed','Cancelled':'st-cancelled'}[j.status]||'st-pending';
-      h += '<div class="jcard-status '+stCls+'">' + (j.status||'Pending') + '</div>';rd-title
+      h += '<div class="jcard-status ' + stCls + '">' + (j.status||'Pending') + '</div>';
 
       // Zone 3 — Flag badges: journey order, storage, multi-day, overnight, air/other type
       h += '<div class="jcard-flags">';
