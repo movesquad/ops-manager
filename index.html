@@ -7506,7 +7506,8 @@ function cfgCommit() {
   saveData('clientjob', cj.id, cj);
 
   // Assign movement refs to created jobs
-  var _existMov = bookings.filter(function(b){ return b.clientJobId === cj.id; });
+  // Count from jobs array (the real source — OpsJobs, not OpsBookings)
+  var _existMov = jobs.filter(function(j){ return j.clientJobId === cj.id && createdJobIds.indexOf(j.id) < 0; });
   var _movStart = _existMov.length;
   for (var _mi = 0; _mi < createdJobIds.length; _mi++) {
     for (var _ji = 0; _ji < jobs.length; _ji++) {
@@ -7527,11 +7528,19 @@ function cfgCommit() {
   closeConfigurator();
   if (curMod === 'bookings') renderClientJobsList();
   renderBkList();
+  // Always save jobs to Azure if linked to a client job record
+  // For standalone drafts, only save if not Draft
+  var _shouldSave = CFG.status !== 'Draft' || !!CFG.clientJobId;
   if (CFG.status !== 'Draft') {
     renderCal();
-    toast(createdJobIds.length + ' job(s) added to calendar — ' + CFG.ref); (function(){ for(var _ci=0;_ci<jobs.length;_ci++){ if(createdJobIds.indexOf(jobs[_ci].id)>=0) saveData('job',jobs[_ci].id,jobs[_ci]); } })();
+    toast(createdJobIds.length + ' movement(s) added to calendar');
+  } else if (CFG.clientJobId) {
+    toast('Movement saved to client record (Draft — not yet on calendar)');
   } else {
     toast('Draft saved — ' + CFG.ref + ' (not on calendar)');
+  }
+  if (_shouldSave) {
+    (function(){ for(var _ci=0;_ci<jobs.length;_ci++){ if(createdJobIds.indexOf(jobs[_ci].id)>=0) saveData('job',jobs[_ci].id,jobs[_ci]); } })();
   }
 }
 
@@ -11321,6 +11330,7 @@ function addMovementToJob(clientJobId) {
   CFG.channel       = cj.channel;
   CFG.moveManager   = cj.moveManager;
   CFG.originCountry = cj.originCountry;
+  CFG.status        = 'Provisional'; // not Draft — ensures it saves to Azure and goes on calendar
   cfgStage = 1; // skip to jobs stage — client details already filled
   el('cfg-head-ref').textContent = cj.masterJobId;
   el('cfg-head-title').textContent = 'Add Movement — ' + cj.clientName;
@@ -11344,6 +11354,7 @@ function editClientJob(id) {
   CFG.channel       = cj.channel;
   CFG.moveManager   = cj.moveManager;
   CFG.originCountry = cj.originCountry;
+  CFG.status        = cj.status === 'Active' ? 'Provisional' : 'Draft';
   cfgStage = 0;
   el('cfg-head-ref').textContent = cj.masterJobId;
   el('cfg-head-title').textContent = 'Edit Client Record';
