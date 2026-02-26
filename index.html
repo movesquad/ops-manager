@@ -1081,6 +1081,9 @@ textarea.fi{resize:vertical;min-height:60px}
       <button class="vt" onclick="setView('month',this)">Month</button>
       <button class="vt" onclick="setView('day',this)">Day</button>
       <button class="vt" onclick="setView('list',this)">List</button>
+      <button class="vt fin-only" style="display:none" onclick="setView('trends',this)">Trends</button>
+      <button class="vt fin-only" style="display:none" onclick="setView('forecast',this)">Forecast</button>
+      <button class="vt fin-only" style="display:none" onclick="setView('forecast',this)">Forecast</button>
     </div>
     <div class="divider"></div>
     <div class="cnav">
@@ -1772,8 +1775,20 @@ function showMod(mod,btn){
   if(cnav) cnav.style.display = mod==='warehouse'?'none':'flex';
   if(mod==='crew') renderCrew();
   if(mod==='finance') renderFinance();
+  // Show finance-only vtabs
+  document.querySelectorAll('.fin-only').forEach(function(b){
+    b.style.display = mod==='finance' ? '' : 'none';
+  });
+  // Hide cal-only vtabs when in finance
+  document.querySelectorAll('.vt:not(.fin-only)').forEach(function(b){
+    b.style.display = mod==='finance' ? 'none' : '';
+  });
   if(mod==='storage') renderStorage();
   if(mod==='calendar') renderCal();
+  if(mod!=='finance'){
+    document.querySelectorAll('.vt:not(.fin-only)').forEach(function(b){ b.style.display=''; });
+    document.querySelectorAll('.fin-only').forEach(function(b){ b.style.display='none'; });
+  }
   if(mod==='settings'){ curStab='crew'; renderSettingsCrew(); }
   if(mod==='bookings') initBookingMod();
 }
@@ -1803,7 +1818,12 @@ function navPrev(){
 }
 function renderActiveMod(){
   if(curMod==='crew') renderCrew();
-  else if(curMod==='finance') renderFinance();
+  else if(curMod==='finance'){
+    if(curView==='trends')   renderTrends();
+    else if(curView==='forecast') renderForecast();
+    else renderFinance();
+  }
+  else if(curMod==='dashboard') renderDashboard();
   else renderCal();
 }
 function navNext(){
@@ -2703,6 +2723,8 @@ function renderSettingsCrew() {
     h += '<tr>';
     // Name
     h += '<td><div style="display:flex;align-items:center;gap:7px"><div class="crew-av" style="background:' + c.col + ';width:22px;height:22px;font-size:9px">' + c.name[0] + '</div><strong>' + c.name + '</strong></div></td>';
+    // Microsoft Email
+    h += '<td><input class="fi" style="min-width:180px;font-size:11.5px" data-ci="'+i+'" data-field="email" value="'+esc(c.email||'')+'" placeholder="name@movesquad.co.uk" onchange="CREW[this.dataset.ci].email=this.value.trim().toLowerCase()"></td>';
     // Employment type
     h += '<td><div style="display:flex;gap:4px">';
     h += '<button class="btn btn-sm ' + (emp ? 'btn-p' : 'btn-s') + '" style="font-size:10px;padding:3px 7px" onclick="setEmpType(' + i + ',true)">Employed</button>';
@@ -7240,6 +7262,526 @@ function cfgWriteToBookings(calJobIds) {
 }
 
 // ══════════════════════════════════════════════════════════════════════
+// SEASONAL TRENDS
+// ══════════════════════════════════════════════════════════════════════
+var trendsFilter = 'all'; // 'all' or brand name
+
+function renderTrends() {
+  el('cn-lbl').textContent = 'Seasonal Trends';
+
+  var MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var now = new Date();
+  var thisYear  = now.getFullYear();
+  var lastYear  = thisYear - 1;
+  var years     = [lastYear, thisYear];
+
+  // Build monthly aggregates: { 'YYYY-MM': { count, revenue } }
+  function buildMonthly(jobList) {
+    var m = {};
+    jobList.forEach(function(j) {
+      if (!j.start) return;
+      var ym = j.start.substr(0, 7);
+      if (!m[ym]) m[ym] = { count: 0, revenue: 0 };
+      m[ym].count++;
+      m[ym].revenue += totalRev(j);
+    });
+    return m;
+  }
+
+  var filteredJobs = trendsFilter === 'all' ? jobs : jobs.filter(function(j){ return j.brand === trendsFilter; });
+  var monthly = buildMonthly(filteredJobs);
+
+  // Build per-brand monthly for breakdown chart
+  var brandMonthly = {};
+  BRANDS.forEach(function(b) {
+    brandMonthly[b] = buildMonthly(jobs.filter(function(j){ return j.brand === b; }));
+  });
+
+  // Max values for scaling
+  var maxCount = 1, maxRev = 1;
+  for (var ym in monthly) {
+    if (monthly[ym].count > maxCount) maxCount = monthly[ym].count;
+    if (monthly[ym].revenue > maxRev) maxRev = monthly[ym].revenue;
+  }
+
+  var h = '<div style="padding:16px 20px;max-width:1100px">';
+
+  // Period filter
+  h += '<div style="display:flex;gap:8px;margin-bottom:20px;align-items:center">';
+  h += '<span style="font-size:12px;font-weight:600;color:var(--t3)">Filter:</span>';
+  h += '<button class="vt'+(trendsFilter==='all'?' on':'')+'" onclick="trendsFilter=\'all\';renderTrends()">All</button>';
+  BRANDS.forEach(function(b) {
+    h += '<button class="vt'+(trendsFilter===b?' on':'')+'" style="'+(trendsFilter===b?'background:'+(BC[b]||'#ccc')+';color:#fff;border-color:'+(BC[b]||'#ccc'):'')+'" onclick="trendsFilter=\''+b+'\';renderTrends()">'+b+'</button>';
+  });
+  h += '</div>';
+
+  // ── Chart 1: Monthly job count — this year vs last year ──────────
+  h += '<div style="background:var(--w);border-radius:10px;border:1px solid var(--b1);padding:18px 20px;margin-bottom:16px">';
+  h += '<div style="font-weight:700;font-size:14px;margin-bottom:4px">Monthly Job Count</div>';
+  h += '<div style="font-size:11.5px;color:var(--t3);margin-bottom:16px">'+lastYear+' vs '+thisYear+(trendsFilter!=='all'?' — '+trendsFilter:'')+' — hover for details</div>';
+
+  h += '<div style="display:flex;align-items:flex-end;gap:6px;height:160px">';
+  MONTH_NAMES.forEach(function(mn, mi) {
+    var ymThis = thisYear+'-'+String(mi+1).padStart(2,'0');
+    var ymLast = lastYear+'-'+String(mi+1).padStart(2,'0');
+    var cThis = (monthly[ymThis]||{}).count || 0;
+    var cLast = (monthly[ymLast]||{}).count || 0;
+    var hThis = Math.round(cThis/maxCount*140);
+    var hLast = Math.round(cLast/maxCount*140);
+    var isFuture = ymThis > (thisYear+'-'+String(now.getMonth()+1).padStart(2,'0'));
+
+    h += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">';
+    // bars side by side
+    h += '<div style="display:flex;gap:2px;align-items:flex-end;width:100%">';
+    h += '<div title="'+lastYear+' '+mn+': '+cLast+' jobs" style="flex:1;height:'+hLast+'px;background:#CBD5E1;border-radius:3px 3px 0 0;min-height:'+(cLast?'3':'0')+'px"></div>';
+    h += '<div title="'+thisYear+' '+mn+': '+cThis+' jobs" style="flex:1;height:'+hThis+'px;background:'+(isFuture?'#CBD5E1':'var(--blue)')+';border-radius:3px 3px 0 0;min-height:'+(cThis?'3':'0')+'px;opacity:'+(isFuture?'.4':'1')+'"></div>';
+    h += '</div>';
+    h += '<div style="font-size:9px;color:var(--t3);margin-top:3px">'+mn+'</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // Legend
+  h += '<div style="display:flex;gap:16px;margin-top:10px;font-size:11px">';
+  h += '<div style="display:flex;align-items:center;gap:5px"><div style="width:12px;height:12px;background:#CBD5E1;border-radius:2px"></div>'+lastYear+'</div>';
+  h += '<div style="display:flex;align-items:center;gap:5px"><div style="width:12px;height:12px;background:var(--blue);border-radius:2px"></div>'+thisYear+'</div>';
+  h += '</div>';
+  h += '</div>';
+
+  // ── Chart 2: Monthly revenue ──────────────────────────────────────
+  h += '<div style="background:var(--w);border-radius:10px;border:1px solid var(--b1);padding:18px 20px;margin-bottom:16px">';
+  h += '<div style="font-weight:700;font-size:14px;margin-bottom:4px">Monthly Revenue</div>';
+  h += '<div style="font-size:11.5px;color:var(--t3);margin-bottom:16px">'+lastYear+' vs '+thisYear+(trendsFilter!=='all'?' — '+trendsFilter:'')+'</div>';
+
+  h += '<div style="display:flex;align-items:flex-end;gap:6px;height:160px">';
+  MONTH_NAMES.forEach(function(mn, mi) {
+    var ymThis = thisYear+'-'+String(mi+1).padStart(2,'0');
+    var ymLast = lastYear+'-'+String(mi+1).padStart(2,'0');
+    var rThis = (monthly[ymThis]||{}).revenue || 0;
+    var rLast = (monthly[ymLast]||{}).revenue || 0;
+    var hThis = Math.round(rThis/maxRev*140);
+    var hLast = Math.round(rLast/maxRev*140);
+    var isFuture = ymThis > (thisYear+'-'+String(now.getMonth()+1).padStart(2,'0'));
+
+    h += '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">';
+    h += '<div style="display:flex;gap:2px;align-items:flex-end;width:100%">';
+    h += '<div title="'+lastYear+' '+mn+': '+fmt(rLast)+'" style="flex:1;height:'+hLast+'px;background:#CBD5E1;border-radius:3px 3px 0 0;min-height:'+(rLast?'3':'0')+'px"></div>';
+    h += '<div title="'+thisYear+' '+mn+': '+fmt(rThis)+'" style="flex:1;height:'+hThis+'px;background:var(--green);border-radius:3px 3px 0 0;min-height:'+(rThis?'3':'0')+'px;opacity:'+(isFuture?'.4':'1')+'"></div>';
+    h += '</div>';
+    h += '<div style="font-size:9px;color:var(--t3);margin-top:3px">'+mn+'</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  h += '<div style="display:flex;gap:16px;margin-top:10px;font-size:11px">';
+  h += '<div style="display:flex;align-items:center;gap:5px"><div style="width:12px;height:12px;background:#CBD5E1;border-radius:2px"></div>'+lastYear+'</div>';
+  h += '<div style="display:flex;align-items:center;gap:5px"><div style="width:12px;height:12px;background:var(--green);border-radius:2px"></div>'+thisYear+'</div>';
+  h += '</div>';
+  h += '</div>';
+
+  // ── Chart 3: Brand breakdown by month (stacked) ───────────────────
+  if (trendsFilter === 'all') {
+    h += '<div style="background:var(--w);border-radius:10px;border:1px solid var(--b1);padding:18px 20px;margin-bottom:16px">';
+    h += '<div style="font-weight:700;font-size:14px;margin-bottom:4px">Revenue by Brand — This Year</div>';
+    h += '<div style="font-size:11.5px;color:var(--t3);margin-bottom:16px">Monthly breakdown by partner</div>';
+
+    // Find max total revenue per month
+    var maxMonthRev = 1;
+    MONTH_NAMES.forEach(function(mn, mi) {
+      var ym = thisYear+'-'+String(mi+1).padStart(2,'0');
+      var total = BRANDS.reduce(function(s,b){ return s+((brandMonthly[b][ym]||{}).revenue||0); }, 0);
+      if (total > maxMonthRev) maxMonthRev = total;
+    });
+
+    h += '<div style="display:flex;align-items:flex-end;gap:4px;height:160px">';
+    MONTH_NAMES.forEach(function(mn, mi) {
+      var ym = thisYear+'-'+String(mi+1).padStart(2,'0');
+      var isFuture = ym > (thisYear+'-'+String(now.getMonth()+1).padStart(2,'0'));
+      var totalH = 0;
+      BRANDS.forEach(function(b){
+        totalH += ((brandMonthly[b][ym]||{}).revenue||0);
+      });
+      var barH = Math.round(totalH/maxMonthRev*140);
+
+      h += '<div style="flex:1;display:flex;flex-direction:column;align-items:center">';
+      h += '<div style="display:flex;flex-direction:column-reverse;width:100%;height:'+barH+'px;border-radius:3px 3px 0 0;overflow:hidden;opacity:'+(isFuture?'.3':'1')+'">';
+      var cumH = 0;
+      BRANDS.forEach(function(b) {
+        var rev = (brandMonthly[b][ym]||{}).revenue||0;
+        if (!rev) return;
+        var segH = Math.round(rev/maxMonthRev*140);
+        h += '<div style="width:100%;height:'+segH+'px;background:'+(BC[b]||'#aaa')+'" title="'+b+' '+mn+': '+fmt(rev)+'"></div>';
+      });
+      h += '</div>';
+      h += '<div style="font-size:9px;color:var(--t3);margin-top:3px">'+mn+'</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+
+    // Brand legend
+    h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px">';
+    BRANDS.forEach(function(b) {
+      h += '<div style="display:flex;align-items:center;gap:5px;font-size:11px"><div style="width:10px;height:10px;border-radius:2px;background:'+(BC[b]||'#aaa')+'"></div>'+b+'</div>';
+    });
+    h += '</div>';
+    h += '</div>';
+  }
+
+  // ── Summary stats table ───────────────────────────────────────────
+  h += '<div style="background:var(--w);border-radius:10px;border:1px solid var(--b1);padding:18px 20px">';
+  h += '<div style="font-weight:700;font-size:14px;margin-bottom:14px">Monthly Summary — '+thisYear+'</div>';
+  h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">';
+  h += '<thead><tr style="border-bottom:2px solid var(--b1)">';
+  h += '<th style="text-align:left;padding:6px 10px;font-weight:700;color:var(--t3)">Month</th>';
+  h += '<th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Jobs</th>';
+  h += '<th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Revenue</th>';
+  h += '<th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Avg/Job</th>';
+  h += '<th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">vs Last Year</th>';
+  h += '</tr></thead><tbody>';
+  var ytdJobs=0, ytdRev=0;
+  MONTH_NAMES.forEach(function(mn, mi) {
+    var ymThis = thisYear+'-'+String(mi+1).padStart(2,'0');
+    var ymLast = lastYear+'-'+String(mi+1).padStart(2,'0');
+    var c = (monthly[ymThis]||{}).count||0;
+    var r = (monthly[ymThis]||{}).revenue||0;
+    var rLast = (monthly[ymLast]||{}).revenue||0;
+    var isCur = mi === now.getMonth();
+    var isFuture = ymThis > (thisYear+'-'+String(now.getMonth()+1).padStart(2,'0'));
+    if (!isFuture) { ytdJobs+=c; ytdRev+=r; }
+    var vsLast = rLast>0 ? Math.round((r-rLast)/rLast*100) : null;
+    var vsCol = vsLast===null?'var(--t3)':vsLast>=0?'var(--green)':'var(--red)';
+    h += '<tr style="border-bottom:1px solid var(--s2);background:'+(isCur?'var(--s1)':'')+(isFuture?';opacity:.4':'')+'\">';
+    h += '<td style="padding:7px 10px;font-weight:'+(isCur?'700':'400')+'">'+mn+' '+thisYear+'</td>';
+    h += '<td style="padding:7px 10px;text-align:right">'+(c||'—')+'</td>';
+    h += '<td style="padding:7px 10px;text-align:right;font-weight:600">'+(r?fmt(r):'—')+'</td>';
+    h += '<td style="padding:7px 10px;text-align:right;color:var(--t3)">'+(c&&r?fmt(Math.round(r/c)):'—')+'</td>';
+    h += '<td style="padding:7px 10px;text-align:right;font-weight:700;color:'+vsCol+'">'+(vsLast!==null?(vsLast>=0?'+':'')+vsLast+'%':'—')+'</td>';
+    h += '</tr>';
+  });
+  h += '<tr style="border-top:2px solid var(--b1);font-weight:700;background:var(--s1)">';
+  h += '<td style="padding:8px 10px">YTD Total</td>';
+  h += '<td style="padding:8px 10px;text-align:right">'+ytdJobs+'</td>';
+  h += '<td style="padding:8px 10px;text-align:right">'+fmt(ytdRev)+'</td>';
+  h += '<td style="padding:8px 10px;text-align:right">'+fmt(ytdJobs?Math.round(ytdRev/ytdJobs):0)+'</td>';
+  h += '<td style="padding:8px 10px;text-align:right">—</td>';
+  h += '</tr>';
+  h += '</tbody></table></div>';
+  h += '</div>';
+  h += '</div>'; // padding wrapper
+
+  setH('fin-out', h);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// JOB VOLUME FORECASTING
+// ══════════════════════════════════════════════════════════════════════
+function renderForecast() {
+  el('cn-lbl').textContent = 'Forecast';
+
+  var MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var now       = new Date();
+  var thisYear  = now.getFullYear();
+  var curMonth  = now.getMonth(); // 0-indexed
+  var nextMonth = (curMonth + 1) % 12;
+  var nextMonthYear = nextMonth === 0 ? thisYear + 1 : thisYear;
+  var nextMonthStr = nextMonthYear+'-'+String(nextMonth+1).padStart(2,'0');
+
+  // Historical data for the same calendar month across all available years
+  function getHistoricalForMonth(monthIdx) {
+    var results = [];
+    for (var y = thisYear - 3; y < thisYear; y++) {
+      var ym = y+'-'+String(monthIdx+1).padStart(2,'0');
+      var monthJobs = jobs.filter(function(j){ return j.start && j.start.substr(0,7)===ym; });
+      if (monthJobs.length > 0) {
+        results.push({
+          year: y,
+          count: monthJobs.length,
+          revenue: monthJobs.reduce(function(s,j){ return s+totalRev(j); }, 0)
+        });
+      }
+    }
+    return results;
+  }
+
+  // Already confirmed for next month
+  var confirmedNext = jobs.filter(function(j){
+    return j.start && j.start.substr(0,7) === nextMonthStr
+        && (j.status === 'Confirmed' || j.status === 'Provisional');
+  });
+
+  var historicalNext = getHistoricalForMonth(nextMonth);
+  var avgHistCount = historicalNext.length
+    ? Math.round(historicalNext.reduce(function(s,y){ return s+y.count; }, 0) / historicalNext.length)
+    : 0;
+  var avgHistRev = historicalNext.length
+    ? Math.round(historicalNext.reduce(function(s,y){ return s+y.revenue; }, 0) / historicalNext.length)
+    : 0;
+
+  var confirmedCount = confirmedNext.length;
+  var confirmedRev   = confirmedNext.reduce(function(s,j){ return s+totalRev(j); }, 0);
+  var expectedCount  = Math.max(0, avgHistCount - confirmedCount);
+  var expectedRev    = Math.max(0, avgHistRev - confirmedRev);
+  var totalForecastCount = confirmedCount + expectedCount;
+  var totalForecastRev   = confirmedRev + expectedRev;
+
+  // Summer peak indicator (May-Sep)
+  var isSummerMonth = nextMonth >= 4 && nextMonth <= 8;
+
+  var h = '<div style="padding:16px 20px;max-width:1100px">';
+
+  // ── Next month headline ───────────────────────────────────────────
+  h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin-bottom:8px">FORECAST — '+MONTH_NAMES_FULL[nextMonth].toUpperCase()+' '+nextMonthYear+'</div>';
+
+  if (isSummerMonth) {
+    h += '<div style="background:#FFF5E0;border:1px solid #FFD580;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12.5px;color:#7A5200">&#9728;&#65039; Summer peak period — historically your busiest months. Expect elevated demand.</div>';
+  }
+
+  // KPI cards
+  h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px">';
+
+  var kpis = [
+    {label:'Forecast Jobs',    val:totalForecastCount, sub:'based on historical avg', col:'var(--blue)'},
+    {label:'Forecast Revenue', val:fmt(totalForecastRev), sub:'estimated total', col:'var(--green)'},
+    {label:'Already Confirmed',val:confirmedCount+' jobs', sub:fmt(confirmedRev)+' locked in', col:'var(--purple)'},
+  ];
+  kpis.forEach(function(k){
+    h += '<div style="background:var(--w);border-radius:10px;padding:16px 18px;border:1px solid var(--b1)">';
+    h += '<div style="font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">'+k.label+'</div>';
+    h += '<div style="font-size:26px;font-weight:800;color:'+k.col+';line-height:1">'+k.val+'</div>';
+    h += '<div style="font-size:11.5px;color:var(--t3);margin-top:5px">'+k.sub+'</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // ── Confirmed vs Expected breakdown ──────────────────────────────
+  h += '<div style="background:var(--w);border-radius:10px;border:1px solid var(--b1);padding:18px 20px;margin-bottom:16px">';
+  h += '<div style="font-weight:700;font-size:14px;margin-bottom:16px">'+MONTH_NAMES_FULL[nextMonth]+' '+nextMonthYear+' — Confirmed vs Expected</div>';
+
+  // Visual bar
+  var pctConfirmed = totalForecastCount > 0 ? Math.round(confirmedCount/totalForecastCount*100) : 0;
+  h += '<div style="margin-bottom:20px">';
+  h += '<div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:6px">';
+  h += '<span style="font-weight:700;color:var(--blue)">Confirmed: '+confirmedCount+' jobs ('+fmt(confirmedRev)+')</span>';
+  h += '<span style="font-weight:700;color:var(--t3)">Expected: '+expectedCount+' jobs ('+fmt(expectedRev)+')</span>';
+  h += '</div>';
+  h += '<div style="height:20px;background:var(--s2);border-radius:10px;overflow:hidden;display:flex">';
+  if (confirmedCount > 0) h += '<div style="width:'+pctConfirmed+'%;background:var(--blue);border-radius:10px 0 0 10px;transition:width .4s"></div>';
+  if (expectedCount > 0)  h += '<div style="flex:1;background:repeating-linear-gradient(45deg,#CBD5E1,#CBD5E1 4px,#E2E8F0 4px,#E2E8F0 8px);border-radius:0 10px 10px 0"></div>';
+  h += '</div>';
+  h += '<div style="display:flex;gap:14px;margin-top:8px;font-size:11px">';
+  h += '<div style="display:flex;align-items:center;gap:5px"><div style="width:12px;height:12px;background:var(--blue);border-radius:2px"></div>Confirmed bookings</div>';
+  h += '<div style="display:flex;align-items:center;gap:5px"><div style="width:12px;height:12px;background:#CBD5E1;border-radius:2px"></div>Expected (historical pattern)</div>';
+  h += '</div>';
+  h += '</div>';
+
+  // Confirmed jobs list
+  if (confirmedNext.length) {
+    h += '<div style="font-size:12px;font-weight:700;color:var(--t2);margin-bottom:8px">Confirmed for '+MONTH_NAMES[nextMonth]+'</div>';
+    h += '<div style="overflow:auto;max-height:180px">';
+    confirmedNext.forEach(function(j){
+      h += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--s2)">';
+      h += bbadge(j.brand,'sm');
+      h += '<div style="flex:1;font-size:12.5px;font-weight:600">'+esc(j.client)+'</div>';
+      h += '<div style="font-size:11px;color:var(--t3)">'+j.start+'</div>';
+      h += '<div style="font-size:12px;font-weight:700;color:var(--green)">'+fmt(totalRev(j))+'</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+  } else {
+    h += '<div style="font-size:12px;color:var(--t3);font-style:italic">No confirmed bookings yet for '+MONTH_NAMES_FULL[nextMonth]+'</div>';
+  }
+  h += '</div>';
+
+  // ── Historical context ─────────────────────────────────────────────
+  h += '<div style="background:var(--w);border-radius:10px;border:1px solid var(--b1);padding:18px 20px;margin-bottom:16px">';
+  h += '<div style="font-weight:700;font-size:14px;margin-bottom:14px">Historical '+MONTH_NAMES_FULL[nextMonth]+' Performance</div>';
+  if (!historicalNext.length) {
+    h += '<div style="color:var(--t3);font-size:12.5px">No historical data yet for this month.</div>';
+  } else {
+    h += '<table style="width:100%;border-collapse:collapse;font-size:12.5px">';
+    h += '<thead><tr style="border-bottom:2px solid var(--b1)"><th style="text-align:left;padding:6px 10px;font-weight:700;color:var(--t3)">Year</th><th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Jobs</th><th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Revenue</th><th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Avg/Job</th></tr></thead><tbody>';
+    historicalNext.forEach(function(yr) {
+      h += '<tr style="border-bottom:1px solid var(--s2)">';
+      h += '<td style="padding:7px 10px;font-weight:600">'+yr.year+'</td>';
+      h += '<td style="padding:7px 10px;text-align:right">'+yr.count+'</td>';
+      h += '<td style="padding:7px 10px;text-align:right;font-weight:600">'+fmt(yr.revenue)+'</td>';
+      h += '<td style="padding:7px 10px;text-align:right;color:var(--t3)">'+fmt(yr.count?Math.round(yr.revenue/yr.count):0)+'</td>';
+      h += '</tr>';
+    });
+    h += '<tr style="border-top:2px solid var(--b1);font-weight:700;background:var(--s1)">';
+    h += '<td style="padding:8px 10px">Average</td>';
+    h += '<td style="padding:8px 10px;text-align:right">'+avgHistCount+'</td>';
+    h += '<td style="padding:8px 10px;text-align:right">'+fmt(avgHistRev)+'</td>';
+    h += '<td style="padding:8px 10px;text-align:right">'+fmt(avgHistCount?Math.round(avgHistRev/avgHistCount):0)+'</td>';
+    h += '</tr></tbody></table>';
+  }
+  h += '</div>';
+
+  // ── 6-month rolling forecast ──────────────────────────────────────
+  h += '<div style="background:var(--w);border-radius:10px;border:1px solid var(--b1);padding:18px 20px">';
+  h += '<div style="font-weight:700;font-size:14px;margin-bottom:14px">6-Month Rolling Forecast</div>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12.5px">';
+  h += '<thead><tr style="border-bottom:2px solid var(--b1)"><th style="text-align:left;padding:6px 10px;font-weight:700;color:var(--t3)">Month</th><th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Confirmed</th><th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Expected</th><th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Total Forecast</th><th style="text-align:right;padding:6px 10px;font-weight:700;color:var(--t3)">Est. Revenue</th></tr></thead><tbody>';
+
+  for (var fi = 1; fi <= 6; fi++) {
+    var fMonth = (curMonth + fi) % 12;
+    var fYear  = curMonth + fi > 11 ? thisYear + 1 : thisYear;
+    var fYM    = fYear+'-'+String(fMonth+1).padStart(2,'0');
+    var fHist  = getHistoricalForMonth(fMonth);
+    var fAvgC  = fHist.length ? Math.round(fHist.reduce(function(s,y){return s+y.count;},0)/fHist.length) : 0;
+    var fAvgR  = fHist.length ? Math.round(fHist.reduce(function(s,y){return s+y.revenue;},0)/fHist.length) : 0;
+    var fConf  = jobs.filter(function(j){ return j.start&&j.start.substr(0,7)===fYM&&(j.status==='Confirmed'||j.status==='Provisional'); });
+    var fConfC = fConf.length;
+    var fConfR = fConf.reduce(function(s,j){return s+totalRev(j);},0);
+    var fExpC  = Math.max(0, fAvgC - fConfC);
+    var fExpR  = Math.max(0, fAvgR - fConfR);
+    var fPeak  = fMonth>=4&&fMonth<=8;
+
+    h += '<tr style="border-bottom:1px solid var(--s2)">';
+    h += '<td style="padding:7px 10px;font-weight:600">'+MONTH_NAMES[fMonth]+' '+fYear+(fPeak?' &#9728;':'')+'</td>';
+    h += '<td style="padding:7px 10px;text-align:right;color:var(--blue);font-weight:600">'+fConfC+'</td>';
+    h += '<td style="padding:7px 10px;text-align:right;color:var(--t3)">~'+fExpC+'</td>';
+    h += '<td style="padding:7px 10px;text-align:right;font-weight:700">'+( fAvgC||fConfC ? (fConfC+fExpC) : '—')+'</td>';
+    h += '<td style="padding:7px 10px;text-align:right;font-weight:700;color:var(--green)">'+(fAvgR||fConfR ? fmt(fConfR+fExpR) : '—')+'</td>';
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+  h += '<div style="font-size:11px;color:var(--t3);margin-top:10px">☀ = Summer peak months (May–Sep). Expected = historical average minus already confirmed. Actuals will vary.</div>';
+  h += '</div>';
+
+  h += '</div>'; // padding wrapper
+  setH('fin-out', h);
+}
+
+
+
+// ══════════════════════════════════════════════════════════════════════
+// QUICKBOOKS INVOICE INTEGRATION (stub — awaiting OAuth credentials)
+// ══════════════════════════════════════════════════════════════════════
+var QB_CONFIG = {
+  clientId:     '',   // Set in Settings → Integrations once keys received
+  clientSecret: '',   // Stored server-side, never in client
+  realmId:      '',   // QuickBooks Company ID
+  accessToken:  '',   // OAuth2 token (short-lived)
+  refreshToken: '',   // OAuth2 refresh token (long-lived)
+  sandbox:      true, // Switch to false for production
+};
+
+// VAT rates
+var QB_VAT_CODES = {
+  standard: { name: 'Standard Rate', rate: 20 },
+  exempt:   { name: 'Exempt',        rate: 0  },
+  zero:     { name: 'Zero Rated',    rate: 0  },
+};
+
+function openInvoiceModal(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+
+  // Check if QB connected
+  if (!QB_CONFIG.clientId) {
+    toast('QuickBooks not connected — add credentials in Settings → Integrations');
+    return;
+  }
+
+  renderInvoiceModal(j);
+}
+
+function renderInvoiceModal(j) {
+  // Build line items from billing array
+  var lines = (j.billing || []).map(function(b, i) {
+    return {
+      desc:    b.item || 'Service',
+      qty:     b.qty  || 1,
+      rate:    b.rate || b.amt || 0,
+      amt:     b.amt  || 0,
+      vat:     b.vat  !== false, // default VAT on unless explicitly false
+    };
+  });
+  if (!lines.length) lines = [{ desc: 'Removals Service', qty: 1, rate: totalRev(j), amt: totalRev(j), vat: true }];
+
+  var vatTotal  = lines.reduce(function(s,l){ return s + (l.vat ? l.amt * 0.2 : 0); }, 0);
+  var netTotal  = lines.reduce(function(s,l){ return s + l.amt; }, 0);
+  var grossTotal = netTotal + vatTotal;
+
+  // Due date = 30 days from today
+  var due = new Date(); due.setDate(due.getDate() + 30);
+  var dueStr = d2s(due);
+
+  var h = '';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">';
+  h += '<div><label class="lbl">Client Name</label><input class="fi" id="inv-client" value="'+esc(j.client||'')+'"></div>';
+  h += '<div><label class="lbl">Invoice Date</label><input type="date" class="fi" id="inv-date" value="'+d2s(new Date())+'"></div>';
+  h += '<div><label class="lbl">Due Date (30 days)</label><input type="date" class="fi" id="inv-due" value="'+dueStr+'"></div>';
+  h += '<div><label class="lbl">Job Reference</label><input class="fi" id="inv-ref" value="'+esc(j.ref||'')+'"></div>';
+  h += '</div>';
+
+  h += '<div style="margin-bottom:14px"><label class="lbl">Line Items</label>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">';
+  h += '<thead><tr style="background:var(--s1);border-bottom:2px solid var(--b1)"><th style="padding:6px 8px;text-align:left">Description</th><th style="padding:6px 8px;text-align:right;width:60px">Qty</th><th style="padding:6px 8px;text-align:right;width:80px">Rate</th><th style="padding:6px 8px;text-align:right;width:80px">Net</th><th style="padding:6px 8px;text-align:center;width:60px">VAT</th></tr></thead><tbody id="inv-lines">';
+  lines.forEach(function(l, i) {
+    h += '<tr style="border-bottom:1px solid var(--s2)">';
+    h += '<td style="padding:5px 6px"><input class="fi" style="font-size:11.5px" value="'+esc(l.desc)+'" onchange="qbUpdateLine('+i+',&quot;desc&quot;,this.value)"></td>';
+    h += '<td style="padding:5px 6px"><input class="fi" type="number" style="font-size:11.5px;text-align:right" value="'+l.qty+'" onchange="qbUpdateLine('+i+',&quot;qty&quot;,parseFloat(this.value)||1)"></td>';
+    h += '<td style="padding:5px 6px"><input class="fi" type="number" style="font-size:11.5px;text-align:right" value="'+l.rate+'" onchange="qbUpdateLine('+i+',&quot;rate&quot;,parseFloat(this.value)||0)"></td>';
+    h += '<td style="padding:5px 6px;text-align:right;font-weight:600">'+fmt(l.amt)+'</td>';
+    h += '<td style="padding:5px 6px;text-align:center"><input type="checkbox" '+(l.vat?'checked':'')+' onchange="qbUpdateLine('+i+',&quot;vat&quot;,this.checked)"></td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  h += '<div style="display:flex;justify-content:flex-end;margin-top:8px;gap:8px">';
+  h += '<button class="btn btn-s btn-sm" onclick="qbAddLine()">+ Line</button>';
+  h += '</div>';
+  h += '</div>';
+
+  h += '<div style="display:flex;justify-content:flex-end;margin-bottom:14px">';
+  h += '<div style="font-size:12.5px;text-align:right">';
+  h += '<div style="display:flex;justify-content:space-between;gap:24px;margin-bottom:3px"><span style="color:var(--t3)">Net Total</span><span style="font-weight:600">'+fmt(netTotal)+'</span></div>';
+  h += '<div style="display:flex;justify-content:space-between;gap:24px;margin-bottom:3px"><span style="color:var(--t3)">VAT (20%)</span><span style="font-weight:600">'+fmt(vatTotal)+'</span></div>';
+  h += '<div style="display:flex;justify-content:space-between;gap:24px;border-top:2px solid var(--b1);padding-top:5px;margin-top:5px"><span style="font-weight:700">Total</span><span style="font-weight:800;font-size:15px;color:var(--green)">'+fmt(grossTotal)+'</span></div>';
+  h += '</div></div>';
+
+  // Action buttons
+  h += '<div style="background:#EBF4FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px 14px;font-size:12px;color:#1E40AF">';
+  h += '&#128274; QuickBooks OAuth credentials not yet configured. Once connected, invoices will push directly to QuickBooks Online.';
+  h += '</div>';
+
+  // Show in a modal
+  showGenericModal('Invoice — ' + esc(j.client), h, [
+    { label: 'Download PDF (coming soon)', cls: 'btn-s', fn: 'toast("PDF export coming soon")' },
+    { label: 'Push to QuickBooks', cls: 'btn-p', fn: 'pushToQuickBooks("'+j.id+'")', disabled: !QB_CONFIG.clientId },
+  ]);
+}
+
+function pushToQuickBooks(jobId) {
+  // Will be implemented once OAuth credentials are configured
+  // Flow: check token valid → refresh if needed → POST /v3/company/{realmId}/invoice
+  toast('QuickBooks integration ready — add credentials in Settings → Integrations to activate');
+}
+
+function showGenericModal(title, body, actions) {
+  var existing = document.getElementById('generic-modal-backdrop');
+  if (existing) existing.parentNode.removeChild(existing);
+
+  var backdrop = document.createElement('div');
+  backdrop.id = 'generic-modal-backdrop';
+  backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:700;display:flex;align-items:center;justify-content:center';
+  backdrop.innerHTML = '<div style="background:#fff;border-radius:12px;width:600px;max-width:95vw;max-height:90vh;overflow:auto;box-shadow:0 8px 40px rgba(0,0,0,.22)">'
+    + '<div style="padding:16px 20px 12px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between">'
+    + '<div style="font-weight:700;font-size:15px">'+title+'</div>'
+    + '<button onclick="document.getElementById(&quot;generic-modal-backdrop&quot;).remove()" style="background:none;border:none;font-size:20px;color:var(--t3);cursor:pointer">&#10005;</button>'
+    + '</div>'
+    + '<div style="padding:18px 20px">'+body+'</div>'
+    + '<div style="padding:12px 20px 16px;border-top:1px solid var(--b1);display:flex;justify-content:flex-end;gap:8px">'
+    + actions.map(function(a){
+        return '<button class="btn btn-sm '+a.cls+'" '+(a.disabled?'disabled':'')+' onclick="'+a.fn+'">'+a.label+'</button>';
+      }).join('')
+    + '</div></div>';
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', function(e){ if(e.target===backdrop) backdrop.remove(); });
+}
+
+// ══════════════════════════════════════════════════════════════════════
 // WAREHOUSE MODULE
 // ══════════════════════════════════════════════════════════════════════
 
@@ -9392,6 +9934,31 @@ var TABLE_MAP = {
 
 // ── LOAD ALL DATA FROM AZURE ─────────────────────────────────────────────
 function dbInit(cb) {
+  // Identify logged-in user via Azure SWA built-in auth
+  fetch('/.auth/me', { credentials: 'include' })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(data) {
+      var principal = data && data.clientPrincipal;
+      if (principal) {
+        window._authUser     = principal.userDetails || principal.userId || 'Unknown';
+        window._authEmail    = (principal.userDetails||'').toLowerCase();
+        window._authName     = principal.userDetails || 'User';
+        // Update sidebar display
+        var unameEl = document.querySelector('.sb-uname');
+        var uroleEl = document.querySelector('.sb-urole');
+        if (unameEl) unameEl.textContent = window._authName;
+        if (uroleEl) uroleEl.textContent = principal.identityProvider || 'Microsoft';
+        // Check if driver/porter — lock to driver view
+        checkDriverLock();
+      }
+    })
+    .catch(function(){}) // auth endpoint may not exist in dev
+    .finally(function() {
+      _doDbInit(cb);
+    });
+}
+
+function _doDbInit(cb) {
   // Check API is reachable
   fetch(API_BASE + '?table=OpsJobs', { credentials: 'include' })
   .then(function(r) {
@@ -9838,6 +10405,8 @@ function clearData() {
     renderDashboard();
     renderBkList();
     setBadge('job-badge', jobs.length);
+    // Re-check driver lock now that CREW data is loaded
+    if (window._authEmail) checkDriverLock();
 
     if (DB_READY && !DB_OFFLINE) {
       setTimeout(function(){ toast('Connected ✓'); }, 400);
@@ -9851,6 +10420,110 @@ function clearData() {
 window.addEventListener('beforeunload', lsSave);
 
 
+
+
+// DRIVER VIEW
+var _isDriverView = false;
+
+function checkDriverLock() {
+  var email = (window._authEmail || '').toLowerCase().trim();
+  if (!email) return;
+  var crewMember = null;
+  for (var i = 0; i < CREW.length; i++) {
+    if ((CREW[i].email || '').toLowerCase().trim() === email) { crewMember = CREW[i]; break; }
+  }
+  if (!crewMember) return;
+  var role = (crewMember.role || '').toLowerCase();
+  if (role.indexOf('driver') >= 0 || role.indexOf('porter') >= 0) {
+    _isDriverView = true;
+    window._driverName = crewMember.name;
+    activateDriverView();
+  }
+}
+
+function activateDriverView() {
+  var sb = document.querySelector('.sidebar');
+  var mn = document.querySelector('.main');
+  if (sb) sb.style.display = 'none';
+  if (mn) mn.style.display = 'none';
+  el('driver-view').style.display = 'block';
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) e.preventDefault();
+  });
+  renderDriverView();
+}
+
+function renderDriverView() {
+  var name  = window._driverName || 'Driver';
+  var today = d2s(new Date());
+  var days  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var months= ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var now   = new Date();
+  el('dv-name').textContent = name;
+  el('dv-date').textContent = days[now.getDay()] + ' ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+
+  var myJobs = jobs.filter(function(j) {
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    return crew.indexOf(name) >= 0 && jobDates(j).indexOf(today) >= 0;
+  });
+  el('dv-job-count').textContent = myJobs.length + ' job' + (myJobs.length !== 1 ? 's' : '') + ' today';
+
+  if (!myJobs.length) { el('dv-jobs').innerHTML = ''; el('dv-empty').style.display = 'block'; return; }
+  el('dv-empty').style.display = 'none';
+
+  var h = '';
+  myJobs.forEach(function(j) {
+    var brandCol = BC[j.brand] || '#0073EA';
+    var isDone   = j.status === 'Completed' || j.status === 'Billed';
+    var vol      = j.vol ? j.vol + ' ft³' : (j.cbm ? j.cbm + ' cbm' : '');
+    h += '<div style="background:#fff;border-radius:12px;margin-bottom:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)">';
+    h += '<div style="height:5px;background:'+brandCol+'"></div>';
+    h += '<div style="padding:14px 16px 10px;border-bottom:1px solid #EDE9E0">';
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+    h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:'+brandCol+'">'+esc(j.brand)+'</div>';
+    h += '<div style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;background:'+(isDone?'#E6FFF5':'#EBF4FF')+';color:'+(isDone?'#00A86B':'#0073EA')+'">'+j.status+'</div>';
+    h += '</div>';
+    h += '<div style="font-size:18px;font-weight:800;color:#1C2333">'+esc(j.client)+'</div>';
+    if (j.ref) h += '<div style="font-size:11.5px;color:#7A849E;margin-top:3px">Ref: '+esc(j.ref)+'</div>';
+    h += '</div>';
+    h += '<div style="padding:12px 16px;border-bottom:1px solid #EDE9E0">';
+    if (j.origin) {
+      h += '<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#7A849E;margin-bottom:3px">FROM</div>';
+      h += '<div style="font-size:14px;font-weight:600;color:#1C2333">'+esc(j.origin)+'</div>';
+      h += '<a href="https://maps.google.com/?q='+encodeURIComponent(j.origin)+'" target="_blank" style="font-size:11.5px;color:#0073EA;font-weight:600;text-decoration:none">Open in Maps</a></div>';
+    }
+    if (j.dest) {
+      h += '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#7A849E;margin-bottom:3px">TO</div>';
+      h += '<div style="font-size:14px;font-weight:600;color:#1C2333">'+esc(j.dest)+'</div>';
+      h += '<a href="https://maps.google.com/?q='+encodeURIComponent(j.dest)+'" target="_blank" style="font-size:11.5px;color:#0073EA;font-weight:600;text-decoration:none">Open in Maps</a></div>';
+    }
+    h += '</div>';
+    h += '<div style="padding:10px 16px;border-bottom:1px solid #EDE9E0;display:flex;gap:16px">';
+    if (vol) h += '<div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Volume</div><div style="font-size:14px;font-weight:700;color:#1C2333;margin-top:2px">'+vol+'</div></div>';
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    if (crew.length) h += '<div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Crew</div><div style="font-size:13px;font-weight:600;color:#1C2333;margin-top:2px">'+crew.join(', ')+'</div></div>';
+    h += '</div>';
+    if (j.notes) h += '<div style="padding:10px 16px;background:#FFFBE6;border-bottom:1px solid #EDE9E0"><div style="font-size:10px;font-weight:700;color:#B07800;text-transform:uppercase;margin-bottom:3px">Notes</div><div style="font-size:13px;color:#7A5200;line-height:1.5">'+esc(j.notes)+'</div></div>';
+    h += '<div style="padding:12px 16px">';
+    if (!isDone) {
+      h += '<button data-jid="'+j.id+'" onclick="driverMarkComplete(this.dataset.jid)" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:8px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Mark as Complete</button>';
+    } else {
+      h += '<div style="text-align:center;font-size:13px;font-weight:700;color:#00A86B;padding:6px 0">Completed</div>';
+    }
+    h += '</div></div>';
+  });
+  el('dv-jobs').innerHTML = h;
+}
+
+function driverMarkComplete(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  if (!confirm('Mark "' + j.client + '" as Complete?')) return;
+  j.status = 'Completed';
+  saveData('job', j.id, j);
+  renderDriverView();
+  toast('Job marked as Complete');
+}
 
 </script>
 
@@ -9868,6 +10541,29 @@ window.addEventListener('beforeunload', lsSave);
       <div style="padding:12px 20px 18px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--b1)">
         <button class="btn btn-s btn-sm" onclick="closeSurveyModal()">Cancel</button>
         <button class="btn btn-p btn-sm" onclick="saveSurvey()">Save Survey</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ DRIVER VIEW (full-screen, locked) ══════════════════════════ -->
+  <div id="driver-view" style="display:none;position:fixed;inset:0;background:#F4F3EE;z-index:9000;overflow-y:auto;font-family:'Inter',sans-serif">
+    <div style="max-width:480px;margin:0 auto;padding:16px">
+      <!-- Header -->
+      <div style="background:#151c2c;border-radius:12px;padding:16px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,.4)">OPS MANAGER</div>
+          <div style="font-size:17px;font-weight:800;color:#fff;margin-top:2px" id="dv-name">Driver</div>
+          <div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:1px" id="dv-date"></div>
+        </div>
+        <div style="background:var(--blue);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;color:#fff" id="dv-job-count">0 jobs</div>
+      </div>
+      <!-- Jobs list -->
+      <div id="dv-jobs"></div>
+      <!-- Empty state -->
+      <div id="dv-empty" style="display:none;text-align:center;padding:48px 20px;color:#7A849E">
+        <div style="font-size:40px;margin-bottom:12px">✅</div>
+        <div style="font-size:16px;font-weight:700;color:#1C2333">No jobs today</div>
+        <div style="font-size:13px;margin-top:6px">Check back tomorrow</div>
       </div>
     </div>
   </div>
