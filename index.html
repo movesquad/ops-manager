@@ -911,7 +911,9 @@ textarea.fi{resize:vertical;min-height:60px}
 
 /* ══ ADDRESS LOOKUP ══════════════════════════════════════════════════ */
 .addr-wrap{position:relative;display:flex;align-items:center;gap:5px}
-.addr-wrap .fi{flex:1}
+.addr-wrap .fi{flex:1;padding-left:8px}
+.addr-flag{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:15px;pointer-events:none;z-index:1;line-height:1}
+.addr-wrap .fi.has-flag{padding-left:32px}
 .addr-map-btn{width:28px;height:28px;border:1.5px solid var(--b1);border-radius:5px;background:var(--w);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--t3);flex-shrink:0;transition:all .1s}
 .addr-map-btn:hover{border-color:var(--blue);color:var(--blue);background:#F0F7FF}
 .addr-map-btn.has-addr{border-color:var(--green);color:var(--green)}
@@ -2078,6 +2080,21 @@ function renderCalVertical(mode) {
 
       h += '</div>'; // jcard
     }
+
+    // Surveys for this date
+    var daySurveys = bookings.filter(function(b){ return b.surveyDate === ds && b.surveyDate; });
+    if (daySurveys.length) {
+      h += '<div style="margin-top:6px;border-top:1px dashed #FFD580;padding-top:6px">';
+      h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#B07800;margin-bottom:4px">&#128269; Surveys</div>';
+      daySurveys.forEach(function(b) {
+        var flag = '🇬🇧';
+        h += '<div style="background:#FFFBE6;border:1px solid #FFD580;border-radius:5px;padding:5px 9px;margin-bottom:3px;font-size:11.5px;cursor:pointer" onclick="openConfigurator(\"'+b.id+'\")">';
+        h += '<div style="font-weight:700;color:#7A5200">'+(b.surveyTime||'')+(b.surveyTime?' — ':'')+esc(b.clientName)+'</div>';
+        h += '<div style="color:#B07800;font-size:10.5px">'+esc(b.brand)+' &middot; '+esc(b.surveyPostcode||'')+(b.surveyNotes?' &middot; '+esc(b.surveyNotes):'')+'</div>';
+        h += '</div>';
+      });
+      h += '</div>';
+    }
   }
 
   if (!totalJobs) {
@@ -2296,21 +2313,35 @@ function renderDashboard() {
   // ── BOTTOM ROW ─────────────────────────────────────────────────────
   h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">';
 
-  // Actions needed
+  // Actions needed — persistent alerts
   h += '<div style="background:var(--w);border-radius:10px;border:1px solid var(--b1);overflow:hidden">';
-  h += '<div style="padding:12px 16px;border-bottom:1px solid var(--b1)"><div style="font-weight:700;font-size:13.5px">Needs Attention</div></div>';
-  h += '<div style="padding:10px 0">';
-  var alerts = [];
-  if (unbilled.length)    alerts.push({col:'var(--amber)', icon:'£', text:unbilled.length+' job'+(unbilled.length>1?'s':'')+' completed but not billed', mod:'finance'});
-  if (unconfirmed.length) alerts.push({col:'var(--blue)',  icon:'?', text:unconfirmed.length+' upcoming job'+(unconfirmed.length>1?'s':'')+' unconfirmed', mod:'calendar'});
-  if (needCrew.length)    alerts.push({col:'var(--red)',   icon:'!', text:needCrew.length+' job'+(needCrew.length>1?'s':'')+' this week with no crew', mod:'crew'});
-  if (!alerts.length)     alerts.push({col:'var(--green)', icon:'✓', text:'Everything looks good', mod:''});
-  alerts.forEach(function(a){
-    h += '<div style="padding:8px 16px;display:flex;align-items:center;gap:10px;cursor:'+(a.mod?'pointer':'default')+'" '+(a.mod?'onclick="showMod(\''+a.mod+'\',el(\'nb-'+a.mod+'\'))"':'')+' >';
-    h += '<div style="width:22px;height:22px;border-radius:50%;background:'+a.col+';color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+a.icon+'</div>';
-    h += '<div style="font-size:12.5px;color:var(--t1)">'+a.text+'</div>';
-    h += '</div>';
-  });
+  h += '<div style="padding:12px 16px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between">';
+  h += '<div style="font-weight:700;font-size:13.5px">Needs Attention</div>';
+  h += '<button onclick="dismissedAlerts={};saveData(\'settings\');renderDashboard()" style="font-size:10.5px;color:var(--t3);background:none;border:none;cursor:pointer;padding:2px 6px">Reset all</button>';
+  h += '</div>';
+  h += '<div style="padding:6px 0" id="alerts-body">';
+  var allAlerts = [];
+  if (unbilled.length)    allAlerts.push({id:'unbilled',   col:'var(--amber)', icon:'£', text:unbilled.length+' job'+(unbilled.length>1?'s':'')+' completed but not billed', mod:'finance'});
+  if (unconfirmed.length) allAlerts.push({id:'unconfirmed',col:'var(--blue)',  icon:'?', text:unconfirmed.length+' upcoming job'+(unconfirmed.length>1?'s':'')+' unconfirmed', mod:'calendar'});
+  if (needCrew.length)    allAlerts.push({id:'needcrew',   col:'var(--red)',   icon:'!', text:needCrew.length+' job'+(needCrew.length>1?'s':'')+' this week with no crew', mod:'crew'});
+  // Today/tomorrow surveys
+  var todaySurveys = bookings.filter(function(b){ return b.surveyDate === todayStr; });
+  var tmrSurveys   = bookings.filter(function(b){ return b.surveyDate === tmrStr; });
+  if (todaySurveys.length) allAlerts.push({id:'survey-today', col:'var(--amber)', icon:'🔍', text:todaySurveys.length+' survey'+(todaySurveys.length>1?'s':'')+' today', mod:'calendar'});
+  if (tmrSurveys.length)   allAlerts.push({id:'survey-tmr',   col:'var(--t3)',    icon:'🔍', text:tmrSurveys.length+' survey'+(tmrSurveys.length>1?'s':'')+' tomorrow', mod:'calendar'});
+
+  var visibleAlerts = allAlerts.filter(function(a){ return !dismissedAlerts[a.id]; });
+  if (!visibleAlerts.length) {
+    h += '<div style="padding:14px 16px;text-align:center;color:var(--green);font-size:12.5px;font-weight:600">✓ Everything looks good</div>';
+  } else {
+    visibleAlerts.forEach(function(a){
+      h += '<div style="padding:8px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--s2)">';
+      h += '<div style="width:22px;height:22px;border-radius:50%;background:'+a.col+';color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+a.icon+'</div>';
+      h += '<div style="font-size:12.5px;color:var(--t1);flex:1;cursor:'+(a.mod?'pointer':'default')+'" '+(a.mod?'onclick="showMod(\''+a.mod+'\',el(\'nb-'+a.mod+'\'))"':'')+'>'+a.text+'</div>';
+      h += '<button onclick="dismissAlert(\''+a.id+'\',this)" style="font-size:10px;color:var(--t3);background:var(--s1);border:1px solid var(--b1);border-radius:4px;padding:3px 8px;cursor:pointer;white-space:nowrap">✓ Done</button>';
+      h += '</div>';
+    });
+  }
   h += '</div></div>';
 
   // Crew utilisation this week
@@ -2351,6 +2382,24 @@ function renderDashboard() {
   h += '</div>'; // max-width wrapper
 
   el('dashboard-body').innerHTML = h;
+}
+
+function dismissAlert(id, btn) {
+  dismissedAlerts[id] = true;
+  // Save to APP_SETTINGS so it persists
+  APP_SETTINGS.dismissedAlerts = dismissedAlerts;
+  saveData('settings');
+  // Remove from UI immediately
+  var row = btn.closest ? btn.closest('[style*="border-bottom"]') : btn.parentNode;
+  if (row) row.style.display = 'none';
+  // Refresh alert count
+  var body = el('alerts-body');
+  if (body) {
+    var visible = body.querySelectorAll('[style*="display: none"]');
+    if (body.querySelectorAll('button[onclick*="dismissAlert"]').length === visible.length) {
+      body.innerHTML = '<div style="padding:14px 16px;text-align:center;color:var(--green);font-size:12.5px;font-weight:600">✓ Everything looks good</div>';
+    }
+  }
 }
 
 function fmtDateLong(d) {
@@ -2422,7 +2471,8 @@ function renderCrew(){
 }
 
 // ── FINANCE VIEW ──────────────────────────────────────────────────────
-var finPeriod = 'month'; // 'week','month','year','all'
+var finPeriod = 'month';
+var dismissedAlerts = {}; // persisted in APP_SETTINGS // 'week','month','year','all'
 
 function finJobsInPeriod() {
   var now = new Date();
@@ -3635,12 +3685,21 @@ function editJourney(id){
 
 // ── NEW / EDIT FORM ───────────────────────────────────────────────────
 function openNew(ds){
-  pMode='new';
-  var d=ds||d2s(curDate);
-  eJob={id:'J'+pad(jobs.length+1),ref:'',brand:BRANDS[0]||'SIRVA',channel:'Partner',jobType:'Door to Door',clientRef:'',moveManager:'',client:'',origin:'',dest:'',start:d,end:d,vol:0,cbm:0,drivers:[],porters:[],mileage:0,fuel:0,veh:[],status:'Scheduled',billing:[],notes:''};
-  el('p-title').textContent='New Job';
-  el('p-sub').textContent='Starting '+fmtNice(d);
-  renderForm(); openPanel();
+  // Route through booking configurator for proper data capture
+  if (ds) {
+    CFG = cfgEmpty();
+    CFG.startDate = ds;
+    CFG.selectedDates = [ds];
+    cfgStage = 0;
+    el('cfg-head-ref').textContent = CFG.ref;
+    el('cfg-head-title').textContent = 'New Job';
+    el('cfg-backdrop').classList.add('on');
+    el('cfg-panel').classList.add('on');
+    cfgRenderStage();
+    cfgUpdateNav();
+  } else {
+    openConfigurator(null);
+  }
 }
 function openEdit(id){
   var j=jobs.filter(function(x){return x.id===id;})[0];
@@ -5144,6 +5203,11 @@ function cfgEmpty() {
     sourceEmail: '',
     // AI parse results (for chip display)
     aiParsed: null,
+    // Change & cancellation history
+    changeLog: [],
+    cancelReason: '',
+    cancelNotes: '',
+    surveyDate: '', surveyTime: '', surveyPostcode: '', surveyNotes: '',
   };
 }
 
@@ -6617,6 +6681,59 @@ function cfgRenderOps() {
   h += '<textarea class="cfg-input" id="cfg-clientnotes" rows="2" style="resize:vertical">'+esc(CFG.clientNotes||'')+'</textarea></div>';
   h += '</div></div>';
 
+  // Survey scheduling card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">🔍</div><div class="cs-card-title">Survey (optional)</div></div>';
+  h += '<div class="cs-body">';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">';
+  h += '<div class="cfg-field"><label class="cfg-label">Survey Date</label><input type="date" class="cfg-input" id="cfg-survey-date" value="'+esc(CFG.surveyDate||'')+'"></div>';
+  h += '<div class="cfg-field"><label class="cfg-label">Time</label><input type="time" class="cfg-input" id="cfg-survey-time" value="'+esc(CFG.surveyTime||'')+'"></div>';
+  h += '<div class="cfg-field"><label class="cfg-label">Postcode</label><input class="cfg-input" id="cfg-survey-postcode" value="'+esc(CFG.surveyPostcode||'')+'" placeholder="e.g. SW1A 1AA"></div>';
+  h += '</div>';
+  h += '<div class="cfg-field" style="margin-top:8px"><label class="cfg-label">Survey Notes</label><input class="cfg-input" id="cfg-survey-notes" value="'+esc(CFG.surveyNotes||'')+'" placeholder="Access instructions, contact name, etc."></div>';
+  h += '</div></div>';
+
+  // Cancellation (only show if already has a booking)
+  if (CFG.id) {
+    h += '<div class="cs-card">';
+    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFECEF">❌</div><div class="cs-card-title">Cancellation</div></div>';
+    h += '<div class="cs-body">';
+    h += '<div style="display:flex;gap:8px;margin-bottom:10px">';
+    ['Date Changed','Date Postponed','Job Cancelled'].forEach(function(r){
+      var sel = CFG.cancelReason === r;
+      h += '<div onclick="CFG.cancelReason=\''+r+'\';renderActiveMod&&cfgRenderStage()" style="flex:1;border:2px solid '+(sel?'var(--red)':'var(--b1)')+';border-radius:7px;padding:8px;text-align:center;cursor:pointer;background:'+(sel?'#FFECEF':'var(--w)')+';font-size:12px;font-weight:600;color:'+(sel?'var(--red)':'var(--t2)')+'">';
+      h += r + '</div>';
+    });
+    h += '</div>';
+    h += '<div class="cfg-field"><label class="cfg-label">Cancellation Notes (reason, client message, etc.)</label>';
+    h += '<textarea class="cfg-input" id="cfg-cancel-notes" rows="2" style="resize:vertical">'+esc(CFG.cancelNotes||'')+'</textarea></div>';
+    h += '</div></div>';
+  }
+
+  // Change log (only if existing booking with history)
+  if (CFG.changeLog && CFG.changeLog.length) {
+    h += '<div class="cs-card">';
+    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📋</div><div class="cs-card-title">Change History</div></div>';
+    h += '<div class="cs-body" style="padding:0">';
+    var log = CFG.changeLog.slice().reverse();
+    log.forEach(function(entry) {
+      var d = new Date(entry.ts);
+      var when = d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      var actionCol = entry.action==='Created'?'var(--green)':entry.action==='Cancelled'?'var(--red)':'var(--blue)';
+      h += '<div style="padding:9px 16px;border-bottom:1px solid var(--s2);display:flex;gap:10px;align-items:flex-start">';
+      h += '<div style="font-size:10px;font-weight:700;color:'+actionCol+';min-width:64px;padding-top:1px">'+entry.action+'</div>';
+      h += '<div style="flex:1">';
+      if (entry.changes && entry.changes.length) {
+        h += '<div style="font-size:11.5px;color:var(--t2)">'+entry.changes.map(function(c){return esc(c);}).join(' &middot; ')+'</div>';
+      }
+      if (entry.note) h += '<div style="font-size:11px;color:var(--t3);margin-top:2px">'+esc(entry.note)+'</div>';
+      h += '</div>';
+      h += '<div style="font-size:10.5px;color:var(--t4);white-space:nowrap">'+when+'<br>'+esc(entry.user||'')+'</div>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+  }
+
   // Confirm status
   h += '<div class="cs-card">';
   h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#D1FAE5">🚀</div><div class="cs-card-title">Confirm &amp; Publish</div></div>';
@@ -6646,8 +6763,13 @@ function cfgSetStatus(elRef, status) {
 }
 
 function cfgCollectOps() {
-  CFG.opsNotes    = (el('cfg-opsnotes')||{}).value    || CFG.opsNotes;
-  CFG.clientNotes = (el('cfg-clientnotes')||{}).value || CFG.clientNotes;
+  CFG.opsNotes      = (el('cfg-opsnotes')||{}).value      || CFG.opsNotes;
+  CFG.clientNotes   = (el('cfg-clientnotes')||{}).value   || CFG.clientNotes;
+  CFG.surveyDate    = (el('cfg-survey-date')||{}).value    || CFG.surveyDate;
+  CFG.surveyTime    = (el('cfg-survey-time')||{}).value    || CFG.surveyTime;
+  CFG.surveyPostcode= (el('cfg-survey-postcode')||{}).value|| CFG.surveyPostcode;
+  CFG.surveyNotes   = (el('cfg-survey-notes')||{}).value   || CFG.surveyNotes;
+  CFG.cancelNotes   = (el('cfg-cancel-notes')||{}).value   || CFG.cancelNotes;
 }
 
 function cfgSaveDraft() {
@@ -6873,8 +6995,37 @@ function cfgCommit() {
 }
 
 function cfgWriteToBookings(calJobIds) {
+  var isNew = !CFG.id;
+  var bkId = CFG.id || ('BK' + Date.now());
+  var existing = bookings.filter(function(x){ return x.id === bkId; })[0] || {};
+
+  // Build change log entry
+  var logEntry = {
+    ts: new Date().toISOString(),
+    user: window._authUser || 'Unknown',
+    action: isNew ? 'Created' : (CFG.status === 'Cancelled' ? 'Cancelled' : 'Updated'),
+    status: CFG.status,
+    note: CFG.status === 'Cancelled' ? (CFG.cancelReason || '') + (CFG.cancelNotes ? ' — ' + CFG.cancelNotes : '') : '',
+  };
+  // Detect field changes for non-new records
+  if (!isNew && existing.cfgData) {
+    var prev = existing.cfgData;
+    var changes = [];
+    if (prev.clientName !== CFG.clientName) changes.push('Client: ' + prev.clientName + ' → ' + CFG.clientName);
+    if (prev.startDate !== CFG.startDate) changes.push('Start: ' + prev.startDate + ' → ' + CFG.startDate);
+    if (prev.endDate !== CFG.endDate) changes.push('End: ' + prev.endDate + ' → ' + CFG.endDate);
+    if (prev.status !== CFG.status) changes.push('Status: ' + prev.status + ' → ' + CFG.status);
+    if ((prev.jobs[0]||{}).origin !== (CFG.jobs[0]||{}).origin) changes.push('Origin changed');
+    if ((prev.jobs[0]||{}).dest !== (CFG.jobs[0]||{}).dest) changes.push('Destination changed');
+    if (changes.length) logEntry.changes = changes;
+  }
+
+  var changeLog = (existing.cfgData && existing.cfgData.changeLog) || CFG.changeLog || [];
+  changeLog = changeLog.concat([logEntry]);
+  CFG.changeLog = changeLog;
+
   var bk = {
-    id: CFG.id || ('BK' + Date.now()),
+    id: bkId,
     ref: CFG.ref,
     brand: CFG.brand,
     clientName: CFG.clientName,
@@ -6893,10 +7044,17 @@ function cfgWriteToBookings(calJobIds) {
     vehicles: (CFG.vehAssigned||[]).map(function(vid){return {id:vid};}),
     materials: CFG.materials || [],
     charges: CFG.charges || [],
-    emailLog: [],
-    createdAt: CFG.createdAt || new Date().toISOString(),
-    cfgData: CFG,   // store full CFG so we can re-edit
+    emailLog: existing.emailLog || [],
+    createdAt: existing.createdAt || new Date().toISOString(),
+    cfgData: CFG,
     calJobIds: calJobIds || [],
+    changeLog: changeLog,
+    surveyDate: CFG.surveyDate || '',
+    surveyTime: CFG.surveyTime || '',
+    surveyPostcode: CFG.surveyPostcode || '',
+    surveyNotes: CFG.surveyNotes || '',
+    cancelReason: CFG.cancelReason || '',
+    cancelNotes: CFG.cancelNotes || '',
   };
 
   // Update or add
@@ -8540,10 +8698,13 @@ function bindAddressField(inp, opts) {
     wrap.appendChild(distBtn);
   }
 
-  // Keep map btn colour updated
+  // Keep map btn colour updated + sync country flag
   function syncBtn() { mapBtn.classList.toggle('has-addr', !!(inp.value.trim())); }
   inp.addEventListener('input', syncBtn);
+  inp.addEventListener('change', function(){ syncAddrFlag(inp); });
   syncBtn();
+  // Sync flag for pre-filled values
+  if (inp.value) setTimeout(function(){ syncAddrFlag(inp); }, 50);
 
   // Places autocomplete (only when Maps is loaded)
   var _ddTimer = null;
@@ -8566,42 +8727,128 @@ function removeAddrDropdown(inp) {
   if (dd) dd.parentNode.removeChild(dd);
 }
 
+// Country name → flag emoji lookup
+var COUNTRY_FLAGS = {
+  'united kingdom':'🇬🇧','uk':'🇬🇧','england':'🇬🇧','scotland':'🏴󠁧󠁢󠁳󠁣󠁴󠁿','wales':'🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+  'france':'🇫🇷','germany':'🇩🇪','spain':'🇪🇸','italy':'🇮🇹','portugal':'🇵🇹',
+  'netherlands':'🇳🇱','holland':'🇳🇱','belgium':'🇧🇪','switzerland':'🇨🇭',
+  'austria':'🇦🇹','denmark':'🇩🇰','sweden':'🇸🇪','norway':'🇳🇴','finland':'🇫🇮',
+  'ireland':'🇮🇪','luxembourg':'🇱🇺','poland':'🇵🇱','czech republic':'🇨🇿',
+  'hungary':'🇭🇺','romania':'🇷🇴','bulgaria':'🇧🇬','greece':'🇬🇷','turkey':'🇹🇷',
+  'russia':'🇷🇺','ukraine':'🇺🇦','usa':'🇺🇸','united states':'🇺🇸','canada':'🇨🇦',
+  'australia':'🇦🇺','new zealand':'🇳🇿','south africa':'🇿🇦','uae':'🇦🇪',
+  'dubai':'🇦🇪','singapore':'🇸🇬','hong kong':'🇭🇰','japan':'🇯🇵','china':'🇨🇳',
+  'india':'🇮🇳','brazil':'🇧🇷','mexico':'🇲🇽','nigeria':'🇳🇬','kenya':'🇰🇪',
+  'ghana':'🇬🇭','tanzania':'🇹🇿','zimbabwe':'🇿🇼','qatar':'🇶🇦','saudi arabia':'🇸🇦',
+  'israel':'🇮🇱','cyprus':'🇨🇾','malta':'🇲🇹','iceland':'🇮🇸','croatia':'🇭🇷',
+  'slovakia':'🇸🇰','slovenia':'🇸🇮','serbia':'🇷🇸','bosnia':'🇧🇦','albania':'🇦🇱',
+};
+var COUNTRY_NAMES = Object.keys(COUNTRY_FLAGS);
+
+function getFlagForAddress(addr) {
+  if (!addr) return '🇬🇧';
+  var lower = addr.toLowerCase();
+  // Check last part of address for country
+  var parts = addr.split(',');
+  var last = (parts[parts.length-1]||'').trim().toLowerCase();
+  if (COUNTRY_FLAGS[last]) return COUNTRY_FLAGS[last];
+  // Check full string
+  for (var i = 0; i < COUNTRY_NAMES.length; i++) {
+    if (lower.indexOf(COUNTRY_NAMES[i]) >= 0) return COUNTRY_FLAGS[COUNTRY_NAMES[i]];
+  }
+  // UK postcodes (letters+numbers pattern)
+  if (/^[A-Z]{1,2}[0-9]/.test(addr.trim().toUpperCase())) return '🇬🇧';
+  return '🌍';
+}
+
 function showAddrSuggestions(inp, q) {
-  if (!mapsApiLoaded()) return;
-  var svc = new google.maps.places.AutocompleteService();
-  svc.getPlacePredictions({ input: q, componentRestrictions: {country:'gb'}, types:['address'] }, function(preds, status) {
-    if (status !== 'OK' || !preds || !preds.length) return;
-    removeAddrDropdown(inp);
-    var wrap = inp.parentNode;
-    if (!wrap) return;
+  removeAddrDropdown(inp);
+  var wrap = inp.parentNode;
+  if (!wrap) return;
+  var dd = document.createElement('div');
+  dd.className = 'addr-dropdown';
 
-    var dd = document.createElement('div');
-    dd.className = 'addr-dropdown';
-
-    preds.slice(0, 5).forEach(function(pred) {
-      var parts = pred.description.split(',');
-      var main = parts[0] || pred.description;
-      var sub  = parts.slice(1).join(',').trim();
-      var row  = document.createElement('div');
-      row.className = 'addr-option';
-      row.innerHTML = '<span class="addr-option-icon">📍</span>'
-        + '<div><div class="addr-option-main">'+esc(main)+'</div>'
-        + (sub ? '<div class="addr-option-sub">'+esc(sub)+'</div>' : '')
-        + '</div>';
-      row.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        inp.value = pred.description;
-        inp.dispatchEvent(new Event('change'));
-        removeAddrDropdown(inp);
-        inp.parentNode && inp.parentNode.querySelector('.addr-map-btn') &&
-          inp.parentNode.querySelector('.addr-map-btn').classList.add('has-addr');
-      });
-      dd.appendChild(row);
+  // Country-only suggestions first (if query matches a country name)
+  var qLow = q.toLowerCase().trim();
+  var countryMatches = COUNTRY_NAMES.filter(function(c){ return c.indexOf(qLow) === 0 && qLow.length >= 2; }).slice(0, 3);
+  countryMatches.forEach(function(c) {
+    var flag = COUNTRY_FLAGS[c];
+    var row = document.createElement('div');
+    row.className = 'addr-option';
+    row.innerHTML = '<span class="addr-option-icon">'+flag+'</span>'
+      + '<div><div class="addr-option-main">'+c.replace(/\w/g, function(l){ return l.toUpperCase(); })+'</div>'
+      + '<div class="addr-option-sub" style="color:var(--blue)">Country only</div></div>';
+    row.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      var displayName = c.replace(/\w/g, function(l){ return l.toUpperCase(); });
+      inp.value = displayName;
+      inp.dataset.flag = flag;
+      updateAddrFlag(inp, flag);
+      inp.dispatchEvent(new Event('change'));
+      removeAddrDropdown(inp);
     });
-
-    wrap.style.position = 'relative';
-    wrap.appendChild(dd);
+    dd.appendChild(row);
   });
+
+  if (!mapsApiLoaded()) {
+    if (dd.children.length) { wrap.style.position='relative'; wrap.appendChild(dd); }
+    return;
+  }
+
+  // Google Places predictions — no country restriction for international
+  var svc = new google.maps.places.AutocompleteService();
+  svc.getPlacePredictions({ input: q }, function(preds, status) {
+    if (status === 'OK' && preds && preds.length) {
+      preds.slice(0, 6 - countryMatches.length).forEach(function(pred) {
+        var parts = pred.description.split(',');
+        var main = parts[0] || pred.description;
+        var sub  = parts.slice(1).join(',').trim();
+        var flag = getFlagForAddress(pred.description);
+        var row  = document.createElement('div');
+        row.className = 'addr-option';
+        row.innerHTML = '<span class="addr-option-icon">'+flag+'</span>'
+          + '<div><div class="addr-option-main">'+esc(main)+'</div>'
+          + (sub ? '<div class="addr-option-sub">'+esc(sub)+'</div>' : '')
+          + '</div>';
+        row.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          inp.value = pred.description;
+          inp.dataset.flag = flag;
+          updateAddrFlag(inp, flag);
+          inp.dispatchEvent(new Event('change'));
+          removeAddrDropdown(inp);
+          inp.parentNode && inp.parentNode.querySelector('.addr-map-btn') &&
+            inp.parentNode.querySelector('.addr-map-btn').classList.add('has-addr');
+        });
+        dd.appendChild(row);
+      });
+    }
+    if (dd.children.length) { wrap.style.position='relative'; wrap.appendChild(dd); }
+  });
+}
+
+function updateAddrFlag(inp, flag) {
+  var wrap = inp.closest ? inp.closest('.addr-wrap') : inp.parentNode;
+  if (!wrap) return;
+  var existing = wrap.querySelector('.addr-flag');
+  if (flag) {
+    if (!existing) {
+      existing = document.createElement('span');
+      existing.className = 'addr-flag';
+      wrap.insertBefore(existing, inp);
+    }
+    existing.textContent = flag;
+    inp.style.paddingLeft = '30px';
+  } else if (existing) {
+    existing.parentNode.removeChild(existing);
+    inp.style.paddingLeft = '';
+  }
+}
+
+function syncAddrFlag(inp) {
+  if (!inp || !inp.value) return;
+  var flag = getFlagForAddress(inp.value);
+  updateAddrFlag(inp, flag);
 }
 
 // ── Map Modal (satellite + street view) ────────────────────────────────
@@ -8820,6 +9067,8 @@ function bindPanelAddressFields() {
 
 // Init Maps if key already set at page load
 if (APP_SETTINGS.googleMapsKey) loadGoogleMapsAPI();
+// Restore dismissed alerts
+if (APP_SETTINGS.dismissedAlerts) dismissedAlerts = APP_SETTINGS.dismissedAlerts;
 
 // ══════════════════════════════════════════════════════════════════════════
 // ENHANCED COS — per-crew overhead + return mileage helpers
@@ -9027,7 +9276,11 @@ function dbInit(cb) {
           if (s.MOVE_MANAGERS) MOVE_MANAGERS = s.MOVE_MANAGERS;
           if (s.BRAND_DATA)   { BRAND_DATA = s.BRAND_DATA; BC = {}; BRAND_DATA.forEach(function(b){ BC[b.name]=b.color; }); }
           if (s.SL_CONFIG)    SL_CONFIG    = s.SL_CONFIG;
-          if (s.APP_SETTINGS) APP_SETTINGS = s.APP_SETTINGS;
+          if (s.APP_SETTINGS) {
+            APP_SETTINGS = s.APP_SETTINGS;
+            if (APP_SETTINGS.dismissedAlerts) dismissedAlerts = APP_SETTINGS.dismissedAlerts;
+            if (APP_SETTINGS.googleMapsKey) loadGoogleMapsAPI();
+          }
         }
       }
       done();
