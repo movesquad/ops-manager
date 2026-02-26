@@ -1353,35 +1353,35 @@ textarea.fi{resize:vertical;min-height:60px}
 
     <!-- BOOKING MODULE -->
     <div class="page" id="mod-bookings">
-      <div class="bk-split">
-        <!-- LEFT: booking list -->
-        <div class="bk-left">
-          <div class="bk-left-head">
-            <div style="font-weight:700;font-size:13px;margin-bottom:8px">All Bookings</div>
-            <button class="btn btn-p" style="width:100%" onclick="newBooking()">+ New Booking</button>
-            <button class="btn btn-s" style="width:100%;margin-top:6px" onclick="openNewSurvey()">+ New Survey</button>
-          </div>
-          <div class="bk-list" id="bk-list"></div>
-          <!-- Survey list -->
-          <div style="border-top:2px solid var(--b1);padding:10px 12px 6px;margin-top:4px">
-            <div style="font-weight:700;font-size:12px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">&#128269; Surveys</div>
-          </div>
-          <div id="bk-survey-list" style="overflow-y:auto;max-height:300px"></div>
-        </div>
-        <!-- RIGHT: form or detail -->
-        <div class="bk-right">
-          <div class="bk-right-head">
-            <div id="bk-right-title" style="font-weight:700;font-size:14px;color:var(--t2)">Select or create a booking</div>
-            <div id="bk-right-actions" style="display:flex;gap:7px"></div>
-          </div>
-          <div class="bf-wrap" id="bk-right-body">
-            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--t3);text-align:center;padding:40px">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom:14px;opacity:.3"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              <div style="font-weight:600;font-size:15px;color:var(--t2);margin-bottom:6px">No booking selected</div>
-              <div style="font-size:12.5px">Click <strong>+ New Booking</strong> to capture a confirmed booking,<br>or select one from the list to view or edit it.</div>
+      <!-- Client Records split view -->
+      <div style="display:flex;height:100%;overflow:hidden">
+
+        <!-- LEFT: Client job list -->
+        <div style="width:300px;min-width:300px;border-right:1px solid var(--b1);display:flex;flex-direction:column;background:var(--w)">
+          <div style="padding:12px;border-bottom:1px solid var(--b1);flex-shrink:0">
+            <button class="btn btn-p" style="width:100%;margin-bottom:8px" onclick="newClientRecord()">+ New Client Job</button>
+            <div style="position:relative">
+              <input class="fi" id="cj-search" placeholder="&#128269; Search clients, refs..." style="width:100%;padding:6px 10px 6px 28px;font-size:12px" oninput="renderClientJobsList()">
+              <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:.4;pointer-events:none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <div style="display:flex;gap:4px;margin-top:8px">
+              <button class="vt on" id="cjf-all"    onclick="setCjFilter('all',this)"    style="flex:1;font-size:11px">All</button>
+              <button class="vt"    id="cjf-active" onclick="setCjFilter('active',this)"  style="flex:1;font-size:11px">Active</button>
+              <button class="vt"    id="cjf-done"   onclick="setCjFilter('done',this)"    style="flex:1;font-size:11px">Done</button>
             </div>
           </div>
+          <div id="cj-list" style="flex:1;overflow-y:auto"></div>
         </div>
+
+        <!-- RIGHT: Detail panel -->
+        <div style="flex:1;overflow-y:auto;background:var(--s1)" id="cj-detail">
+          <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:400px;color:var(--t3);text-align:center;padding:40px">
+            <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom:16px;opacity:.25"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <div style="font-weight:600;font-size:16px;color:var(--t2);margin-bottom:8px">No client record selected</div>
+            <div style="font-size:13px">Select a client from the list, or click <strong>+ New Client Job</strong> to create one.</div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -1934,7 +1934,7 @@ function showMod(mod,btn){
   document.querySelectorAll('.nb').forEach(function(b){b.classList.remove('on');});
   el('mod-'+mod).classList.add('on');
   btn.classList.add('on');
-  var titles={dashboard:'Dashboard',calendar:'Job Calendar',crew:'Crew Scheduler',finance:'Finance & Billing',settings:'Settings',bookings:'Booking Manager',storage:'Storage',warehouse:'Warehouse'};
+  var titles={dashboard:'Dashboard',calendar:'Job Calendar',crew:'Crew Scheduler',finance:'Finance & Billing',settings:'Settings',bookings:'Client Records',storage:'Storage',warehouse:'Warehouse'};
   el('tb-title').textContent=titles[mod]||mod;
   syncMobileNav(mod);
   el('vtabs').style.display=(mod==='calendar'||mod==='crew'||mod==='finance')?'flex':'none';
@@ -2988,14 +2988,25 @@ function renderSettingsCrew() {
 
 function uploadCrewPhoto(idx, input) {
   if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
   var reader = new FileReader();
   reader.onload = function(e) {
-    CREW[idx].photo = e.target.result;
-    toast(CREW[idx].name + ' photo updated');
+    var dataUrl = e.target.result;
+    CREW[idx].photo = dataUrl;
+    var crewKey = (CREW[idx].id || CREW[idx].name).toUpperCase().replace(/[^A-Z0-9]/g,'_');
+    saveData('media', 'CREW_PHOTO_'+crewKey, {
+      id: 'CREW_PHOTO_'+crewKey,
+      type: 'crew_photo',
+      key: CREW[idx].id || CREW[idx].name,
+      data: dataUrl,
+      updatedAt: new Date().toISOString()
+    });
+    toast(CREW[idx].name + ' photo saved');
     renderSettingsCrew();
   };
-  reader.readAsDataURL(input.files[0]);
+  reader.readAsDataURL(file);
 }
+
 function removeCrewPhoto(idx) {
   CREW[idx].photo = '';
   renderSettingsCrew();
@@ -3280,7 +3291,15 @@ function brandLogoUpload(idx, input) {
     var dataUrl = e.target.result;
     BRAND_DATA[idx].logo = dataUrl;
     buildBrandMaps();
-    // Update preview in brands table immediately
+    // Save as separate OpsMedia row — avoids Azure 64KB property limit
+    var brandKey = BRAND_DATA[idx].name.toUpperCase().replace(/[^A-Z0-9]/g,'_');
+    saveData('media', 'BRAND_LOGO_'+brandKey, {
+      id: 'BRAND_LOGO_'+brandKey,
+      type: 'brand_logo',
+      key: BRAND_DATA[idx].name,
+      data: dataUrl,
+      updatedAt: new Date().toISOString()
+    });
     var prev = document.getElementById('blogo-prev-'+idx);
     if (prev) {
       var img = document.createElement('img');
@@ -3290,9 +3309,8 @@ function brandLogoUpload(idx, input) {
       img.style.cssText = 'height:28px;width:auto;max-width:60px;object-fit:contain;border-radius:3px;border:1px solid var(--b1);background:#fff;padding:2px';
       prev.parentNode.replaceChild(img, prev);
     }
-    // Re-render the current active view so logo appears everywhere immediately
     if (curMod === 'calendar') renderCal();
-    toast(BRAND_DATA[idx].name + ' logo updated');
+    toast(BRAND_DATA[idx].name + ' logo saved');
   };
   reader.readAsDataURL(file);
 }
@@ -4535,9 +4553,13 @@ function delStorage(id) {
 
 // ── BOOKING MODULE ────────────────────────────────────────────────────
 var bookings = [];
+var CLIENT_JOBS = [];   // master client job records
 var SURVEYS  = [];   // standalone survey records
-var bkSeq = 142; // next sequential number
+var bkSeq = 142; // next sequential number (legacy)
+var JOB_COUNTER = 4000; // next job number base (7-digit)
 var curBkId = null;
+var curClientJobId = null;
+var cjFilter = 'all'; // filter for client records list
 var bkMode = 'none'; // 'new' | 'edit' | 'view'
 
 // SocketLabs config — user fills these in Settings
@@ -5602,7 +5624,8 @@ function cfgEmpty() {
     changeLog: [],
     cancelReason: '',
     cancelNotes: '',
-
+    clientJobId: null,
+    originCountry: 'XX',
   };
 }
 
@@ -5817,6 +5840,22 @@ function cfgRenderClient() {
   h += '</select></div>';
   h += '</div></div></div>';
 
+  // Origin Country card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">&#127758;</div><div><div class="cs-card-title">Origin Country</div><div class="cs-card-sub">Where does this job start? Used to generate the Job ID prefix.</div></div></div>';
+  h += '<div class="cs-body">';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end">';
+  h += '<div class="cfg-field"><label class="cfg-label">Origin Country</label>';
+  h += '<input class="cfg-input" id="cfg-origin-country" value="' + esc(CFG.originCountry||'XX') + '" placeholder="e.g. UK, US, FR — or full country name" style="text-transform:uppercase" oninput="cfgPreviewJobId()">';
+  h += '</div>';
+  h += '<div class="cfg-field"><label class="cfg-label">Job ID Preview</label>';
+  var _previewType = (CFG.jobs&&CFG.jobs[0]&&CFG.jobs[0].jobType) ? CFG.jobs[0].jobType : 'Door to Door';
+  var _previewCC   = CFG.originCountry || 'XX';
+  h += '<div id="cfg-jobid-preview" style="font-family:monospace;font-size:13px;font-weight:700;color:var(--blue);padding:8px 10px;background:var(--blt);border-radius:6px;border:1px solid rgba(0,115,234,.2)">' + esc(countryToCode(_previewCC)) + '-' + esc(jobTypeCode(_previewType)) + '-XXXXXXX</div>';
+  h += '</div></div>';
+  h += '<div style="font-size:11px;color:var(--t3);margin-top:8px">Use <strong>XX</strong> if origin country is not yet known — you can update it on the client record later.</div>';
+  h += '</div></div>';
+
   return h;
 }
 
@@ -5835,6 +5874,8 @@ function cfgCollectClient() {
   CFG.moveManager = (el('cfg-mm')     || {}).value || CFG.moveManager;
   CFG.status      = (el('cfg-bkstatus')||{}).value || CFG.status;
   CFG.sourceEmail = (el('cfg-email-paste')||{}).value || CFG.sourceEmail;
+  var ocEl = el('cfg-origin-country');
+  if (ocEl && ocEl.value) CFG.originCountry = countryToCode(ocEl.value) || 'XX';
 }
 
 function cfgParseEmail() {
@@ -7366,11 +7407,72 @@ function cfgCommit() {
     }
   }
 
+  // Create or update CLIENT_JOB master record
+  var cj;
+  if (CFG.clientJobId) {
+    cj = CLIENT_JOBS.filter(function(x){ return x.id === CFG.clientJobId; })[0];
+    if (cj) {
+      cj.clientName    = CFG.clientName;
+      cj.clientEmail   = CFG.clientEmail;
+      cj.clientPhone   = CFG.clientPhone;
+      cj.clientRef     = CFG.clientRef;
+      cj.brand         = CFG.brand;
+      cj.channel       = CFG.channel;
+      cj.moveManager   = CFG.moveManager;
+      cj.originCountry = CFG.originCountry || cj.originCountry || 'XX';
+      cj.jobType       = (CFG.jobs[0]||{}).jobType || cj.jobType;
+      cj.masterJobId   = genClientJobId(cj.originCountry, cj.jobType, cj.jobCounter);
+      cj.updatedAt     = new Date().toISOString();
+    }
+  } else {
+    var _oc  = CFG.originCountry || 'XX';
+    var _jt  = (CFG.jobs[0]||{}).jobType || 'Door to Door';
+    var _cnt = nextJobCounter();
+    cj = {
+      id:            'CJ-' + Date.now(),
+      masterJobId:   genClientJobId(_oc, _jt, _cnt),
+      jobCounter:    _cnt,
+      originCountry: _oc,
+      jobType:       _jt,
+      brand:         CFG.brand,
+      channel:       CFG.channel,
+      moveManager:   CFG.moveManager || '',
+      clientName:    CFG.clientName,
+      clientEmail:   CFG.clientEmail,
+      clientPhone:   CFG.clientPhone,
+      clientRef:     CFG.clientRef || '',
+      status:        'Active',
+      notes:         CFG.opsNotes || '',
+      changeLog:     [],
+      createdAt:     new Date().toISOString(),
+      createdBy:     window._authUser || 'Unknown'
+    };
+    CLIENT_JOBS.push(cj);
+    CFG.clientJobId = cj.id;
+  }
+  saveData('clientjob', cj.id, cj);
+
+  // Assign movement refs to created jobs
+  var _existMov = bookings.filter(function(b){ return b.clientJobId === cj.id; });
+  var _movStart = _existMov.length;
+  for (var _mi = 0; _mi < createdJobIds.length; _mi++) {
+    for (var _ji = 0; _ji < jobs.length; _ji++) {
+      if (jobs[_ji].id === createdJobIds[_mi]) {
+        var _movNum = _movStart + _mi + 1;
+        jobs[_ji].movementRef  = movementRef(cj.masterJobId, _movNum);
+        jobs[_ji].clientJobId  = cj.id;
+        jobs[_ji].masterJobId  = cj.masterJobId;
+        break;
+      }
+    }
+  }
+
   // Write booking
   CFG.id = CFG.id || ('BK' + Date.now());
   cfgWriteToBookings(createdJobIds);
 
   closeConfigurator();
+  if (curMod === 'bookings') renderClientJobsList();
   renderBkList();
   if (CFG.status !== 'Draft') {
     renderCal();
@@ -10058,6 +10160,7 @@ function lsSave() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       jobs:jobs, JOURNEYS:JOURNEYS, STORAGE_RECORDS:STORAGE_RECORDS,
       WH_ACTIVITIES:WH_ACTIVITIES, bookings:bookings,
+      CLIENT_JOBS:CLIENT_JOBS,
       CREW:CREW, HOL:HOL, VEHICLES:VEHICLES, MATERIALS:MATERIALS,
       CHARGES:CHARGES, MOVE_MANAGERS:MOVE_MANAGERS, BRAND_DATA:BRAND_DATA,
       SL_CONFIG:SL_CONFIG, APP_SETTINGS:APP_SETTINGS,
@@ -10076,6 +10179,7 @@ function lsLoad() {
     if (d.STORAGE_RECORDS) STORAGE_RECORDS = d.STORAGE_RECORDS;
     if (d.WH_ACTIVITIES)   WH_ACTIVITIES   = d.WH_ACTIVITIES;
     if (d.bookings)        bookings        = d.bookings;
+    if (d.CLIENT_JOBS)     CLIENT_JOBS     = d.CLIENT_JOBS;
     if (d.CREW)            CREW            = d.CREW;
     if (d.HOL)             HOL             = d.HOL;
     if (d.VEHICLES)        VEHICLES        = d.VEHICLES;
@@ -10133,13 +10237,15 @@ function apiDelete(table, id, cb) {
 
 // ── TABLE NAME MAP ───────────────────────────────────────────────────────
 var TABLE_MAP = {
-  job:      'OpsJobs',
-  journey:  'OpsJourneys',
-  storage:  'OpsStorage',
-  booking:  'OpsBookings',
-  survey:   'OpsSurveys',
-  wh:       'OpsWHActivities',
-  settings: 'OpsSettings'
+  job:        'OpsJobs',
+  journey:    'OpsJourneys',
+  storage:    'OpsStorage',
+  booking:    'OpsBookings',
+  survey:     'OpsSurveys',
+  wh:         'OpsWHActivities',
+  settings:   'OpsSettings',
+  clientjob:  'OpsClientJobs',
+  media:      'OpsMedia'
 };
 
 // ── LOAD ALL DATA FROM AZURE ─────────────────────────────────────────────
@@ -10184,7 +10290,7 @@ function _doDbInit(cb) {
 
     // Load all tables in parallel
     var loaded = 0;
-    var total  = 7;
+    var total  = 9;
 
     function done() {
       if (++loaded < total) return;
@@ -10216,6 +10322,27 @@ function _doDbInit(cb) {
       if (!err && r.length) SURVEYS = parse(r);
       done();
     });
+    apiGet('OpsClientJobs', function(err, r) {
+      if (!err && r.length) CLIENT_JOBS = parse(r);
+      done();
+    });
+    apiGet('OpsMedia', function(err, r) {
+      if (!err && r.length) {
+        parse(r).forEach(function(m) {
+          if (m.type === 'brand_logo') {
+            for (var bi2 = 0; bi2 < BRAND_DATA.length; bi2++) {
+              if (BRAND_DATA[bi2].name === m.key) { BRAND_DATA[bi2].logo = m.data; break; }
+            }
+          } else if (m.type === 'crew_photo') {
+            for (var ci2 = 0; ci2 < CREW.length; ci2++) {
+              if (CREW[ci2].id === m.key || CREW[ci2].name === m.key) { CREW[ci2].photo = m.data; break; }
+            }
+          }
+        });
+        buildBrandMaps();
+      }
+      done();
+    });
     apiGet('OpsSettings', function(err, r) {
       if (!err && r.length) {
         var s = parse(r)[0];
@@ -10232,6 +10359,7 @@ function _doDbInit(cb) {
             APP_SETTINGS = s.APP_SETTINGS;
             if (APP_SETTINGS.dismissedAlerts) dismissedAlerts = APP_SETTINGS.dismissedAlerts;
             if (APP_SETTINGS.googleMapsKey) loadGoogleMapsAPI();
+            if (APP_SETTINGS.jobCounter) JOB_COUNTER = APP_SETTINGS.jobCounter;
           }
         }
       }
@@ -10252,6 +10380,17 @@ function saveData(type, id, obj) {
 
   if (DB_OFFLINE || !DB_READY) return;
   if (!type) return;
+
+  if (type === 'clientjob') {
+    if (!id || !obj) return;
+    apiPost(TABLE_MAP.clientjob, obj);
+    return;
+  }
+  if (type === 'media') {
+    if (!id || !obj) return;
+    apiPost(TABLE_MAP.media, obj);
+    return;
+  }
 
   if (type === 'settings') {
     var settings = {
@@ -10313,6 +10452,7 @@ function importDataBackup() {
         if (d.STORAGE_RECORDS) STORAGE_RECORDS = d.STORAGE_RECORDS;
         if (d.WH_ACTIVITIES)   WH_ACTIVITIES   = d.WH_ACTIVITIES;
         if (d.bookings)        bookings        = d.bookings;
+    if (d.CLIENT_JOBS)     CLIENT_JOBS     = d.CLIENT_JOBS;
         if (d.CREW)            CREW            = d.CREW;
         if (d.HOL)             HOL             = d.HOL;
         if (d.VEHICLES)        VEHICLES        = d.VEHICLES;
@@ -10809,6 +10949,368 @@ function updateGreeting(name) {
     ? salutation + ', <strong>' + firstName + '</strong>'
     : salutation;
 }
+
+// ── JOB ID SYSTEM ────────────────────────────────────────────────────────
+var JOB_TYPE_CODES = {
+  'Door to Door':        'D2D',
+  'Domestic':            'DM',
+  'Origin Sea Pack':     'S',
+  'Origin Air Pack':     'A',
+  'Sea':                 'S',
+  'Air':                 'A',
+  'Storage':             'WH',
+  'Int Store Handling':  'WH',
+  'Ex Store Delivery':   'WH',
+  'European':            'E',
+  'Origin Road Pack':    'E',
+  'Debris Removal':      'DM',
+  'Blanket Wrap':        'DM',
+  'Handling Only':       'DM',
+  'Consolidation':       'DM',
+  'Destination Services':'D2D',
+  'Other':               'DM'
+};
+
+function countryToCode(country) {
+  if (!country) return 'XX';
+  var c = country.trim().toUpperCase();
+  var nameMap = {
+    'UNITED KINGDOM':'UK','UK':'UK','GB':'UK','ENGLAND':'UK','SCOTLAND':'UK','WALES':'UK',
+    'UNITED STATES':'US','USA':'US','US':'US','AMERICA':'US',
+    'FRANCE':'FR','GERMANY':'DE','SPAIN':'ES','ITALY':'IT',
+    'AUSTRALIA':'AU','NEW ZEALAND':'NZ','CANADA':'CA',
+    'UAE':'AE','UNITED ARAB EMIRATES':'AE','DUBAI':'AE','ABU DHABI':'AE',
+    'SINGAPORE':'SG','HONG KONG':'HK','CHINA':'CN','JAPAN':'JP',
+    'SOUTH AFRICA':'ZA','NIGERIA':'NG','KENYA':'KE',
+    'INDIA':'IN','PAKISTAN':'PK','BRAZIL':'BR','MEXICO':'MX',
+    'NETHERLANDS':'NL','BELGIUM':'BE','SWITZERLAND':'CH','SWEDEN':'SE',
+    'NORWAY':'NO','DENMARK':'DK','FINLAND':'FI','AUSTRIA':'AT',
+    'PORTUGAL':'PT','IRELAND':'IE','POLAND':'PL','CZECH REPUBLIC':'CZ',
+    'HUNGARY':'HU','ROMANIA':'RO','GREECE':'GR','TURKEY':'TR',
+    'RUSSIA':'RU','UKRAINE':'UA','ISRAEL':'IL','SAUDI ARABIA':'SA',
+    'QATAR':'QA','KUWAIT':'KW','BAHRAIN':'BH','OMAN':'OM',
+    'THAILAND':'TH','MALAYSIA':'MY','INDONESIA':'ID','PHILIPPINES':'PH',
+    'SOUTH KOREA':'KR','TAIWAN':'TW','VIETNAM':'VN',
+    'ARGENTINA':'AR','CHILE':'CL','COLOMBIA':'CO','PERU':'PE',
+    'EGYPT':'EG','MOROCCO':'MA','GHANA':'GH','TANZANIA':'TZ',
+    'NEW ZEALAND':'NZ','ZIMBABWE':'ZW','ZAMBIA':'ZM','ETHIOPIA':'ET'
+  };
+  if (nameMap[c]) return nameMap[c];
+  for (var name in nameMap) {
+    if (c.indexOf(name) >= 0) return nameMap[name];
+  }
+  if (/^[A-Z]{2}$/.test(c)) return c === 'GB' ? 'UK' : c;
+  return 'XX';
+}
+
+function jobTypeCode(jobType) {
+  return JOB_TYPE_CODES[jobType] || 'DM';
+}
+
+function padJobNum(n) {
+  var s = String(n);
+  while (s.length < 7) s = '0' + s;
+  return s;
+}
+
+function genClientJobId(originCountry, jobType, counter) {
+  return countryToCode(originCountry) + '-' + jobTypeCode(jobType) + '-' + padJobNum(counter);
+}
+
+function nextJobCounter() {
+  JOB_COUNTER++;
+  if (!APP_SETTINGS) APP_SETTINGS = {};
+  APP_SETTINGS.jobCounter = JOB_COUNTER;
+  saveData('settings');
+  return JOB_COUNTER;
+}
+
+function movementRef(masterJobId, movementNum) {
+  var seq = String(movementNum);
+  while (seq.length < 3) seq = '0' + seq;
+  return masterJobId + '-' + seq;
+}
+
+
+// ── CLIENT RECORDS MODULE ────────────────────────────────────────────────
+
+var cjFilter = 'all';
+
+function setCjFilter(f, btn) {
+  cjFilter = f;
+  document.querySelectorAll('#cjf-all,#cjf-active,#cjf-done').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
+  renderClientJobsList();
+}
+
+function renderClientJobsList() {
+  var search = (el('cj-search')||{}).value || '';
+  var q = search.toLowerCase();
+  var list = CLIENT_JOBS.slice().sort(function(a,b){ return b.createdAt > a.createdAt ? 1 : -1; });
+
+  if (cjFilter === 'active') list = list.filter(function(cj){ return cj.status === 'Active'; });
+  if (cjFilter === 'done')   list = list.filter(function(cj){ return cj.status !== 'Active'; });
+  if (q) list = list.filter(function(cj){
+    return (cj.clientName||'').toLowerCase().indexOf(q)>=0
+        || (cj.masterJobId||'').toLowerCase().indexOf(q)>=0
+        || (cj.clientRef||'').toLowerCase().indexOf(q)>=0
+        || (cj.clientEmail||'').toLowerCase().indexOf(q)>=0;
+  });
+
+  // Update badge
+  var badge = el('cj-count-badge');
+  if (badge) badge.textContent = CLIENT_JOBS.length;
+  setBadge('bk-badge', CLIENT_JOBS.length);
+
+  if (!list.length) {
+    setH('cj-list', '<div style="padding:24px 16px;text-align:center;color:var(--t3);font-size:12px">' +
+      (CLIENT_JOBS.length ? 'No records match your filter.' : 'No client jobs yet.<br>Click <strong>+ New Client Job</strong> to start.') + '</div>');
+    return;
+  }
+
+  var h = '';
+  list.forEach(function(cj) {
+    var col = BC[cj.brand] || '#0073EA';
+    var movs = bookings.filter(function(b){ return b.clientJobId === cj.id; });
+    var statusCls = cj.status === 'Active' ? 'bst-conf' : cj.status === 'Completed' ? 'bst-comp' : 'bst-canc';
+    var isActive = curClientJobId === cj.id;
+    h += '<div class="bk-item' + (isActive?' on':'') + '" onclick="viewClientJob(\'' + cj.id + '\')" style="border-left:3px solid '+col+'">';
+    h += '<div style="flex:1;min-width:0">';
+    h += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">';
+    h += '<span style="font-family:monospace;font-size:11px;font-weight:700;color:var(--blue);letter-spacing:.3px">' + esc(cj.masterJobId) + '</span>';
+    h += '<span class="bst ' + statusCls + '" style="font-size:9px">' + cj.status + '</span>';
+    h += '</div>';
+    h += '<div style="font-weight:600;font-size:13px;color:var(--t1);margin-bottom:2px">' + esc(cj.clientName) + '</div>';
+    h += '<div style="font-size:11px;color:var(--t3);display:flex;gap:8px">';
+    h += '<span>' + bbadge(cj.brand,'sm') + '</span>';
+    h += '<span>&#128200; ' + movs.length + ' movement' + (movs.length===1?'':'s') + '</span>';
+    h += '</div>';
+    h += '</div>';
+    h += '</div>';
+  });
+  setH('cj-list', h);
+}
+
+function viewClientJob(id) {
+  curClientJobId = id;
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id===id; })[0];
+  if (!cj) return;
+  renderClientJobsList(); // refresh active state
+  renderClientJobDetail(cj);
+}
+
+function renderClientJobDetail(cj) {
+  var col = BC[cj.brand] || '#0073EA';
+  var movs = bookings.filter(function(b){ return b.clientJobId === cj.id; })
+    .sort(function(a,b){ return a.startDate > b.startDate ? 1 : -1; });
+  var calJobs = jobs.filter(function(j){ return j.clientJobId === cj.id; })
+    .sort(function(a,b){ return a.start > b.start ? 1 : -1; });
+
+  var h = '<div class="fade-in" style="max-width:860px;margin:0 auto;padding:24px">';
+
+  // ── Header ──
+  h += '<div style="background:var(--w);border-radius:12px;border:1px solid var(--b1);padding:20px 24px;margin-bottom:16px;border-top:4px solid '+col+'">';
+  h += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">';
+  h += '<div>';
+  h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">';
+  h += '<span style="font-family:monospace;font-size:18px;font-weight:800;color:var(--t1);letter-spacing:.5px">' + esc(cj.masterJobId) + '</span>';
+  var scls = cj.status==='Active'?'bst-conf':cj.status==='Completed'?'bst-comp':'bst-canc';
+  h += '<span class="bst '+scls+'">' + cj.status + '</span>';
+  h += bbadge(cj.brand);
+  h += '</div>';
+  h += '<div style="font-size:22px;font-weight:700;color:var(--t1)">' + esc(cj.clientName) + '</div>';
+  h += '<div style="font-size:12px;color:var(--t3);margin-top:4px">';
+  if (cj.clientEmail) h += '<a href="mailto:'+esc(cj.clientEmail)+'" style="color:var(--blue)">'+esc(cj.clientEmail)+'</a> &nbsp;';
+  if (cj.clientPhone) h += '<span>&#128222; '+esc(cj.clientPhone)+'</span>';
+  h += '</div>';
+  h += '</div>';
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+  h += '<button class="btn btn-p btn-sm" onclick="addMovementToJob(\''+cj.id+'\')">+ Add Movement</button>';
+  h += '<button class="btn btn-s btn-sm" onclick="editClientJob(\''+cj.id+'\')">&#9998; Edit</button>';
+  h += '<button class="btn btn-s btn-sm" onclick="updateClientJobCountry(\''+cj.id+'\')">&#127758; Update Country</button>';
+  h += '</div>';
+  h += '</div>';
+
+  // Meta row
+  h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;padding-top:16px;border-top:1px solid var(--b1)">';
+  h += '<div><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t3)">Job Type</div><div style="font-size:13px;font-weight:600;color:var(--t1);margin-top:2px">'+esc(cj.jobType||'—')+'</div></div>';
+  h += '<div><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t3)">Origin Country</div><div style="font-size:13px;font-weight:600;color:var(--t1);margin-top:2px;font-family:monospace">'+esc(cj.originCountry||'XX')+'</div></div>';
+  h += '<div><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t3)">Move Manager</div><div style="font-size:13px;font-weight:600;color:var(--t1);margin-top:2px">'+esc(cj.moveManager||'—')+'</div></div>';
+  h += '<div><div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t3)">Client Ref</div><div style="font-size:13px;font-weight:600;color:var(--t1);margin-top:2px">'+esc(cj.clientRef||'—')+'</div></div>';
+  h += '</div>';
+  h += '</div>';
+
+  // ── Movements ──
+  h += '<div style="background:var(--w);border-radius:12px;border:1px solid var(--b1);padding:20px 24px;margin-bottom:16px">';
+  h += '<div style="font-weight:700;font-size:14px;margin-bottom:14px;display:flex;align-items:center;gap:8px">&#128200; Movements <span style="font-size:11px;font-weight:500;color:var(--t3)">'+movs.length+' booking'+(movs.length===1?'':'s')+'</span></div>';
+
+  if (!movs.length && !calJobs.length) {
+    h += '<div style="text-align:center;padding:20px;color:var(--t3);font-size:12px">No movements yet. Click <strong>+ Add Movement</strong> to schedule the first one.</div>';
+  } else {
+    // Show calendar jobs with movement refs
+    var allMovements = calJobs.length ? calJobs : movs.map(function(b){ return b.cfgData && b.cfgData.jobs ? b : null; }).filter(Boolean);
+    if (!allMovements.length) allMovements = calJobs;
+
+    calJobs.forEach(function(j, mi) {
+      var movRef = j.movementRef || (cj.masterJobId + '-' + String(mi+1).padStart(3,'0'));
+      var stCls = j.status==='Completed'||j.status==='Billed' ? 'bst-comp' :
+                  j.status==='Scheduled'||j.status==='Confirmed' ? 'bst-conf' :
+                  j.status==='Cancelled' ? 'bst-canc' : 'bst-pend';
+      h += '<div style="display:flex;align-items:flex-start;gap:12px;padding:12px;background:var(--s1);border-radius:8px;border:1px solid var(--b1);margin-bottom:8px">';
+      h += '<div style="width:36px;height:36px;border-radius:8px;background:'+col+';display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">'+String(mi+1).padStart(3,'0')+'</div>';
+      h += '<div style="flex:1;min-width:0">';
+      h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+      h += '<span style="font-family:monospace;font-size:12px;font-weight:700;color:var(--blue)">'+esc(movRef)+'</span>';
+      h += '<span class="bst '+stCls+'">'+j.status+'</span>';
+      h += '</div>';
+      h += '<div style="font-size:13px;font-weight:600;color:var(--t1)">'+esc(j.jobType||'Movement')+'</div>';
+      h += '<div style="font-size:11.5px;color:var(--t3);margin-top:3px">';
+      h += fmtNice(j.start)+(j.end&&j.end!==j.start?' — '+fmtNice(j.end):'');
+      if (j.origin) h += ' &bull; '+esc(j.origin.substring(0,40));
+      if (j.dest) h += ' &#8594; '+esc(j.dest.substring(0,40));
+      h += '</div>';
+      if (j.vol) h += '<div style="font-size:11px;color:var(--t3);margin-top:2px">'+j.vol+' ft&#179;'+(j.cbm?' / '+j.cbm+' CBM':'')+'</div>';
+      h += '</div>';
+      h += '<button class="btn btn-s btn-sm" onclick="openEdit(\''+j.id+'\')" style="flex-shrink:0">View</button>';
+      h += '</div>';
+    });
+  }
+  h += '</div>';
+
+  // ── Surveys ──
+  var jobSurveys = SURVEYS.filter(function(s){ return s.clientJobId===cj.id || (s.clientName||'').toLowerCase()===(cj.clientName||'').toLowerCase(); });
+  if (jobSurveys.length) {
+    h += '<div style="background:var(--w);border-radius:12px;border:1px solid var(--b1);padding:20px 24px;margin-bottom:16px">';
+    h += '<div style="font-weight:700;font-size:14px;margin-bottom:12px">&#128200; Surveys</div>';
+    jobSurveys.forEach(function(s){
+      h += '<div style="padding:10px 12px;background:var(--s1);border-radius:8px;border:1px solid var(--b1);margin-bottom:6px;font-size:12.5px">';
+      h += '<strong>'+esc(s.ref||'Survey')+'</strong> &bull; '+fmtNice(s.date)+' at '+esc(s.time||'TBC');
+      if (s.postcode) h += ' &bull; '+esc(s.postcode);
+      if (s.notes) h += '<br><span style="color:var(--t3)">'+esc(s.notes)+'</span>';
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+
+  // ── Billing summary ──
+  var totalBilled = 0;
+  calJobs.forEach(function(j){ (j.billing||[]).forEach(function(b){ totalBilled += b.amt||0; }); });
+  if (totalBilled > 0) {
+    h += '<div style="background:var(--w);border-radius:12px;border:1px solid var(--b1);padding:20px 24px;margin-bottom:16px">';
+    h += '<div style="font-weight:700;font-size:14px;margin-bottom:12px">&#163; Billing</div>';
+    h += '<div style="display:flex;align-items:center;gap:16px">';
+    h += '<div style="font-size:28px;font-weight:800;color:var(--green)">'+fmt(totalBilled)+'</div>';
+    h += '<div style="font-size:12px;color:var(--t3)">Total across '+calJobs.length+' movement'+(calJobs.length===1?'':'s')+'</div>';
+    h += '</div>';
+    h += '</div>';
+  }
+
+  // ── Change history ──
+  var log = cj.changeLog || [];
+  if (log.length) {
+    h += '<div style="background:var(--w);border-radius:12px;border:1px solid var(--b1);padding:20px 24px;margin-bottom:16px">';
+    h += '<div style="font-weight:700;font-size:14px;margin-bottom:12px">&#128203; History</div>';
+    log.slice().reverse().forEach(function(e2){
+      h += '<div style="padding:8px 0;border-bottom:1px solid var(--b1);font-size:12px">';
+      h += '<span style="color:var(--t3)">' + (e2.ts||'').slice(0,10) + '</span> &bull; ';
+      h += esc(e2.action||'') + (e2.note ? ' — ' + esc(e2.note) : '');
+      if (e2.user) h += ' <span style="color:var(--t3)">by '+esc(e2.user)+'</span>';
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+
+  h += '</div>'; // fade-in wrapper
+  setH('cj-detail', h);
+}
+
+function newClientRecord() {
+  // Open booking configurator with no pre-linked client job
+  openConfigurator(null);
+}
+
+function addMovementToJob(clientJobId) {
+  // Open configurator pre-linked to existing client job
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id===clientJobId; })[0];
+  if (!cj) return;
+  CFG = cfgEmpty();
+  CFG.clientJobId   = cj.id;
+  CFG.clientName    = cj.clientName;
+  CFG.clientEmail   = cj.clientEmail;
+  CFG.clientPhone   = cj.clientPhone;
+  CFG.clientRef     = cj.clientRef;
+  CFG.brand         = cj.brand;
+  CFG.channel       = cj.channel;
+  CFG.moveManager   = cj.moveManager;
+  CFG.originCountry = cj.originCountry;
+  cfgStage = 1; // skip to jobs stage — client details already filled
+  el('cfg-head-ref').textContent = cj.masterJobId;
+  el('cfg-head-title').textContent = 'Add Movement — ' + cj.clientName;
+  el('cfg-backdrop').classList.add('on');
+  el('cfg-panel').classList.add('on');
+  cfgRenderStage();
+  cfgUpdateNav();
+}
+
+function editClientJob(id) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id===id; })[0];
+  if (!cj) return;
+  CFG = cfgEmpty();
+  CFG.id            = cj.id;
+  CFG.clientJobId   = cj.id;
+  CFG.clientName    = cj.clientName;
+  CFG.clientEmail   = cj.clientEmail;
+  CFG.clientPhone   = cj.clientPhone;
+  CFG.clientRef     = cj.clientRef;
+  CFG.brand         = cj.brand;
+  CFG.channel       = cj.channel;
+  CFG.moveManager   = cj.moveManager;
+  CFG.originCountry = cj.originCountry;
+  cfgStage = 0;
+  el('cfg-head-ref').textContent = cj.masterJobId;
+  el('cfg-head-title').textContent = 'Edit Client Record';
+  el('cfg-backdrop').classList.add('on');
+  el('cfg-panel').classList.add('on');
+  cfgRenderStage();
+  cfgUpdateNav();
+}
+
+function updateClientJobCountry(id) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id===id; })[0];
+  if (!cj) return;
+  var newCountry = prompt('Enter origin country code or name (current: ' + (cj.originCountry||'XX') + '):', cj.originCountry||'XX');
+  if (!newCountry) return;
+  cj.originCountry = countryToCode(newCountry) || 'XX';
+  cj.masterJobId   = genClientJobId(cj.originCountry, cj.jobType, cj.jobCounter);
+  // Update all linked jobs
+  jobs.forEach(function(j){
+    if (j.clientJobId === cj.id) {
+      j.masterJobId = cj.masterJobId;
+      var movNum = parseInt((j.movementRef||'').split('-').pop()) || 1;
+      j.movementRef = movementRef(cj.masterJobId, movNum);
+      saveData('job', j.id, j);
+    }
+  });
+  saveData('clientjob', cj.id, cj);
+  toast('Job ID updated to ' + cj.masterJobId);
+  renderClientJobDetail(cj);
+  renderClientJobsList();
+}
+
+function cfgPreviewJobId() {
+  var ocEl = el('cfg-origin-country');
+  var preview = el('cfg-jobid-preview');
+  if (!ocEl || !preview) return;
+  var cc = countryToCode(ocEl.value) || 'XX';
+  var jt = (CFG.jobs&&CFG.jobs[0]&&CFG.jobs[0].jobType) ? CFG.jobs[0].jobType : 'Door to Door';
+  preview.textContent = cc + '-' + jobTypeCode(jt) + '-XXXXXXX';
+}
+
+// Show client records when switching to bookings module
+function initBookingMod() {
+  renderClientJobsList();
+}
+
 </script>
 
   <!-- Survey Modal -->
