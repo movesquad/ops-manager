@@ -1195,8 +1195,8 @@ textarea.fi{resize:vertical;min-height:60px}
     </button>
 
     <button class="nb" id="nb-bookings" onclick="showMod('bookings',this)">
-      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
-      <span class="sb-label">Booking Manager</span>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+      <span class="sb-label">Client Records</span>
       <span class="nb-badge hidden" id="bk-badge">0</span>
     </button>
 
@@ -5587,6 +5587,7 @@ function sendEmail(id, subject) {
 // State object for the active configurator session
 var CFG = null;
 var cfgStage = 0;
+var cfgMatrixOffset = 0; // weeks offset for availability calendar
 var CFG_STAGES = 5;
 
 function cfgEmpty() {
@@ -6664,6 +6665,11 @@ function cfgClearSlot(slotIdx) {
   cfgRenderStage();
 }
 
+
+function cfgMatrixNav(dir) {
+  cfgMatrixOffset = Math.max(0, cfgMatrixOffset + dir);
+  cfgBuildMatrix();
+}
 function cfgBuildMatrix() {
   var body = el('cfg-avail-body');
   if (!body) return;
@@ -6679,7 +6685,22 @@ function cfgBuildMatrix() {
   var selectedSet = {};
   (CFG.selectedDates || []).forEach(function(d, i){ if (d) selectedSet[d] = i + 1; });
 
+  var offsetDays = cfgMatrixOffset * 7;
+  var fromDate = new Date(today);
+  fromDate.setDate(fromDate.getDate() + offsetDays);
+  var fromLabel = fromDate.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  var toDate = new Date(fromDate);
+  toDate.setDate(toDate.getDate() + 27);
+  var toLabel = toDate.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+
   var h = '<div class="avail-matrix">';
+
+  // Navigation bar
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 4px 10px;gap:8px">';
+  h += '<button class="btn btn-s btn-sm" onclick="cfgMatrixNav(-1)" ' + (cfgMatrixOffset<=0?'disabled style="opacity:.4"':'') + '>&#8249; Earlier</button>';
+  h += '<div style="font-size:12px;font-weight:600;color:var(--t2);text-align:center">' + fromLabel + ' — ' + toLabel + '</div>';
+  h += '<button class="btn btn-s btn-sm" onclick="cfgMatrixNav(1)">Later &#8250;</button>';
+  h += '</div>';
 
   h += '<div class="avail-head-row">';
   h += '<div class="avail-head-date">Date</div>';
@@ -6691,8 +6712,8 @@ function cfgBuildMatrix() {
   var DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  for (var di = 1; di <= 28; di++) {
-    var d = new Date(today);
+  for (var di = 0; di < 28; di++) {
+    var d = new Date(fromDate);
     d.setDate(d.getDate() + di);
     var ds = d.toISOString().slice(0, 10);
     var dow = d.getDay();
@@ -7552,6 +7573,8 @@ function cfgWriteToBookings(calJobIds) {
   }
   if (!found) bookings.push(bk);
   CFG.id = bk.id;
+  // Persist booking to Azure
+  saveData('booking', bk.id, bk);
 }
 
 // ══════════════════════════════════════════════════════════════════════
