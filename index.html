@@ -8521,19 +8521,15 @@ function bkTotalCOSFull(bk) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// SHAREPOINT DATA LAYER — Full persistent storage via SharePoint Lists
-// Site: https://movesquadgroup.sharepoint.com/sites/calendar
+// AZURE TABLE STORAGE DATA LAYER
+// All data persisted via /api/data Azure Function → Azure Table Storage
 // ══════════════════════════════════════════════════════════════════════════
 
-var SP_SITE    = '/sites/calendar';
-var SP_API     = SP_SITE + '/_api/web/lists/getbytitle';
-var SP_HEADERS_READ  = { 'Accept': 'application/json;odata=verbose' };
-var SP_DIGEST  = null;   // Request digest for write operations — fetched once
-var SP_READY   = false;  // True once initial load complete
-var SP_ENABLED = false;  // Set true once we confirm SP API is reachable
-var SP_OFFLINE = false;  // True if SP unreachable — fall back to localStorage
+var API_BASE   = '/api/data';
+var DB_READY   = false;
+var DB_OFFLINE = false;
 
-// ── LOCAL STORAGE FALLBACK (kept from v24) ──────────────────────────────
+// ── LOCAL STORAGE FALLBACK ───────────────────────────────────────────────
 var STORAGE_KEY = 'opsmanager_v1';
 
 function lsSave() {
@@ -8565,378 +8561,168 @@ function lsLoad() {
     if (d.MATERIALS)       MATERIALS       = d.MATERIALS;
     if (d.CHARGES)         CHARGES         = d.CHARGES;
     if (d.MOVE_MANAGERS)   MOVE_MANAGERS   = d.MOVE_MANAGERS;
-    if (d.BRAND_DATA)      BRAND_DATA      = d.BRAND_DATA;
+    if (d.BRAND_DATA)      { BRAND_DATA = d.BRAND_DATA; BC = {}; BRAND_DATA.forEach(function(b){ BC[b.name]=b.color; }); }
     if (d.SL_CONFIG)       SL_CONFIG       = d.SL_CONFIG;
     if (d.APP_SETTINGS)    APP_SETTINGS    = d.APP_SETTINGS;
-    BC = {}; BRAND_DATA.forEach(function(b){ BC[b.name] = b.color; });
     return true;
   } catch(e) { return false; }
 }
 
-// ── SHAREPOINT HELPERS ───────────────────────────────────────────────────
+// ── AZURE TABLE STORAGE API HELPERS ─────────────────────────────────────
 
-// Get request digest (required for all write operations)
-function spGetDigest(cb) {
-  if (SP_DIGEST) { cb(SP_DIGEST); return; }
-  fetch(SP_SITE + '/_api/contextinfo', {
-    method: 'POST',
-    headers: { 'Accept': 'application/json;odata=verbose', 'Content-Length': '0' },
+function apiGet(table, cb) {
+  fetch(API_BASE + '?table=' + table, {
     credentials: 'include'
   })
-  .then(function(r){ return r.json(); })
-  .then(function(d){
-    SP_DIGEST = d.d.GetContextWebInformation.FormDigestValue;
-    // Digest expires after 30 min — reset after 25 min
-    setTimeout(function(){ SP_DIGEST = null; }, 25 * 60 * 1000);
-    cb(SP_DIGEST);
-  })
-  .catch(function(){ cb(null); });
-}
-
-// GET all items from a list (handles paging up to 5000 items)
-function spGetAll(listName, cb) {
-  var url = SP_API + "('" + listName + "')/items?$top=5000&$orderby=Id";
-  fetch(url, { headers: SP_HEADERS_READ, credentials: 'include' })
-  .then(function(r){ return r.json(); })
-  .then(function(d){ cb(null, d.d ? d.d.results : []); })
-  .catch(function(e){ cb(e, []); });
-}
-
-// POST — create a new item
-function spPost(listName, item, cb) {
-  spGetDigest(function(digest) {
-    if (!digest) { cb(new Error('No digest')); return; }
-    fetch(SP_API + "('" + listName + "')/items", {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json;odata=verbose',
-        'Content-Type': 'application/json;odata=verbose',
-        'X-RequestDigest': digest
-      },
-      credentials: 'include',
-      body: JSON.stringify({ __metadata: { type: 'SP.Data.' + listName + 'ListItem' }, ItemJSON: item })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){ cb(null, d.d); })
-    .catch(function(e){ cb(e); });
-  });
-}
-
-// PATCH — update an existing item by SP ID
-function spPatch(listName, spId, item, cb) {
-  spGetDigest(function(digest) {
-    if (!digest) { if(cb) cb(new Error('No digest')); return; }
-    fetch(SP_API + "('" + listName + "')/items(" + spId + ")", {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json;odata=verbose',
-        'Content-Type': 'application/json;odata=verbose',
-        'X-RequestDigest': digest,
-        'X-HTTP-Method': 'MERGE',
-        'If-Match': '*'
-      },
-      credentials: 'include',
-      body: JSON.stringify({ __metadata: { type: 'SP.Data.' + listName + 'ListItem' }, ItemJSON: item })
-    })
-    .then(function(r){ if(cb) cb(r.ok ? null : new Error(r.status)); })
-    .catch(function(e){ if(cb) cb(e); });
-  });
-}
-
-// DELETE an item by SP ID
-function spDeleteItem(listName, spId, cb) {
-  spGetDigest(function(digest) {
-    if (!digest) { if(cb) cb(new Error('No digest')); return; }
-    fetch(SP_API + "('" + listName + "')/items(" + spId + ")", {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json;odata=verbose',
-        'X-RequestDigest': digest,
-        'X-HTTP-Method': 'DELETE',
-        'If-Match': '*'
-      },
-      credentials: 'include'
-    })
-    .then(function(r){ if(cb) cb(r.ok ? null : new Error(r.status)); })
-    .catch(function(e){ if(cb) cb(e); });
-  });
-}
-
-// ── SCHEMA PROVISIONING ──────────────────────────────────────────────────
-// On first run, adds the ItemJSON column to each list.
-// All data is stored as a JSON string in this single column —
-// simpler and more flexible than one column per field.
-
-function spProvisionList(listName, cb) {
-  // Check if ItemJSON column exists
-  fetch(SP_API + "('" + listName + "')/fields?$filter=InternalName eq 'ItemJSON'", {
-    headers: SP_HEADERS_READ, credentials: 'include'
-  })
-  .then(function(r){ return r.json(); })
-  .then(function(d){
-    var fields = d.d ? d.d.results : [];
-    if (fields.length > 0) { cb(null); return; } // already exists
-    // Create the column
-    spGetDigest(function(digest){
-      fetch(SP_API + "('" + listName + "')/fields", {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json;odata=verbose',
-          'Content-Type': 'application/json;odata=verbose',
-          'X-RequestDigest': digest
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          __metadata: { type: 'SP.Field' },
-          FieldTypeKind: 3,  // Note (multi-line text)
-          Title: 'ItemJSON',
-          StaticName: 'ItemJSON',
-          Required: false,
-          RichText: false,
-          NumberOfLines: 100
-        })
-      })
-      .then(function(r){ return r.json(); })
-      .then(function(){ cb(null); })
-      .catch(function(e){ cb(e); });
-    });
-  })
-  .catch(function(e){ cb(e); });
-}
-
-function spProvisionAll(cb) {
-  var lists = ['OPS_Jobs','OPS_Journeys','OPS_Storage','OPS_Bookings',
-               'OPS_WHActivities','OPS_Settings'];
-  var i = 0;
-  function next() {
-    if (i >= lists.length) { cb(null); return; }
-    spProvisionList(lists[i++], function(err){
-      if (err) console.warn('Provision warning:', err);
-      next();
-    });
-  }
-  next();
-}
-
-// ── SP ↔ APP DATA MAPPING ────────────────────────────────────────────────
-// Each list stores one JSON blob per app record.
-// Title = the app-level ID (e.g. 'J001', 'JRN001', 'S001')
-// ItemJSON = full serialised object
-
-function spItemsToArray(results) {
-  var arr = [];
-  for (var i = 0; i < results.length; i++) {
-    try {
-      var obj = JSON.parse(results[i].ItemJSON || '{}');
-      obj.__spId = results[i].Id;  // store SP item ID for updates/deletes
-      arr.push(obj);
-    } catch(e) {}
-  }
-  return arr;
-}
-
-// Find the SP item ID for a given app-level ID
-var _spIdMap = {};  // { listName: { appId: spId } }
-
-function spIdFor(listName, appId) {
-  return (_spIdMap[listName] && _spIdMap[listName][appId]) || null;
-}
-
-function spRegisterIds(listName, results) {
-  if (!_spIdMap[listName]) _spIdMap[listName] = {};
-  for (var i = 0; i < results.length; i++) {
-    _spIdMap[listName][results[i].Title] = results[i].Id;
-  }
-}
-
-// ── SAVE A SINGLE ITEM ───────────────────────────────────────────────────
-function spSaveItem(listName, appId, obj, cb) {
-  var json = JSON.stringify(obj);
-  var spId = spIdFor(listName, appId);
-  if (spId) {
-    spPatch(listName, spId, json, cb);
-  } else {
-    // Need to set Title as well
-    spGetDigest(function(digest) {
-      if (!digest) { if(cb) cb(new Error('No digest')); return; }
-      fetch(SP_API + "('" + listName + "')/items", {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json;odata=verbose',
-          'Content-Type': 'application/json;odata=verbose',
-          'X-RequestDigest': digest
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          __metadata: { type: 'SP.Data.' + listName + 'ListItem' },
-          Title: appId,
-          ItemJSON: json
-        })
-      })
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        if (d.d && d.d.Id) {
-          if (!_spIdMap[listName]) _spIdMap[listName] = {};
-          _spIdMap[listName][appId] = d.d.Id;
-        }
-        if(cb) cb(null);
-      })
-      .catch(function(e){ if(cb) cb(e); });
-    });
-  }
-}
-
-// ── DELETE A SINGLE ITEM ─────────────────────────────────────────────────
-function spDeleteAppItem(listName, appId, cb) {
-  var spId = spIdFor(listName, appId);
-  if (!spId) { if(cb) cb(null); return; }
-  spDeleteItem(listName, spId, function(err){
-    if (!err) {
-      if (_spIdMap[listName]) delete _spIdMap[listName][appId];
-    }
-    if(cb) cb(err);
-  });
-}
-
-// ── SETTINGS (stored as key/value in OPS_Settings) ───────────────────────
-function spSaveSettings(cb) {
-  var settings = {
-    CREW: CREW, HOL: HOL, VEHICLES: VEHICLES, MATERIALS: MATERIALS,
-    CHARGES: CHARGES, MOVE_MANAGERS: MOVE_MANAGERS, BRAND_DATA: BRAND_DATA,
-    SL_CONFIG: SL_CONFIG, APP_SETTINGS: APP_SETTINGS
-  };
-  spSaveItem('OPS_Settings', 'APP_SETTINGS_V1', settings, cb);
-}
-
-function spLoadSettings(data, cb) {
-  var rec = data[0];
-  if (!rec) { if(cb) cb(); return; }
-  if (rec.CREW)         CREW         = rec.CREW;
-  if (rec.HOL)          HOL          = rec.HOL;
-  if (rec.VEHICLES)     VEHICLES     = rec.VEHICLES;
-  if (rec.MATERIALS)    MATERIALS    = rec.MATERIALS;
-  if (rec.CHARGES)      CHARGES      = rec.CHARGES;
-  if (rec.MOVE_MANAGERS) MOVE_MANAGERS = rec.MOVE_MANAGERS;
-  if (rec.BRAND_DATA)   { BRAND_DATA = rec.BRAND_DATA; BC = {}; BRAND_DATA.forEach(function(b){ BC[b.name]=b.color; }); }
-  if (rec.SL_CONFIG)    SL_CONFIG    = rec.SL_CONFIG;
-  if (rec.APP_SETTINGS) APP_SETTINGS = rec.APP_SETTINGS;
-  if(cb) cb();
-}
-
-// ── INITIAL LOAD FROM SHAREPOINT ─────────────────────────────────────────
-function spInit(cb) {
-  // First check if SP is reachable at all
-  fetch(SP_SITE + '/_api/web/title', { headers: SP_HEADERS_READ, credentials: 'include' })
-  .then(function(r){
-    if (!r.ok) throw new Error('SP unreachable: ' + r.status);
+  .then(function(r) {
+    if (!r.ok) throw new Error('API error: ' + r.status);
     return r.json();
   })
-  .then(function(){
-    SP_ENABLED = true;
-    // Provision schema if needed (adds ItemJSON column to each list)
-    spProvisionAll(function(){
-      // Load all data in parallel
-      var loaded = 0;
-      var total = 6;
-      var errors = [];
+  .then(function(items) { cb(null, items); })
+  .catch(function(e) { cb(e, []); });
+}
 
-      function done(err) {
-        if (err) errors.push(err);
-        loaded++;
-        if (loaded < total) return;
-        SP_READY = true;
-        lsSave(); // mirror to localStorage as offline backup
-        if(cb) cb(errors.length ? errors[0] : null);
+function apiPost(table, item, cb) {
+  fetch(API_BASE + '?table=' + table, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(item)
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('API error: ' + r.status);
+    return r.json();
+  })
+  .then(function(d) { if(cb) cb(null, d); })
+  .catch(function(e) { if(cb) cb(e); });
+}
+
+function apiDelete(table, id, cb) {
+  fetch(API_BASE + '?table=' + table + '&id=' + encodeURIComponent(id), {
+    method: 'DELETE',
+    credentials: 'include'
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('API error: ' + r.status);
+    return r.json();
+  })
+  .then(function(d) { if(cb) cb(null, d); })
+  .catch(function(e) { if(cb) cb(e); });
+}
+
+// ── TABLE NAME MAP ───────────────────────────────────────────────────────
+var TABLE_MAP = {
+  job:      'OpsJobs',
+  journey:  'OpsJourneys',
+  storage:  'OpsStorage',
+  booking:  'OpsBookings',
+  wh:       'OpsWHActivities',
+  settings: 'OpsSettings'
+};
+
+// ── LOAD ALL DATA FROM AZURE ─────────────────────────────────────────────
+function dbInit(cb) {
+  // Check API is reachable
+  fetch(API_BASE + '?table=OpsJobs', { credentials: 'include' })
+  .then(function(r) {
+    if (!r.ok) throw new Error('API unreachable: ' + r.status);
+    return r.json();
+  })
+  .then(function(items) {
+    DB_READY = true;
+
+    // Parse items helper
+    function parse(items) {
+      return items.map(function(item) {
+        try { return JSON.parse(item.data); } catch(e) { return null; }
+      }).filter(Boolean);
+    }
+
+    // Load all tables in parallel
+    var loaded = 0;
+    var total  = 6;
+
+    function done() {
+      if (++loaded < total) return;
+      lsSave(); // mirror to localStorage as offline backup
+      if(cb) cb(null);
+    }
+
+    // Jobs
+    if (items.length) jobs = parse(items);
+    done(); // jobs already loaded from first check
+
+    apiGet('OpsJourneys', function(err, r) {
+      if (!err && r.length) JOURNEYS = parse(r);
+      done();
+    });
+    apiGet('OpsStorage', function(err, r) {
+      if (!err && r.length) STORAGE_RECORDS = parse(r);
+      done();
+    });
+    apiGet('OpsBookings', function(err, r) {
+      if (!err && r.length) bookings = parse(r);
+      done();
+    });
+    apiGet('OpsWHActivities', function(err, r) {
+      if (!err && r.length) WH_ACTIVITIES = parse(r);
+      done();
+    });
+    apiGet('OpsSettings', function(err, r) {
+      if (!err && r.length) {
+        var s = parse(r)[0];
+        if (s) {
+          if (s.CREW)         CREW         = s.CREW;
+          if (s.HOL)          HOL          = s.HOL;
+          if (s.VEHICLES)     VEHICLES     = s.VEHICLES;
+          if (s.MATERIALS)    MATERIALS    = s.MATERIALS;
+          if (s.CHARGES)      CHARGES      = s.CHARGES;
+          if (s.MOVE_MANAGERS) MOVE_MANAGERS = s.MOVE_MANAGERS;
+          if (s.BRAND_DATA)   { BRAND_DATA = s.BRAND_DATA; BC = {}; BRAND_DATA.forEach(function(b){ BC[b.name]=b.color; }); }
+          if (s.SL_CONFIG)    SL_CONFIG    = s.SL_CONFIG;
+          if (s.APP_SETTINGS) APP_SETTINGS = s.APP_SETTINGS;
+        }
       }
-
-      spGetAll('OPS_Jobs', function(err, results){
-        if (!err && results.length) { spRegisterIds('OPS_Jobs', results); jobs = spItemsToArray(results); }
-        done(err);
-      });
-      spGetAll('OPS_Journeys', function(err, results){
-        if (!err && results.length) { spRegisterIds('OPS_Journeys', results); JOURNEYS = spItemsToArray(results); }
-        done(err);
-      });
-      spGetAll('OPS_Storage', function(err, results){
-        if (!err && results.length) { spRegisterIds('OPS_Storage', results); STORAGE_RECORDS = spItemsToArray(results); }
-        done(err);
-      });
-      spGetAll('OPS_Bookings', function(err, results){
-        if (!err && results.length) { spRegisterIds('OPS_Bookings', results); bookings = spItemsToArray(results); }
-        done(err);
-      });
-      spGetAll('OPS_WHActivities', function(err, results){
-        if (!err && results.length) { spRegisterIds('OPS_WHActivities', results); WH_ACTIVITIES = spItemsToArray(results); }
-        done(err);
-      });
-      spGetAll('OPS_Settings', function(err, results){
-        if (!err) { spRegisterIds('OPS_Settings', results); spLoadSettings(spItemsToArray(results), function(){ done(err); }); }
-        else done(err);
-      });
+      done();
     });
   })
-  .catch(function(e){
-    // SP unreachable — fall back to localStorage
-    SP_OFFLINE = true;
-    console.warn('SharePoint unreachable, using localStorage fallback:', e.message);
+  .catch(function(e) {
+    DB_OFFLINE = true;
+    console.warn('Azure API unreachable, using localStorage:', e.message);
     lsLoad();
     if(cb) cb(null);
   });
 }
 
-// ── UNIFIED SAVE FUNCTION ────────────────────────────────────────────────
-// Called by all mutation points. Always saves to localStorage immediately
-// (for instant offline resilience), then writes to SharePoint async.
-
+// ── UNIFIED SAVE ─────────────────────────────────────────────────────────
 function saveData(type, id, obj) {
-  // Always mirror to localStorage
-  lsSave();
+  lsSave(); // always mirror to localStorage instantly
 
-  if (!SP_ENABLED || SP_OFFLINE) return;
-
-  // Async write to SharePoint
-  if (!type) {
-    // Full settings save (called from settings pages)
-    spSaveSettings();
-    return;
-  }
-
-  var listMap = {
-    job:       'OPS_Jobs',
-    journey:   'OPS_Journeys',
-    storage:   'OPS_Storage',
-    booking:   'OPS_Bookings',
-    wh:        'OPS_WHActivities',
-    settings:  'OPS_Settings'
-  };
-
-  var listName = listMap[type];
-  if (!listName) return;
+  if (DB_OFFLINE || !DB_READY) return;
+  if (!type) return;
 
   if (type === 'settings') {
-    spSaveSettings();
+    var settings = {
+      id: 'APP_SETTINGS_V1',
+      CREW:CREW, HOL:HOL, VEHICLES:VEHICLES, MATERIALS:MATERIALS,
+      CHARGES:CHARGES, MOVE_MANAGERS:MOVE_MANAGERS, BRAND_DATA:BRAND_DATA,
+      SL_CONFIG:SL_CONFIG, APP_SETTINGS:APP_SETTINGS
+    };
+    apiPost(TABLE_MAP.settings, settings);
     return;
   }
 
-  if (!id || !obj) return;
-  spSaveItem(listName, id, obj, function(err){
-    if (err) console.warn('SP save error:', err);
-  });
+  var table = TABLE_MAP[type];
+  if (!table || !id || !obj) return;
+  apiPost(table, obj);
 }
 
 function deleteData(type, id) {
   lsSave();
-  if (!SP_ENABLED || SP_OFFLINE || !type || !id) return;
-
-  var listMap = {
-    job: 'OPS_Jobs', journey: 'OPS_Journeys', storage: 'OPS_Storage',
-    booking: 'OPS_Bookings', wh: 'OPS_WHActivities'
-  };
-  var listName = listMap[type];
-  if (!listName) return;
-  spDeleteAppItem(listName, id, function(err){
-    if (err) console.warn('SP delete error:', err);
-  });
+  if (DB_OFFLINE || !DB_READY || !type || !id) return;
+  var table = TABLE_MAP[type];
+  if (!table) return;
+  apiDelete(table, id);
 }
 
 // ── EXPORT / IMPORT BACKUP ───────────────────────────────────────────────
@@ -8970,7 +8756,6 @@ function importDataBackup() {
         var d = JSON.parse(ev.target.result);
         if (!d.jobs) { toast('Invalid backup file'); return; }
         if (!confirm('Import will replace ALL current data. Continue?')) return;
-        // Load into memory
         if (d.jobs)            jobs            = d.jobs;
         if (d.JOURNEYS)        JOURNEYS        = d.JOURNEYS;
         if (d.STORAGE_RECORDS) STORAGE_RECORDS = d.STORAGE_RECORDS;
@@ -8986,10 +8771,18 @@ function importDataBackup() {
         if (d.SL_CONFIG)       SL_CONFIG       = d.SL_CONFIG;
         if (d.APP_SETTINGS)    APP_SETTINGS    = d.APP_SETTINGS;
         lsSave();
-        // Push everything to SharePoint
-        if (SP_ENABLED && !SP_OFFLINE) {
-          toast('Importing to SharePoint...');
-          spSaveAllToSP(function(){ toast('Import complete ✓'); renderCal(); });
+        if (DB_READY && !DB_OFFLINE) {
+          toast('Importing to Azure...');
+          var all = jobs.concat(JOURNEYS).concat(STORAGE_RECORDS).concat(bookings).concat(WH_ACTIVITIES);
+          var typeMap = {};
+          jobs.forEach(function(x){ typeMap[x.id]='job'; });
+          JOURNEYS.forEach(function(x){ typeMap[x.id]='journey'; });
+          STORAGE_RECORDS.forEach(function(x){ typeMap[x.id]='storage'; });
+          bookings.forEach(function(x){ typeMap[x.id]='booking'; });
+          WH_ACTIVITIES.forEach(function(x){ typeMap[x.id]='wh'; });
+          all.forEach(function(item){ saveData(typeMap[item.id], item.id, item); });
+          saveData('settings');
+          setTimeout(function(){ toast('Import complete ✓'); renderCal(); }, 1500);
         } else {
           toast('Import complete ✓ (offline mode)');
           renderCal();
@@ -9001,84 +8794,51 @@ function importDataBackup() {
   inp.click();
 }
 
-// Push all in-memory data up to SharePoint (used after import)
-function spSaveAllToSP(cb) {
-  var pending = 0;
-  function inc(){ pending++; }
-  function dec(){ if(--pending <= 0 && cb) cb(); }
-
-  function pushArray(listName, arr, idFn) {
-    for (var i = 0; i < arr.length; i++) {
-      inc();
-      (function(item){ spSaveItem(listName, idFn(item), item, function(){ dec(); }); })(arr[i]);
-    }
-  }
-
-  pushArray('OPS_Jobs',        jobs,            function(x){ return x.id; });
-  pushArray('OPS_Journeys',    JOURNEYS,        function(x){ return x.id; });
-  pushArray('OPS_Storage',     STORAGE_RECORDS, function(x){ return x.id; });
-  pushArray('OPS_Bookings',    bookings,        function(x){ return x.id; });
-  pushArray('OPS_WHActivities',WH_ACTIVITIES,   function(x){ return x.id; });
-  inc(); spSaveSettings(function(){ dec(); });
-
-  if (pending === 0 && cb) cb();
-}
-
 function clearData() {
-  if (!confirm('Reset ALL data to factory defaults?\n\nThis will clear both local storage AND SharePoint lists. Cannot be undone.')) return;
+  if (!confirm('Reset ALL data to factory defaults?\n\nThis will clear local storage AND Azure database. Cannot be undone.')) return;
   localStorage.removeItem(STORAGE_KEY);
-  // Clear SP lists too
-  if (SP_ENABLED && !SP_OFFLINE) {
-    toast('Clearing SharePoint data...');
-    // Simple reload after clearing localStorage — SP lists will be empty next load
-    var lists = ['OPS_Jobs','OPS_Journeys','OPS_Storage','OPS_Bookings','OPS_WHActivities','OPS_Settings'];
-    var done = 0;
-    lists.forEach(function(listName){
-      spGetAll(listName, function(err, results){
-        var del = results.length;
-        if (del === 0) { if(++done >= lists.length) location.reload(); return; }
-        var delDone = 0;
-        results.forEach(function(r){
-          spDeleteItem(listName, r.Id, function(){
-            if(++delDone >= del && ++done >= lists.length) location.reload();
-          });
-        });
+  if (DB_READY && !DB_OFFLINE) {
+    toast('Clearing database...');
+    var tables = ['OpsJobs','OpsJourneys','OpsStorage','OpsBookings','OpsWHActivities','OpsSettings'];
+    tables.forEach(function(table) {
+      apiGet(table, function(err, items) {
+        if (err || !items.length) return;
+        items.forEach(function(item) { apiDelete(table, item.rowKey || item.id); });
       });
     });
+    setTimeout(function(){ location.reload(); }, 2000);
   } else {
     location.reload();
   }
 }
 
 // ── STARTUP ──────────────────────────────────────────────────────────────
-// Show loading overlay while SP data loads
-(function(){
+(function() {
   var overlay = document.createElement('div');
-  overlay.id = 'sp-loading';
-  overlay.innerHTML = '<div style="text-align:center"><div style="font-size:28px;margin-bottom:12px">⏳</div><div style="font-weight:700;font-size:15px;color:#1C2333;margin-bottom:6px">Loading OPS Manager</div><div style="font-size:12px;color:#7A849E">Connecting to SharePoint...</div></div>';
+  overlay.id = 'db-loading';
+  overlay.innerHTML = '<div style="text-align:center"><div style="font-size:32px;margin-bottom:12px">📦</div><div style="font-weight:700;font-size:15px;color:#1C2333;margin-bottom:6px">Loading OPS Manager</div><div style="font-size:12px;color:#7A849E">Connecting to database...</div></div>';
   overlay.style.cssText = 'position:fixed;inset:0;background:#f9ecec;display:flex;align-items:center;justify-content:center;z-index:99999;font-family:Inter,sans-serif';
   document.body.appendChild(overlay);
 
-  spInit(function(err){
-    // Remove loading overlay
-    var el2 = document.getElementById('sp-loading');
+  dbInit(function() {
+    var el2 = document.getElementById('db-loading');
     if (el2) el2.parentNode.removeChild(el2);
 
-    // Re-render with loaded data
     renderCal();
     renderBkList();
     setBadge('job-badge', jobs.length);
 
-    if (SP_ENABLED && !SP_OFFLINE) {
-      setTimeout(function(){ toast('Connected to SharePoint ✓'); }, 400);
+    if (DB_READY && !DB_OFFLINE) {
+      setTimeout(function(){ toast('Connected ✓'); }, 400);
     } else {
-      setTimeout(function(){ toast('Offline mode — data from local storage'); }, 400);
+      setTimeout(function(){ toast('Offline mode — local data only'); }, 400);
     }
   });
 })();
 
 // Belt-and-suspenders: save to localStorage on unload
 window.addEventListener('beforeunload', lsSave);
+
 
 
 </script>
