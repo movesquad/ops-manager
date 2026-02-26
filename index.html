@@ -26,300 +26,254 @@ html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size
 /* ══════════════════════════════════════════════════════════════════
    SIDEBAR — Premium dark rail, Option A
    ══════════════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════
+   SIDEBAR v2 — Always expanded, bold, high-contrast
+   ══════════════════════════════════════════════════════════════════ */
 .sidebar{
-  position:fixed;top:0;left:0;bottom:0;width:64px;
-  background:#0e1320;
+  position:fixed;top:0;left:0;bottom:0;width:220px;
+  background:#111827;
   display:flex;flex-direction:column;
   z-index:200;
-  transition:width .26s cubic-bezier(.4,0,.2,1);
-  overflow:hidden;
-  border-right:1px solid rgba(255,255,255,.04);
-  box-shadow:4px 0 24px rgba(0,0,0,.18);
+  border-right:1px solid rgba(255,255,255,.06);
 }
-.sidebar:hover{width:240px}
-.sidebar:hover .sb-label{opacity:1;transform:translateX(0);max-width:160px}
-.sidebar:hover .sb-wordmark{opacity:1;transform:translateX(0)}
-.sidebar:hover .nb-badge{right:12px}
-.sidebar:hover .sb-user-info{opacity:1;transform:translateX(0)}
-.sidebar:hover .nb-tip{opacity:0!important}
-.sidebar:hover .sb-group-lbl{opacity:1;max-height:20px;margin-bottom:4px}
 
 /* Logo */
 .sb-logo{
-  height:64px;display:flex;align-items:center;
-  padding:0 16px;gap:13px;flex-shrink:0;
-  border-bottom:1px solid rgba(255,255,255,.05);
-  position:relative;
+  height:68px;display:flex;align-items:center;
+  padding:0 18px;gap:12px;flex-shrink:0;
+  border-bottom:1px solid rgba(255,255,255,.06);
 }
 .sb-icon{
-  width:32px;height:32px;flex-shrink:0;
-  background:linear-gradient(135deg,#0073EA 0%,#00a3ff 100%);
-  border-radius:9px;
+  width:36px;height:36px;flex-shrink:0;
+  background:#0073EA;
+  border-radius:10px;
   display:flex;align-items:center;justify-content:center;
-  font-weight:800;font-size:12px;color:#fff;
+  font-weight:800;font-size:13px;color:#fff;
   letter-spacing:-.5px;
-  box-shadow:0 0 0 1px rgba(0,115,234,.5), 0 0 20px rgba(0,115,234,.3);
-  position:relative;
+  flex-shrink:0;
 }
-.sb-icon::after{
-  content:'';position:absolute;inset:0;border-radius:9px;
-  background:linear-gradient(135deg,rgba(255,255,255,.2) 0%,transparent 60%);
-}
-.sb-wordmark{
-  opacity:0;transform:translateX(-8px);
-  transition:opacity .18s .06s, transform .18s .06s;
-  white-space:nowrap;overflow:hidden;
-}
+.sb-wordmark{white-space:nowrap}
 .sb-name{
-  font-weight:700;font-size:13px;color:#fff;
-  letter-spacing:.2px;line-height:1;
+  font-weight:700;font-size:14px;color:#fff;
+  letter-spacing:-.1px;line-height:1.1;
 }
 .sb-tag{
-  font-size:9.5px;color:rgba(255,255,255,.3);
-  letter-spacing:.6px;margin-top:3px;text-transform:uppercase;
+  font-size:10px;color:rgba(255,255,255,.35);
+  margin-top:3px;letter-spacing:.3px;
 }
 
 /* Nav */
 .sb-nav{
-  flex:1;padding:10px 8px 8px;
-  overflow:hidden;display:flex;flex-direction:column;gap:1px;
+  flex:1;padding:16px 10px 8px;
+  overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;gap:2px;
 }
+.sb-nav::-webkit-scrollbar{width:4px}
+.sb-nav::-webkit-scrollbar-track{background:transparent}
+.sb-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:2px}
+
 .sb-group-lbl{
-  font-size:9px;font-weight:700;letter-spacing:.8px;
-  text-transform:uppercase;color:rgba(255,255,255,.2);
-  padding:0 8px;margin-bottom:0;margin-top:8px;
-  opacity:0;max-height:0;overflow:hidden;
-  transition:opacity .15s .08s, max-height .15s .08s, margin .15s .08s;
+  font-size:10px;font-weight:700;letter-spacing:.8px;
+  text-transform:uppercase;color:rgba(255,255,255,.28);
+  padding:0 10px;margin-top:18px;margin-bottom:4px;
   white-space:nowrap;
 }
-.sb-sep{
-  height:1px;background:rgba(255,255,255,.05);
-  margin:8px 4px;
-}
+.sb-group-lbl:first-child{margin-top:0}
+.sb-sep{display:none}
 
 /* Nav buttons */
 .nb{
   position:relative;
-  display:flex;align-items:center;
-  padding:0;height:42px;border-radius:10px;
-  color:rgba(255,255,255,.38);
-  cursor:pointer;font-size:13px;font-weight:500;
+  display:flex;align-items:center;gap:10px;
+  padding:0 10px;height:40px;border-radius:8px;
+  color:rgba(255,255,255,.5);
+  cursor:pointer;font-size:13.5px;font-weight:500;
   border:none;background:none;width:100%;
   font-family:'DM Sans',sans-serif;
-  transition:background .15s, color .15s;
-  white-space:nowrap;overflow:hidden;
+  transition:background .12s, color .12s;
+  white-space:nowrap;
+  text-align:left;
 }
 .nb:hover{
-  background:rgba(255,255,255,.06);
-  color:rgba(255,255,255,.82);
+  background:rgba(255,255,255,.07);
+  color:rgba(255,255,255,.9);
 }
 .nb.on{
-  background:rgba(0,115,234,.14);
+  background:#0073EA;
   color:#fff;
+  font-weight:600;
 }
-/* Active glow bar */
-.nb.on::before{
-  content:'';position:absolute;left:0;top:7px;bottom:7px;
-  width:3px;
-  background:linear-gradient(180deg,#0073EA,#00a3ff);
-  border-radius:0 3px 3px 0;
-  box-shadow:0 0 8px rgba(0,115,234,.7);
-}
-/* Active dot glow on icon */
-.nb.on .nb-ico::after{
-  content:'';
-  position:absolute;
-  inset:8px;border-radius:50%;
-  background:rgba(0,115,234,.15);
-}
-.nb-ico{
-  width:48px;min-width:48px;height:42px;
-  display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;position:relative;
-}
-.nb svg{transition:opacity .12s, transform .15s}
-.nb svg{opacity:.4}
-.nb:hover svg{opacity:.85;transform:scale(1.08)}
 .nb.on svg{opacity:1}
-
+.nb-ico{
+  width:20px;min-width:20px;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.nb svg{opacity:.55;transition:opacity .12s}
+.nb:hover svg{opacity:.9}
 .sb-label{
-  flex:1;font-size:13px;font-weight:500;
-  opacity:0;transform:translateX(-10px);max-width:0;
-  transition:opacity .18s .06s, transform .18s .06s, max-width .18s;
-  overflow:hidden;
+  flex:1;font-size:13.5px;
+  overflow:hidden;text-overflow:ellipsis;
 }
 
 /* Badges */
 .nb-badge{
-  position:absolute;right:-6px;top:8px;
   min-width:18px;height:18px;padding:0 5px;
-  background:linear-gradient(135deg,#0073EA,#00a3ff);
-  color:#fff;font-size:9px;font-weight:700;
+  background:rgba(255,255,255,.18);
+  color:#fff;font-size:9.5px;font-weight:700;
   border-radius:9px;
   display:flex;align-items:center;justify-content:center;
-  transition:right .26s cubic-bezier(.4,0,.2,1);
-  border:2px solid #0e1320;
-  box-shadow:0 0 8px rgba(0,115,234,.4);
+  margin-left:auto;flex-shrink:0;
 }
+.nb.on .nb-badge{background:rgba(255,255,255,.25)}
 .nb-badge.hidden{display:none}
+.nb-tip{display:none}
 
-/* Tooltip (collapsed only) */
-.nb-tip{
-  position:absolute;left:62px;top:50%;transform:translateY(-50%);
-  background:#1a2235;color:#fff;font-size:11.5px;font-weight:600;
-  padding:6px 11px;border-radius:7px;white-space:nowrap;
-  pointer-events:none;opacity:0;z-index:9999;
-  box-shadow:0 4px 16px rgba(0,0,0,.35);
-  border:1px solid rgba(255,255,255,.08);
-  transition:opacity .12s;
+/* Logout button */
+.sb-logout{
+  display:flex;align-items:center;gap:10px;
+  padding:0 10px;height:40px;border-radius:8px;
+  color:rgba(255,255,255,.4);
+  cursor:pointer;font-size:13.5px;font-weight:500;
+  border:none;background:none;width:100%;
+  font-family:'DM Sans',sans-serif;
+  transition:background .12s, color .12s;
+  text-align:left;
+  margin-top:4px;
 }
-.nb-tip::before{
-  content:'';position:absolute;right:100%;top:50%;transform:translateY(-50%);
-  border:5px solid transparent;border-right-color:#1a2235;
+.sb-logout:hover{
+  background:rgba(228,66,88,.12);
+  color:#ff6b7a;
 }
-.nb:hover .nb-tip{opacity:1}
+.sb-logout svg{opacity:.5;flex-shrink:0;transition:opacity .12s}
+.sb-logout:hover svg{opacity:1}
 
 /* User footer */
 .sb-foot{
-  padding:8px;border-top:1px solid rgba(255,255,255,.05);
+  padding:10px;
+  border-top:1px solid rgba(255,255,255,.06);
   flex-shrink:0;
 }
 .sb-user{
-  display:flex;align-items:center;
-  height:48px;border-radius:10px;padding:0;
-  cursor:default;overflow:hidden;
-  transition:background .15s;
+  display:flex;align-items:center;gap:10px;
+  padding:8px 10px;border-radius:8px;
+  transition:background .12s;
 }
 .sb-user:hover{background:rgba(255,255,255,.05)}
-.sb-av{
-  width:48px;min-width:48px;height:48px;
-  display:flex;align-items:center;justify-content:center;flex-shrink:0;
-}
+.sb-av{flex-shrink:0}
 .sb-av-inner{
   width:32px;height:32px;border-radius:50%;
-  background:linear-gradient(135deg,#0073EA 0%,#00C875 100%);
+  background:linear-gradient(135deg,#0073EA,#00C875);
   display:flex;align-items:center;justify-content:center;
   font-size:11px;font-weight:700;color:#fff;
-  box-shadow:0 0 0 2px rgba(0,115,234,.3);
 }
-.sb-user-info{
-  opacity:0;transform:translateX(-8px);
-  transition:opacity .15s .06s, transform .15s .06s;
-  white-space:nowrap;overflow:hidden;
+.sb-user-info{overflow:hidden;min-width:0}
+.sb-uname{
+  font-size:13px;font-weight:600;color:#fff;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  line-height:1.2;
 }
-.sb-uname{font-size:12.5px;font-weight:600;color:#fff;line-height:1.2}
-.sb-urole{font-size:10px;color:rgba(255,255,255,.3);margin-top:2px;letter-spacing:.2px}
+.sb-urole{
+  font-size:10.5px;color:rgba(255,255,255,.35);
+  margin-top:2px;white-space:nowrap;
+}
 
 /* ══════════════════════════════════════════════════════════════════
-   MAIN LAYOUT
+   MAIN LAYOUT — account for wider sidebar
    ══════════════════════════════════════════════════════════════════ */
 .main{
-  margin-left:64px;height:100vh;
+  margin-left:220px;height:100vh;
   display:flex;flex-direction:column;
   overflow:hidden;
-  transition:margin-left .26s cubic-bezier(.4,0,.2,1);
 }
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.page{display:none;flex:1;overflow:hidden;flex-direction:column}
+.page.on{display:flex}
 .topbar{
   height:54px;background:var(--w);
   border-bottom:1px solid var(--b1);
   display:flex;align-items:center;
   padding:0 20px;gap:10px;flex-shrink:0;
-  box-shadow:0 1px 0 var(--b1);
 }
 .tb-title{
   font-weight:700;font-size:15px;color:var(--t1);
-  letter-spacing:-.2px;
+  letter-spacing:-.2px;flex-shrink:0;
 }
-.content{flex:1;overflow:hidden;display:flex;flex-direction:column}
-.page{display:none;flex:1;overflow:hidden;flex-direction:column}
-.page.on{display:flex}
+
+/* Topbar greeting */
+.tb-greeting{
+  font-size:13px;font-weight:500;color:var(--t3);
+  white-space:nowrap;flex-shrink:0;
+  padding:0 4px;
+}
+.tb-greeting strong{color:var(--t1);font-weight:700}
 
 /* ══════════════════════════════════════════════════════════════════
-   MOBILE — bottom tab bar + responsive layout
+   MOBILE — bottom tab bar
    ══════════════════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
   .sidebar{display:none!important}
-
-  .main{
-    margin-left:0!important;
-    height:100vh;
-    padding-bottom:64px; /* space for bottom nav */
-  }
-
-  /* Mobile top bar */
-  .topbar{
-    height:52px;padding:0 16px;
-    position:sticky;top:0;z-index:100;
-  }
-  .tb-title{font-size:14px}
-
-  /* Bottom nav bar */
-  .mobile-nav{
-    display:flex;
-    position:fixed;bottom:0;left:0;right:0;
-    height:64px;
-    background:#0e1320;
-    border-top:1px solid rgba(255,255,255,.07);
-    z-index:300;
-    padding:0 4px;
-    padding-bottom:env(safe-area-inset-bottom);
-    box-shadow:0 -4px 20px rgba(0,0,0,.2);
-  }
-  .mn-btn{
-    flex:1;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:4px;
-    color:rgba(255,255,255,.35);
-    background:none;border:none;cursor:pointer;
-    font-family:'DM Sans',sans-serif;
-    font-size:10px;font-weight:500;
-    border-radius:10px;margin:6px 2px;
-    transition:background .15s, color .15s;
-    position:relative;
-  }
-  .mn-btn:active{background:rgba(255,255,255,.08)}
-  .mn-btn.on{color:#fff}
-  .mn-btn.on svg{opacity:1}
-  .mn-btn.on::before{
-    content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
-    width:24px;height:2.5px;
-    background:linear-gradient(90deg,#0073EA,#00a3ff);
-    border-radius:0 0 3px 3px;
-    box-shadow:0 0 8px rgba(0,115,234,.6);
-  }
-  .mn-btn svg{opacity:.4;transition:opacity .15s}
-  .mn-btn span{line-height:1}
-
-  /* Mobile badge on bottom nav */
-  .mn-badge{
-    position:absolute;top:6px;right:calc(50% - 18px);
-    min-width:16px;height:16px;padding:0 4px;
-    background:#0073EA;color:#fff;
-    font-size:8px;font-weight:700;border-radius:8px;
-    display:flex;align-items:center;justify-content:center;
-    border:2px solid #0e1320;
-  }
-  .mn-badge.hidden{display:none}
-
-  /* Full-width content on mobile */
+  .main{margin-left:0!important;padding-bottom:64px}
+  .topbar{height:52px;padding:0 14px}
+  .tb-greeting{display:none}
   .content{overflow-y:auto;overflow-x:hidden}
   .page.on{overflow-y:auto}
-
-  /* vtabs scroll on mobile */
   .vtabs{overflow-x:auto;flex-shrink:0;-webkit-overflow-scrolling:touch}
   .vtabs::-webkit-scrollbar{display:none}
-
-  /* Hide some topbar elements on small screens */
   .cnav, .divider{display:none}
   .topbar .btn{font-size:12px;padding:5px 10px}
-
-  /* Search bar full width on mobile */
   #search-wrap{max-width:100%!important;flex:1}
+  .kpi-grid{grid-template-columns:1fr 1fr!important;gap:10px!important}
+  .kpi-card{padding:12px 14px!important}
+  .kpi-val{font-size:22px!important}
+  .fin-stats{grid-template-columns:1fr 1fr!important;gap:10px!important}
+  .panel{width:100%!important;border-radius:0!important;border-left:none!important}
+  .modal-box,.cfg-modal-box{width:100%!important;max-width:100%!important;margin:0!important;border-radius:16px 16px 0 0!important;position:fixed!important;bottom:0!important;max-height:90vh!important}
+  .modal-backdrop,.cfg-backdrop{align-items:flex-end!important}
+  .vt[onclick*="twoweek"]{display:none!important}
+  .stabs{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .stabs::-webkit-scrollbar{display:none}
+  .sc-table,table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .bk-layout{flex-direction:column!important}
+  .bk-sidebar{width:100%!important;max-width:100%!important;border-right:none!important;border-bottom:1px solid var(--b1)!important;max-height:40vh!important}
 }
+@media (min-width:769px){.mobile-nav{display:none}}
 
-/* Hide mobile nav on desktop */
-@media (min-width: 769px) {
-  .mobile-nav{display:none}
+/* Mobile bottom nav */
+.mobile-nav{
+  display:flex;position:fixed;bottom:0;left:0;right:0;
+  height:64px;background:#111827;
+  border-top:1px solid rgba(255,255,255,.08);
+  z-index:300;padding:0 4px;
+  padding-bottom:env(safe-area-inset-bottom);
 }
+.mn-btn{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:4px;
+  color:rgba(255,255,255,.35);
+  background:none;border:none;cursor:pointer;
+  font-family:'DM Sans',sans-serif;
+  font-size:10px;font-weight:500;
+  border-radius:10px;margin:6px 2px;
+  transition:color .15s;position:relative;
+}
+.mn-btn.on{color:#fff}
+.mn-btn.on svg{opacity:1}
+.mn-btn.on::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
+  width:28px;height:3px;background:#0073EA;border-radius:0 0 3px 3px;
+}
+.mn-btn svg{opacity:.4;transition:opacity .15s}
+.mn-btn span{line-height:1}
+.mn-badge{
+  position:absolute;top:5px;right:calc(50% - 20px);
+  min-width:16px;height:16px;padding:0 4px;
+  background:#0073EA;color:#fff;
+  font-size:8px;font-weight:700;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  border:2px solid #111827;
+}
+.mn-badge.hidden{display:none}
 
 
 /* TOPBAR */
@@ -1228,81 +1182,58 @@ textarea.fi{resize:vertical;min-height:60px}
   </div>
 
   <nav class="sb-nav">
-    <!-- Operations group -->
     <div class="sb-group-lbl">Operations</div>
+
     <button class="nb on" id="nb-dashboard" onclick="showMod('dashboard',this)">
-      <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-      </div>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
       <span class="sb-label">Dashboard</span>
-      <span class="nb-tip">Dashboard</span>
     </button>
+
     <button class="nb" id="nb-calendar" onclick="showMod('calendar',this)">
-      <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-      </div>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
       <span class="sb-label">Job Calendar</span>
       <span class="nb-badge hidden" id="job-badge">0</span>
-      <span class="nb-tip">Job Calendar</span>
     </button>
+
     <button class="nb" id="nb-bookings" onclick="showMod('bookings',this)">
-      <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      </div>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
       <span class="sb-label">Booking Manager</span>
       <span class="nb-badge hidden" id="bk-badge">0</span>
-      <span class="nb-tip">Bookings</span>
     </button>
+
     <button class="nb" id="nb-crew" onclick="showMod('crew',this)">
-      <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg>
-      </div>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg></div>
       <span class="sb-label">Crew Scheduler</span>
-      <span class="nb-tip">Crew</span>
     </button>
+
     <button class="nb" id="nb-warehouse" onclick="showMod('warehouse',this)">
-      <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      </div>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
       <span class="sb-label">Warehouse</span>
       <span class="nb-badge hidden" id="wh-badge">0</span>
-      <span class="nb-tip">Warehouse</span>
     </button>
 
-    <div class="sb-sep"></div>
-
-    <!-- Finance group -->
     <div class="sb-group-lbl">Finance</div>
+
     <button class="nb" id="nb-finance" onclick="showMod('finance',this)">
-      <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-      </div>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
       <span class="sb-label">Finance &amp; Billing</span>
-      <span class="nb-tip">Finance</span>
     </button>
+
     <button class="nb" id="nb-storage" onclick="showMod('storage',this)">
-      <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
-      </div>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg></div>
       <span class="sb-label">Storage</span>
       <span class="nb-badge hidden" id="storage-badge">0</span>
-      <span class="nb-tip">Storage</span>
     </button>
 
-    <div class="sb-sep"></div>
-
-    <!-- System group -->
     <div class="sb-group-lbl">System</div>
+
     <button class="nb" id="nb-settings" onclick="showMod('settings',this)">
-      <div class="nb-ico">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
-      </div>
+      <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
       <span class="sb-label">Settings</span>
-      <span class="nb-tip">Settings</span>
     </button>
   </nav>
 
-  <!-- User footer -->
+  <!-- User + Logout footer -->
   <div class="sb-foot">
     <div class="sb-user">
       <div class="sb-av"><div class="sb-av-inner" id="sb-av-initials">OM</div></div>
@@ -1311,8 +1242,14 @@ textarea.fi{resize:vertical;min-height:60px}
         <div class="sb-urole" id="sb-urole-display">Administrator</div>
       </div>
     </div>
+    <button class="sb-logout" onclick="window.location.href='/.auth/logout'">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span>Sign Out</span>
+    </button>
   </div>
 </aside>
+
+
 
 <div class="main">
   <div class="topbar">
@@ -1340,6 +1277,7 @@ textarea.fi{resize:vertical;min-height:60px}
       <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:.4;pointer-events:none" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <div id="search-drop" style="display:none;position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--b1);border-radius:8px;box-shadow:var(--shm);z-index:500;max-height:320px;overflow-y:auto"></div>
     </div>
+    <div class="tb-greeting" id="tb-greeting"></div>
     <div class="tb-r">
       <button class="btn btn-s btn-sm" onclick="doExport()">&#8595; Export</button>
       <button class="btn btn-p btn-sm" onclick="openNew(null)">+ New Job</button>
@@ -10664,6 +10602,8 @@ function clearData() {
     setBadge('job-badge', jobs.length);
     // Re-check driver lock now that CREW data is loaded
     if (window._authEmail) checkDriverLock();
+    // Set greeting even if no auth (dev/fallback)
+    if (!window._authName) updateGreeting('');
 
     if (DB_READY && !DB_OFFLINE) {
       setTimeout(function(){ toast('Connected ✓'); }, 400);
@@ -10838,8 +10778,25 @@ function updateSidebarUser(name, role) {
       ? parts[0][0] + parts[parts.length-1][0]
       : name.slice(0,2).toUpperCase();
   }
+  updateGreeting(name);
 }
 
+
+// ── TOPBAR GREETING ──────────────────────────────────────────────────
+function updateGreeting(name) {
+  var el2 = document.getElementById('tb-greeting');
+  if (!el2) return;
+  var h = new Date().getHours();
+  var salutation = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  var firstName = (name || '').split(' ')[0] || '';
+  // Strip email domain if it's an email address
+  if (firstName.indexOf('@') >= 0) firstName = firstName.split('@')[0];
+  // Capitalise first letter
+  firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  el2.innerHTML = firstName
+    ? salutation + ', <strong>' + firstName + '</strong>'
+    : salutation;
+}
 </script>
 
   <!-- Survey Modal -->
