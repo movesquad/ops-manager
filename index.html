@@ -5192,14 +5192,14 @@ function parseEmail() {
     })
   })
   .then(function(r) {
-    if(!r.ok) throw new Error('API error: '+r.status);
-    return r.json();
+    return r.text().then(function(txt){ return {ok:r.ok, status:r.status, txt:txt}; });
   })
-  .then(function(data) {
+  .then(function(res) {
     btn.innerHTML = '&#10003; Extract Details';
     btn.disabled = false;
+    if(!res.ok){ toast('Parser error '+res.status+': '+res.txt.slice(0,120)); return; }
+    var data; try{ data=JSON.parse(res.txt); }catch(e){ toast('Bad response: '+res.txt.slice(0,120)); return; }
     var raw = (data.content && data.content[0] && data.content[0].text) || '';
-    // Strip any markdown fences
     raw = raw.replace(/```json|```/g, '').trim();
     var parsed;
     try { parsed = JSON.parse(raw); } catch(e) { toast('Could not parse response — check email text'); return; }
@@ -5228,7 +5228,8 @@ function parseEmail() {
   .catch(function(e) {
     btn.innerHTML = '&#10003; Extract Details';
     btn.disabled = false;
-    toast('API error — check console');
+    toast('Error: ' + (e && e.message ? e.message : String(e)));
+    console.error('parseEmail error:', e);
   });
 }
 
@@ -5671,12 +5672,13 @@ function cfgParseEmail() {
     body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
   })
   .then(function(r){
-    if(!r.ok) throw new Error('API error: '+r.status);
-    return r.json();
+    return r.text().then(function(txt){ return {ok:r.ok, status:r.status, txt:txt}; });
   })
-  .then(function(data){
+  .then(function(res){
     btn.innerHTML = '&#10003; Extract Details';
     btn.disabled = false;
+    if(!res.ok){ toast('Parser error '+res.status+': '+res.txt.slice(0,120)); return; }
+    var data; try{ data=JSON.parse(res.txt); }catch(e){ toast('Bad response: '+res.txt.slice(0,120)); return; }
     var raw = ((data.content||[])[0]||{}).text || '';
     raw = raw.replace(/```json|```/g,'').trim();
     var parsed;
@@ -5693,7 +5695,7 @@ function cfgParseEmail() {
     cfgRenderStage(); // re-render to show chips
     toast('Details extracted — review the highlighted fields');
   })
-  .catch(function(){ btn.innerHTML='&#10003; Extract Details'; btn.disabled=false; toast('API error'); });
+  .catch(function(err){ btn.innerHTML='&#10003; Extract Details'; btn.disabled=false; toast('Error: '+(err&&err.message?err.message:String(err))); console.error('CFG parser error:',err); });
 }
 
 function cfgChipEdit(chipEl, key) {
@@ -8981,12 +8983,13 @@ function whParseEmail() {
       })
     })
     .then(function(r){
-      if(!r.ok) throw new Error('API error: '+r.status);
-      return r.json();
+      return r.text().then(function(txt){ return {ok:r.ok, status:r.status, txt:txt}; });
     })
-    .then(function(data) {
+    .then(function(res) {
       btn.innerHTML = '✦ Extract Details';
       btn.disabled = false;
+      if(!res.ok){ toast('Parser error '+res.status+': '+res.txt.slice(0,120)); return; }
+      var data; try{ data=JSON.parse(res.txt); }catch(e){ toast('Bad response: '+res.txt.slice(0,120)); return; }
       var raw = ((data.content||[])[0]||{}).text || '';
       raw = raw.replace(/```json|```/g,'').trim();
       var parsed;
@@ -8997,7 +9000,8 @@ function whParseEmail() {
     .catch(function(err) {
       btn.innerHTML = '✦ Extract Details';
       btn.disabled = false;
-      toast('API error — check connection');
+      toast('Error: ' + (err && err.message ? err.message : String(err)));
+      console.error('WH parser error:', err);
     });
   });
 }
@@ -10537,6 +10541,30 @@ function driverMarkComplete(jobId) {
   toast('Job marked as Complete');
 }
 
+
+// ── API DIAGNOSTIC ──────────────────────────────────────────────────
+function testClaudeApi() {
+  toast('Testing /api/claude...');
+  fetch('/api/claude', {
+    method: 'POST',
+    credentials: 'include',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 20,
+      messages: [{role: 'user', content: 'Say OK'}]
+    })
+  })
+  .then(function(r) {
+    var status = r.status;
+    return r.text().then(function(txt) {
+      alert('Status: ' + status + '\n\nResponse:\n' + txt.slice(0, 400));
+    });
+  })
+  .catch(function(err) {
+    alert('FETCH FAILED: ' + err.message + '\n\nThis usually means the /api/claude function does not exist or returned a network error.');
+  });
+}
 </script>
 
   <!-- Survey Modal -->

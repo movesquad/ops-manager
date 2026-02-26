@@ -1,7 +1,7 @@
 const https = require('https');
 
 module.exports = async function (context, req) {
-  context.log('Claude proxy called, method:', req.method);
+  context.log('Claude proxy called');
 
   if (req.method !== 'POST') {
     context.res = { status: 405, body: 'Method not allowed' };
@@ -11,11 +11,10 @@ module.exports = async function (context, req) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     context.log.error('ANTHROPIC_API_KEY not set');
-    context.res = { status: 500, body: 'ANTHROPIC_API_KEY environment variable not configured' };
+    context.res = { status: 500, body: 'ANTHROPIC_API_KEY not configured in Azure' };
     return;
   }
 
-  // Validate request body
   const payload = req.body;
   if (!payload || !payload.messages) {
     context.res = { status: 400, body: 'Missing messages in request body' };
@@ -23,7 +22,6 @@ module.exports = async function (context, req) {
   }
 
   const bodyStr = JSON.stringify(payload);
-  context.log('Sending to Anthropic, model:', payload.model);
 
   try {
     const result = await new Promise((resolve, reject) => {
@@ -43,19 +41,19 @@ module.exports = async function (context, req) {
         let data = '';
         res.on('data', chunk => { data += chunk; });
         res.on('end', () => {
-          context.log('Anthropic responded with status:', res.statusCode);
+          context.log('Anthropic status:', res.statusCode);
           resolve({ status: res.statusCode, body: data });
         });
       });
 
       req.on('error', (e) => {
-        context.log.error('HTTPS request error:', e.message);
+        context.log.error('Request error:', e.message);
         reject(e);
       });
 
       req.setTimeout(30000, () => {
         req.destroy();
-        reject(new Error('Request timed out'));
+        reject(new Error('Timed out'));
       });
 
       req.write(bodyStr);
@@ -70,9 +68,6 @@ module.exports = async function (context, req) {
 
   } catch (err) {
     context.log.error('Proxy error:', err.message);
-    context.res = {
-      status: 502,
-      body: 'Proxy error: ' + err.message
-    };
+    context.res = { status: 502, body: 'Proxy error: ' + err.message };
   }
 };
