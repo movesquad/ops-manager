@@ -5181,8 +5181,9 @@ function parseEmail() {
     '{"clientName":string,"clientEmail":string,"clientPhone":string,"startDate":"YYYY-MM-DD or null","endDate":"YYYY-MM-DD or null","origin":string,"dest":string,"volume":number_or_null,"cbm":number_or_null,"notes":string,"billing":[{"item":string,"amt":number}]}\n\n' +
     'EMAIL:\n' + text;
 
-  fetch('https://api.anthropic.com/v1/messages', {
+  fetch('/api/claude', {
     method: 'POST',
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
@@ -5190,7 +5191,10 @@ function parseEmail() {
       messages: [{ role: 'user', content: prompt }]
     })
   })
-  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if(!r.ok) throw new Error('API error: '+r.status);
+    return r.json();
+  })
   .then(function(data) {
     btn.innerHTML = '&#10003; Extract Details';
     btn.disabled = false;
@@ -5660,19 +5664,23 @@ function cfgParseEmail() {
 
   var prompt = 'Extract booking details from this email. Return ONLY valid JSON with these keys (use null for missing). Be conservative — only mark a field as confirmed if it is explicit. Add a "_conf" object with confidence: "confirmed" (explicit in email) or "assumed" (inferred) for each found field.\n\n{"clientName":str,"clientEmail":str,"clientPhone":str,"startDate":"YYYY-MM-DD or null","endDate":"YYYY-MM-DD or null","origin":str,"dest":str,"volume":number,"cbm":number,"notes":str,"_conf":{"clientName":"confirmed|assumed",...}}\n\nEMAIL:\n' + text;
 
-  fetch('https://api.anthropic.com/v1/messages', {
+  fetch('/api/claude', {
     method:'POST',
+    credentials:'include',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
   })
-  .then(function(r){return r.json();})
+  .then(function(r){
+    if(!r.ok) throw new Error('API error: '+r.status);
+    return r.json();
+  })
   .then(function(data){
     btn.innerHTML = '&#10003; Extract Details';
     btn.disabled = false;
     var raw = ((data.content||[])[0]||{}).text || '';
     raw = raw.replace(/```json|```/g,'').trim();
     var parsed;
-    try { parsed = JSON.parse(raw); } catch(e) { toast('Could not parse AI response'); return; }
+    try { parsed = JSON.parse(raw); } catch(e) { toast('Could not parse AI response — check API key in Azure settings'); return; }
     CFG.aiParsed = parsed;
     // Pre-fill CFG fields
     if (parsed.clientName) CFG.clientName = parsed.clientName;
@@ -8962,8 +8970,9 @@ function whParseEmail() {
     var brandList = BRANDS.join(', ');
     var prompt = 'You are a warehouse operations assistant. Extract movement details from this email.\n\nReturn ONLY valid JSON, no markdown, no explanation:\n{\n  "direction": "in" | "out" | "unknown",\n  "client": string | null,\n  "date": "YYYY-MM-DD" | null,\n  "volume": number | null,\n  "storageMethod": "container" | "air" | "lcl" | "pallet" | "loose" | null,\n  "containerQty": number | null,\n  "carrier": string | null,\n  "ref": string | null,\n  "brand": one of [' + brandList + '] | null,\n  "eventualDest": string | null,\n  "notes": string | null,\n  "_conf": { "<key>": "confirmed" | "assumed" }\n}\n\nRules:\n- storageMethod: "container" if it says wooden containers or just containers; "air" if air shipment or air cases; "lcl" if LCL or less-container-load; "pallet" if pallets; "loose" if loose/oversized/furniture.\n- direction: "in" if arriving/delivering/inbound; "out" if collecting/outbound/delivery.\n- eventualDest: extract any final destination address, town, city, or postcode mentioned (where the goods will ultimately be delivered). Set null if not mentioned.\n- Only mark confirmed if explicit, assumed if inferred.\n\nEMAIL:\n' + text;
 
-    fetch('https://api.anthropic.com/v1/messages', {
+    fetch('/api/claude', {
       method: 'POST',
+      credentials: 'include',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
@@ -8971,14 +8980,17 @@ function whParseEmail() {
         messages: [{role:'user', content: prompt}]
       })
     })
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if(!r.ok) throw new Error('API error: '+r.status);
+      return r.json();
+    })
     .then(function(data) {
       btn.innerHTML = '✦ Extract Details';
       btn.disabled = false;
       var raw = ((data.content||[])[0]||{}).text || '';
       raw = raw.replace(/```json|```/g,'').trim();
       var parsed;
-      try { parsed = JSON.parse(raw); } catch(e) { toast('Could not parse AI response — try again'); return; }
+      try { parsed = JSON.parse(raw); } catch(e) { toast('Could not parse AI response — check API key in Azure settings'); return; }
       _whParsed = parsed;
       whRenderParseResult(parsed);
     })
