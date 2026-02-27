@@ -3460,9 +3460,31 @@ function renderSettingsCosting() {
   h += '<div class="cos-field" style="grid-column:span 2"><div class="cos-lbl">Google Maps API Key</div>';
   h += '<input class="sc-input" id="cos-maps-key" type="password" value="'+esc(APP_SETTINGS.googleMapsKey)+'" placeholder="AIzaSy…">';
   h += '<div class="cos-desc">Required for address autocomplete, map views, and mileage calculation. Get your key at console.cloud.google.com</div></div>';
-  h += '<div class="cos-field"><div class="cos-lbl">Warehouse / Depot Address</div>';
-  h += '<input class="sc-input" id="cos-wh-addr" value="'+esc(APP_SETTINGS.warehouseAddress)+'" placeholder="Full address or postcode">';
-  h += '<div class="cos-desc">Used as return journey end point for daily mileage calculations</div></div>';
+  // Warehouse locations manager
+  h += '<div class="cos-field">';
+  h += '<div class="cos-lbl">Warehouse &amp; Depot Locations</div>';
+  h += '<div class="cos-desc" style="margin-bottom:10px">Define all warehouse locations. The default is used for mileage calculations and auto-fill on storage jobs.</div>';
+  h += '<div id="wh-list" style="margin-bottom:8px">';
+  for (var _wi = 0; _wi < WAREHOUSES.length; _wi++) {
+    var _wh = WAREHOUSES[_wi];
+    h += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;padding:8px 10px;background:var(--s1);border-radius:7px;border:1px solid var(--b1)">';
+    h += '<div style="flex:1;min-width:0">';
+    h += '<input class="sc-input" id="wh-name-'+_wi+'" value="'+esc(_wh.name)+'" placeholder="Location name (e.g. Main Warehouse)" style="margin-bottom:4px">';
+    h += '<input class="sc-input addr-input" id="wh-addr-'+_wi+'" value="'+esc(_wh.address)+'" placeholder="Full address or postcode">';
+    h += '</div>';
+    h += '<div style="display:flex;flex-direction:column;gap:4px;align-items:center;flex-shrink:0">';
+    h += '<label style="font-size:10px;color:var(--t3);white-space:nowrap">Default</label>';
+    h += '<input type="radio" name="wh-default" value="'+_wi+'"'+(_wh.isDefault?' checked':'')+' onchange="whSetDefault('+_wi+')" style="width:16px;height:16px;cursor:pointer">';
+    h += '</div>';
+    if (WAREHOUSES.length > 1) {
+      h += '<button class="btn btn-g btn-sm" onclick="whRemove('+_wi+')" style="flex-shrink:0;color:var(--red)">&#10005;</button>';
+    }
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '<button class="btn btn-s btn-sm" onclick="whAdd()">+ Add Location</button>';
+  h += '<button class="btn btn-p btn-sm" onclick="whSave()" style="margin-left:8px">Save Locations</button>';
+  h += '</div>';
   h += '<div class="cos-field"><div class="cos-lbl">Auto-add Return Leg</div>';
   h += '<select class="sc-input" id="cos-return-leg">';
   h += '<option value="1"'+(APP_SETTINGS.returnMileage?' selected':'')+'>Yes — add return to depot mileage</option>';
@@ -3505,17 +3527,18 @@ function renderSettingsCosting() {
 
 function saveCosting() {
   APP_SETTINGS.googleMapsKey    = (el('cos-maps-key')||{}).value||'';
-  APP_SETTINGS.warehouseAddress = (el('cos-wh-addr')||{}).value||APP_SETTINGS.warehouseAddress;
   APP_SETTINGS.returnMileage    = (el('cos-return-leg')||{}).value === '1';
   APP_SETTINGS.cosPerCrewPerDay = parseFloat((el('cos-per-crew')||{}).value)||125;
   APP_SETTINGS.fuelPricePerLitre= parseFloat((el('cos-fuel-price')||{}).value)||1.49;
-  // Re-init maps if key changed
+  // Sync legacy single address with default warehouse
+  var _defWh = getDefaultWarehouse();
+  if (_defWh) APP_SETTINGS.warehouseAddress = _defWh.address;
   if (APP_SETTINGS.googleMapsKey) loadGoogleMapsAPI();
-  toast('Cost of Sale & Maps settings saved'); saveData('settings');
+  toast('Cost of Sale & Maps settings saved');
+  saveData('settings');
   renderSettings();
 }
 
-// ── RESOURCE COST HELPERS ─────────────────────────────────────────────
 function bkVehicleCost(bk) {
   var dur=Math.max(1,Math.round((s2d(bk.endDate)-s2d(bk.startDate))/864e5)+1);
   return (bk.vehicles||[]).reduce(function(s,bv){
@@ -4578,11 +4601,14 @@ var SL_CONFIG = {
 // ── App-wide cost of sale + maps settings ─────────────────────────────
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
-  warehouseAddress: 'WN7 3EQ',    // Full address / postcode of warehouse
+  warehouseAddress: 'WN7 3EQ',    // Legacy single warehouse address (kept for compatibility)
   cosPerCrewPerDay: 125,           // £ generic COS per crew member per day
   returnMileage:    true,          // Auto-add return-to-warehouse leg
   fuelPricePerLitre:1.49,         // Pence per litre (for reference / display)
 };
+var WAREHOUSES = [
+  { id: 'WH1', name: 'Main Warehouse', address: 'WN7 3EQ', isDefault: true }
+];
 
 // ── VEHICLES ──────────────────────────────────────────────────────────
 var VEHICLES = [
@@ -5664,6 +5690,7 @@ function cfgEmptyJob() {
     containersToRemove: [],    // container numbers being delivered out
     billing: [],
     ref: '',
+    warehouseId: '',   // linked warehouse for auto-fill
   };
 }
 
@@ -5768,32 +5795,8 @@ function cfgPostRender() {
   if (cfgStage === 1) {
     // Wire address autocomplete on all job card origin/dest inputs
     setTimeout(function() {
-      for (var _ji = 0; _ji < CFG.jobs.length; _ji++) {
-        (function(ji) {
-          var origEl = document.getElementById('jcfg-origin-' + ji);
-          var destEl = document.getElementById('jcfg-dest-' + ji);
-          if (origEl && !origEl._addrBound) {
-            bindAddressField(origEl, {
-              onSelect: function(val) {
-                CFG.jobs[ji].origin = val;
-                // Also try to detect country from address for Job ID
-                var cc = countryToCode(val);
-                if (cc && cc !== 'XX' && (!CFG.originCountry || CFG.originCountry === 'XX')) {
-                  CFG.originCountry = cc;
-                }
-              }
-            });
-          }
-          if (destEl && !destEl._addrBound) {
-            bindAddressField(destEl, {
-              showDist: true,
-              fromFn: function() {
-                return (origEl ? origEl.value.trim() : '') || APP_SETTINGS.warehouseAddress || '';
-              },
-              onSelect: function(val) { CFG.jobs[ji].dest = val; }
-            });
-          }
-        })(_ji);
+      for (var _ji2 = 0; _ji2 < CFG.jobs.length; _ji2++) {
+        cfgBindJobAddressFields(_ji2);
       }
     }, 80);
   }
@@ -6053,13 +6056,57 @@ function cfgRenderJobCard(ji, jb) {
   }
   h += '</div>';
 
-  // Addresses
+  // Addresses — dynamic based on job type
   h += '<hr style="border:none;border-top:1px solid #ede9e0;margin:12px 0">';
   h += '<div class="cs-sub-label">Route</div>';
+  h += '<div class="jcfg-route-section">';
+  var _ac = getAddrConfig(jb.jobType);
+  var _whId = jb.warehouseId || '';
+  var _defWh = getDefaultWarehouse();
+  var _defWhAddr = _defWh ? _defWh.address : (APP_SETTINGS.warehouseAddress || '');
+  var _defWhName = _defWh ? _defWh.name : 'Warehouse';
+
   h += '<div class="jcfg-row col2">';
-  h += cfgField('Origin Address *', 'jcfg-origin-'+ji, jb.origin, 'text', 'Full address or postcode');
-  h += cfgField('Destination Address *', 'jcfg-dest-'+ji, jb.dest, 'text', 'Full address or postcode');
+
+  // ORIGIN field
+  if (_ac && _ac.originRole === 'warehouse') {
+    // Auto-filled from warehouse, read-only — but show warehouse selector
+    h += '<div class="cfg-field">';
+    h += '<label class="cfg-label">'+esc(_ac.originLabel || 'Origin')+'</label>';
+    if (WAREHOUSES.length > 1) {
+      h += '<select class="cfg-input" id="jcfg-wh-orig-'+ji+'" onchange="cfgSetWarehouse('+ji+',\'orig\',this.value)">' + whSelectOptions(_whId) + '</select>';
+    }
+    h += '<input class="cfg-input" id="jcfg-origin-'+ji+'" value="'+esc(jb.origin || _defWhAddr)+'" readonly style="background:var(--s2);color:var(--t3);cursor:default;margin-top:4px" placeholder="'+esc(_defWhAddr)+'">';
+    h += '<div style="font-size:10px;color:var(--blue);margin-top:3px">&#10003; Auto-filled from ' + esc(_defWhName) + '</div>';
+    h += '</div>';
+  } else if (_ac && _ac.originRole === 'port') {
+    h += cfgField(_ac.originLabel || 'Origin Port / Depot', 'jcfg-origin-'+ji, jb.origin, 'text', 'Port, airport or depot address');
+  } else {
+    h += cfgField((_ac ? _ac.originLabel : 'Origin Address') || 'Origin Address *', 'jcfg-origin-'+ji, jb.origin, 'text', 'Full address or postcode');
+  }
+
+  // DESTINATION field
+  if (_ac && _ac.destRole === 'warehouse') {
+    h += '<div class="cfg-field">';
+    h += '<label class="cfg-label">'+esc(_ac.destLabel || 'Destination')+'</label>';
+    if (WAREHOUSES.length > 1) {
+      h += '<select class="cfg-input" id="jcfg-wh-dest-'+ji+'" onchange="cfgSetWarehouse('+ji+',\'dest\',this.value)">' + whSelectOptions(_whId) + '</select>';
+    }
+    h += '<input class="cfg-input" id="jcfg-dest-'+ji+'" value="'+esc(jb.dest || _defWhAddr)+'" readonly style="background:var(--s2);color:var(--t3);cursor:default;margin-top:4px" placeholder="'+esc(_defWhAddr)+'">';
+    h += '<div style="font-size:10px;color:var(--blue);margin-top:3px">&#10003; Auto-filled from ' + esc(_defWhName) + '</div>';
+    h += '</div>';
+  } else if (_ac && _ac.destRole === 'port') {
+    h += cfgField(_ac.destLabel || 'Destination Port / Depot', 'jcfg-dest-'+ji, jb.dest, 'text', 'Port, airport or depot address');
+  } else {
+    h += cfgField((_ac ? _ac.destLabel : 'Destination Address') || 'Destination Address *', 'jcfg-dest-'+ji, jb.dest, 'text', 'Full address or postcode');
+  }
+
   h += '</div>';
+  // Hint when no job type selected yet
+  if (!jb.jobType) {
+    h += '<div style="font-size:11px;color:var(--t3);margin-top:6px">&#8505; Select a job type above to configure origin and destination fields.</div>';
+  }
+  h += '</div>'; // close jcfg-route-section
 
   // Destination type
   h += '<div class="cs-sub-label">Where does this job\'s goods go?</div>';
@@ -6442,11 +6489,29 @@ function cfgCollectJobs() {
 
 function cfgSetJobType(ji, tileEl, type) {
   CFG.jobs[ji].jobType = type;
+
   // Auto-suggest storage direction based on job type
   var autoDir = cfgStorageDirection(type);
   if (autoDir && CFG.jobs[ji].storageRequired) {
     CFG.jobs[ji].storageDirection = autoDir;
   }
+
+  // Auto-fill warehouse address based on job type address config
+  var ac = getAddrConfig(type);
+  var defWh = getDefaultWarehouse();
+  var defWhAddr = defWh ? defWh.address : (APP_SETTINGS.warehouseAddress || '');
+  if (ac) {
+    if (ac.originRole === 'warehouse') {
+      CFG.jobs[ji].origin = defWhAddr;
+      CFG.jobs[ji].warehouseId = defWh ? defWh.id : '';
+    }
+    if (ac.destRole === 'warehouse') {
+      CFG.jobs[ji].dest = defWhAddr;
+      CFG.jobs[ji].warehouseId = defWh ? defWh.id : '';
+    }
+  }
+
+  // Re-render the address section only (not whole card, avoid losing focus)
   var card = el('jcfg-' + ji);
   if (card) {
     var tiles = card.querySelectorAll('.jtype-tile');
@@ -6454,6 +6519,88 @@ function cfgSetJobType(ji, tileEl, type) {
     tileEl.classList.add('sel');
     var lbl = card.querySelector('.jcfg-label');
     if (lbl) lbl.textContent = type;
+
+    // Re-render the route section to reflect new address roles
+    var routeSection = card.querySelector('.jcfg-route-section');
+    if (routeSection) {
+      var _ac = getAddrConfig(type);
+      var _defWh = getDefaultWarehouse();
+      var _defWhAddr = _defWh ? _defWh.address : (APP_SETTINGS.warehouseAddress || '');
+      var _defWhName = _defWh ? _defWh.name : 'Warehouse';
+      var _whId = CFG.jobs[ji].warehouseId || '';
+      var newRouteHtml = buildRouteHtml(ji, CFG.jobs[ji], _ac, _whId, _defWhAddr, _defWhName);
+      routeSection.innerHTML = newRouteHtml;
+      // Rebind address fields
+      setTimeout(function() { cfgBindJobAddressFields(ji); }, 80);
+    }
+  }
+}
+
+function cfgSetWarehouse(ji, role, whId) {
+  var wh = WAREHOUSES.filter(function(w){ return w.id === whId; })[0];
+  if (!wh) return;
+  CFG.jobs[ji].warehouseId = whId;
+  if (role === 'orig') {
+    CFG.jobs[ji].origin = wh.address;
+    var inp = el('jcfg-origin-' + ji);
+    if (inp) inp.value = wh.address;
+  } else {
+    CFG.jobs[ji].dest = wh.address;
+    var inp2 = el('jcfg-dest-' + ji);
+    if (inp2) inp2.value = wh.address;
+  }
+}
+
+function buildRouteHtml(ji, jb, _ac, _whId, _defWhAddr, _defWhName) {
+  var h = '';
+  // Origin
+  if (_ac && _ac.originRole === 'warehouse') {
+    h += '<div class="cfg-field">';
+    h += '<label class="cfg-label">' + esc(_ac.originLabel || 'Origin') + '</label>';
+    if (WAREHOUSES.length > 1) {
+      h += '<select class="cfg-input" onchange="cfgSetWarehouse(' + ji + ',\'orig\',this.value)">' + whSelectOptions(_whId) + '</select>';
+    }
+    h += '<input class="cfg-input" id="jcfg-origin-' + ji + '" value="' + esc(jb.origin || _defWhAddr) + '" readonly style="background:var(--s2);color:var(--t3);cursor:default;margin-top:4px">';
+    h += '<div style="font-size:10px;color:var(--blue);margin-top:3px">&#10003; Auto-filled from ' + esc(_defWhName) + '</div>';
+    h += '</div>';
+  } else if (_ac && _ac.originRole === 'port') {
+    h += '<div class="cfg-field"><label class="cfg-label">' + esc(_ac.originLabel || 'Origin Port / Depot') + '</label>';
+    h += '<input class="cfg-input" id="jcfg-origin-' + ji + '" value="' + esc(jb.origin || '') + '" placeholder="Port, airport or depot address"></div>';
+  } else {
+    h += '<div class="cfg-field"><label class="cfg-label">' + esc((_ac && _ac.originLabel) || 'Origin Address *') + '</label>';
+    h += '<input class="cfg-input" id="jcfg-origin-' + ji + '" value="' + esc(jb.origin || '') + '" placeholder="Full address or postcode"></div>';
+  }
+  // Destination
+  if (_ac && _ac.destRole === 'warehouse') {
+    h += '<div class="cfg-field">';
+    h += '<label class="cfg-label">' + esc(_ac.destLabel || 'Destination') + '</label>';
+    if (WAREHOUSES.length > 1) {
+      h += '<select class="cfg-input" onchange="cfgSetWarehouse(' + ji + ',\'dest\',this.value)">' + whSelectOptions(_whId) + '</select>';
+    }
+    h += '<input class="cfg-input" id="jcfg-dest-' + ji + '" value="' + esc(jb.dest || _defWhAddr) + '" readonly style="background:var(--s2);color:var(--t3);cursor:default;margin-top:4px">';
+    h += '<div style="font-size:10px;color:var(--blue);margin-top:3px">&#10003; Auto-filled from ' + esc(_defWhName) + '</div>';
+    h += '</div>';
+  } else if (_ac && _ac.destRole === 'port') {
+    h += '<div class="cfg-field"><label class="cfg-label">' + esc(_ac.destLabel || 'Destination Port / Depot') + '</label>';
+    h += '<input class="cfg-input" id="jcfg-dest-' + ji + '" value="' + esc(jb.dest || '') + '" placeholder="Port, airport or depot address"></div>';
+  } else {
+    h += '<div class="cfg-field"><label class="cfg-label">' + esc((_ac && _ac.destLabel) || 'Destination Address *') + '</label>';
+    h += '<input class="cfg-input" id="jcfg-dest-' + ji + '" value="' + esc(jb.dest || '') + '" placeholder="Full address or postcode"></div>';
+  }
+  return h;
+}
+
+function cfgBindJobAddressFields(ji) {
+  var origEl = document.getElementById('jcfg-origin-' + ji);
+  var destEl = document.getElementById('jcfg-dest-' + ji);
+  if (origEl && !origEl.readOnly && !origEl._addrBound) {
+    bindAddressField(origEl);
+  }
+  if (destEl && !destEl.readOnly && !destEl._addrBound) {
+    bindAddressField(destEl, {
+      showDist: true,
+      fromFn: function() { return (origEl ? origEl.value.trim() : '') || APP_SETTINGS.warehouseAddress || ''; }
+    });
   }
 }
 
@@ -10228,7 +10375,7 @@ function lsSave() {
       CLIENT_JOBS:CLIENT_JOBS,
       CREW:CREW, HOL:HOL, VEHICLES:VEHICLES, MATERIALS:MATERIALS,
       CHARGES:CHARGES, MOVE_MANAGERS:MOVE_MANAGERS, BRAND_DATA:BRAND_DATA,
-      SL_CONFIG:SL_CONFIG, APP_SETTINGS:APP_SETTINGS,
+      SL_CONFIG:SL_CONFIG, APP_SETTINGS:APP_SETTINGS, WAREHOUSES:WAREHOUSES,
       _saved: new Date().toISOString()
     }));
   } catch(e) {}
@@ -10245,6 +10392,7 @@ function lsLoad() {
     if (d.WH_ACTIVITIES)   WH_ACTIVITIES   = d.WH_ACTIVITIES;
     if (d.bookings)        bookings        = d.bookings;
     if (d.CLIENT_JOBS)     CLIENT_JOBS     = d.CLIENT_JOBS;
+    if (d.WAREHOUSES)      WAREHOUSES      = d.WAREHOUSES;
     if (d.CREW)            CREW            = d.CREW;
     if (d.HOL)             HOL             = d.HOL;
     if (d.VEHICLES)        VEHICLES        = d.VEHICLES;
@@ -10426,6 +10574,7 @@ function _doDbInit(cb) {
             if (APP_SETTINGS.googleMapsKey) loadGoogleMapsAPI();
             if (APP_SETTINGS.jobCounter) JOB_COUNTER = APP_SETTINGS.jobCounter;
           }
+          if (s.WAREHOUSES && s.WAREHOUSES.length) WAREHOUSES = s.WAREHOUSES;
         }
       }
       done();
@@ -10462,7 +10611,8 @@ function saveData(type, id, obj) {
       id: 'APP_SETTINGS_V1',
       CREW:CREW, HOL:HOL, VEHICLES:VEHICLES, MATERIALS:MATERIALS,
       CHARGES:CHARGES, MOVE_MANAGERS:MOVE_MANAGERS, BRAND_DATA:BRAND_DATA,
-      SL_CONFIG:SL_CONFIG, APP_SETTINGS:APP_SETTINGS
+      SL_CONFIG:SL_CONFIG, APP_SETTINGS:APP_SETTINGS,
+      WAREHOUSES:WAREHOUSES
     };
     apiPost(TABLE_MAP.settings, settings);
     return;
@@ -10518,6 +10668,7 @@ function importDataBackup() {
         if (d.WH_ACTIVITIES)   WH_ACTIVITIES   = d.WH_ACTIVITIES;
         if (d.bookings)        bookings        = d.bookings;
     if (d.CLIENT_JOBS)     CLIENT_JOBS     = d.CLIENT_JOBS;
+    if (d.WAREHOUSES)      WAREHOUSES      = d.WAREHOUSES;
         if (d.CREW)            CREW            = d.CREW;
         if (d.HOL)             HOL             = d.HOL;
         if (d.VEHICLES)        VEHICLES        = d.VEHICLES;
@@ -11469,6 +11620,124 @@ function deleteClientJob(id) {
   renderClientJobsList();
   lsSave();
   toast('Client record deleted');
+}
+
+
+// ── WAREHOUSE MANAGEMENT ─────────────────────────────────────────────────
+
+function getDefaultWarehouse() {
+  return WAREHOUSES.filter(function(w){ return w.isDefault; })[0] || WAREHOUSES[0] || null;
+}
+
+function getWarehouseAddress(id) {
+  if (!id) return (getDefaultWarehouse() || {}).address || APP_SETTINGS.warehouseAddress || '';
+  var wh = WAREHOUSES.filter(function(w){ return w.id === id; })[0];
+  return wh ? wh.address : (getDefaultWarehouse() || {}).address || '';
+}
+
+function whAdd() {
+  WAREHOUSES.push({
+    id: 'WH' + Date.now(),
+    name: '',
+    address: '',
+    isDefault: WAREHOUSES.length === 0
+  });
+  renderSettings();
+}
+
+function whRemove(idx) {
+  if (WAREHOUSES.length <= 1) { toast('Must keep at least one warehouse location'); return; }
+  var wasDefault = WAREHOUSES[idx].isDefault;
+  WAREHOUSES.splice(idx, 1);
+  if (wasDefault && WAREHOUSES.length) WAREHOUSES[0].isDefault = true;
+  renderSettings();
+}
+
+function whSetDefault(idx) {
+  WAREHOUSES.forEach(function(w, i){ w.isDefault = (i === idx); });
+}
+
+function whSave() {
+  // Read values from form
+  WAREHOUSES.forEach(function(wh, i) {
+    var nameEl = el('wh-name-' + i);
+    var addrEl = el('wh-addr-' + i);
+    if (nameEl) wh.name    = nameEl.value.trim() || wh.name;
+    if (addrEl) wh.address = addrEl.value.trim() || wh.address;
+  });
+  // Sync legacy warehouseAddress
+  var defWh = getDefaultWarehouse();
+  if (defWh) APP_SETTINGS.warehouseAddress = defWh.address;
+  saveData('settings');
+  toast('Warehouse locations saved');
+  renderSettings();
+}
+
+// Wire address autocomplete on warehouse inputs after settings render
+(function(){
+  var _origRenderCosting = window.renderSettingsCosting || null;
+  // We patch renderSettings to also bind warehouse address inputs
+  var _origRS = renderSettings;
+  renderSettings = function() {
+    _origRS();
+    setTimeout(function() {
+      for (var _i = 0; _i < WAREHOUSES.length; _i++) {
+        (function(i) {
+          var addrEl = document.getElementById('wh-addr-' + i);
+          if (addrEl && !addrEl._addrBound) bindAddressField(addrEl);
+        })(_i);
+      }
+    }, 100);
+  };
+})();
+
+
+// ── JOB TYPE ADDRESS CONFIGURATION ──────────────────────────────────────
+// Defines which address fields to show, their labels, and auto-fill behaviour
+// 'property' = user enters client/site address
+// 'warehouse' = auto-filled from selected warehouse (read-only)
+// 'both'      = user enters both
+// 'port'      = user enters port/depot address
+var JOB_ADDR_CONFIG = {
+  'Origin Sea Pack':     { originRole:'property', destRole:'port',
+                           originLabel:'Collection Address', destLabel:'Port / Depot' },
+  'Origin Air Pack':     { originRole:'property', destRole:'port',
+                           originLabel:'Collection Address', destLabel:'Airport / Depot' },
+  'Origin Road Pack':    { originRole:'property', destRole:'port',
+                           originLabel:'Collection Address', destLabel:'Groupage Hub / Port' },
+  'Destination Services':{ originRole:'port',     destRole:'property',
+                           originLabel:'Port / Depot or Origin', destLabel:'Delivery Address' },
+  'Ex Store Delivery':   { originRole:'warehouse', destRole:'property',
+                           originLabel:'Warehouse (auto-filled)', destLabel:'Delivery Address' },
+  'Int Store Handling':  { originRole:'property',  destRole:'warehouse',
+                           originLabel:'Collection Address', destLabel:'Warehouse (auto-filled)' },
+  'Blanket Wrap':        { originRole:'property',  destRole:'property',
+                           originLabel:'Property Address', destLabel:'Destination (if different)' },
+  'Debris Removal':      { originRole:'property',  destRole:'warehouse',
+                           originLabel:'Collection Address', destLabel:'Disposal / Warehouse' },
+  'Handling Only':       { originRole:'property',  destRole:'property',
+                           originLabel:'Origin Address', destLabel:'Destination Address' },
+  'Consolidation':       { originRole:'property',  destRole:'port',
+                           originLabel:'Collection Address', destLabel:'Consolidation Hub' },
+  'Door to Door':        { originRole:'property',  destRole:'property',
+                           originLabel:'Origin Address', destLabel:'Destination Address' },
+  'Other':               { originRole:'property',  destRole:'property',
+                           originLabel:'Origin Address', destLabel:'Destination Address' }
+};
+
+function getAddrConfig(jobType) {
+  return JOB_ADDR_CONFIG[jobType] || JOB_ADDR_CONFIG['Other'];
+}
+
+// Get warehouse options as HTML for a select
+function whSelectOptions(selectedId) {
+  var h = '';
+  WAREHOUSES.forEach(function(wh) {
+    h += '<option value="' + esc(wh.id) + '"' + (wh.id === selectedId ? ' selected' : '') +
+         (wh.isDefault && !selectedId ? ' selected' : '') + '>' + esc(wh.name) +
+         (wh.isDefault ? ' (default)' : '') + '</option>';
+  });
+  return h;
 }
 
 </script>
