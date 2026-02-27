@@ -1167,6 +1167,25 @@ textarea.fi{resize:vertical;min-height:60px}
   /* Search — full width on mobile */
   .search-container{width:100%!important}
 }
+
+/* ── NEW FLOW: Route tiles ────────────────────────────────────── */
+.route-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.route-tile{border:2px solid #E3E7F0;border-radius:10px;padding:14px;cursor:pointer;transition:all .15s;background:#fff;position:relative}
+.route-tile:hover{border-color:var(--rt-accent,#0073EA);background:var(--rt-bg,#EBF4FF);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.route-tile.sel{border-color:var(--rt-accent,#0073EA);background:var(--rt-bg,#EBF4FF);box-shadow:0 0 0 3px color-mix(in srgb,var(--rt-accent,#0073EA) 15%,transparent)}
+.route-tile-icon{font-size:24px;margin-bottom:6px;display:block}
+.route-tile-label{font-size:13px;font-weight:700;color:#1A2035;margin-bottom:3px}
+.route-tile-sub{font-size:11px;color:#7A849E;line-height:1.4}
+.route-tile-check{position:absolute;top:10px;right:10px;width:20px;height:20px;border-radius:50%;background:var(--rt-accent,#0073EA);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:700}
+/* Storage picker */
+.sto-pick-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid #E3E7F0;border-radius:8px;margin-bottom:6px;cursor:pointer;transition:all .12s;background:#fff}
+.sto-pick-row:hover{border-color:#0073EA;background:#F0F7FF}
+.sto-pick-row.sel{border-color:#0073EA;background:#EBF4FF}
+.sto-pick-main{flex:1;min-width:0}
+.sto-pick-name{font-size:13px;font-weight:700;color:#1A2035}
+.sto-pick-meta{font-size:11px;color:#7A849E;margin-top:2px}
+.sto-pick-check{font-size:11px;font-weight:700;color:#0073EA;white-space:nowrap}
+.sto-pick-brand{flex-shrink:0}
 </style>
 <body>
 
@@ -1399,11 +1418,11 @@ textarea.fi{resize:vertical;min-height:60px}
   <div class="cfg-stages" id="cfg-stages">
     <div class="cfg-stage active" id="cstage-0" onclick="cfgGoStage(0)">
       <div class="cfg-stage-num">1</div>
-      <div class="cfg-stage-lbl">Client</div>
+      <div class="cfg-stage-lbl">Route</div>
     </div>
     <div class="cfg-stage" id="cstage-1" onclick="cfgGoStage(1)">
       <div class="cfg-stage-num">2</div>
-      <div class="cfg-stage-lbl">Jobs</div>
+      <div class="cfg-stage-lbl">Brief</div>
     </div>
     <div class="cfg-stage" id="cstage-2" onclick="cfgGoStage(2)">
       <div class="cfg-stage-num">3</div>
@@ -1411,11 +1430,7 @@ textarea.fi{resize:vertical;min-height:60px}
     </div>
     <div class="cfg-stage" id="cstage-3" onclick="cfgGoStage(3)">
       <div class="cfg-stage-num">4</div>
-      <div class="cfg-stage-lbl">Resources</div>
-    </div>
-    <div class="cfg-stage" id="cstage-4" onclick="cfgGoStage(4)">
-      <div class="cfg-stage-num">5</div>
-      <div class="cfg-stage-lbl">Ops Plan</div>
+      <div class="cfg-stage-lbl">Confirm</div>
     </div>
   </div>
   <div class="cfg-body" id="cfg-body"></div>
@@ -5615,7 +5630,7 @@ function sendEmail(id, subject) {
 var CFG = null;
 var cfgStage = 0;
 var cfgMatrixOffset = 0; // weeks offset for availability calendar
-var CFG_STAGES = 5;
+var CFG_STAGES = 4;
 
 function cfgEmpty() {
   return {
@@ -5627,6 +5642,7 @@ function cfgEmpty() {
     clientName: '', clientEmail: '', clientPhone: '',
     clientRef: '',
     status: 'Draft', // Draft | Provisional | Confirmed
+    route: '', // 'origin' | 'destination' | 'd2d' | 'storage'
     // Array of job configs — each becomes a separate calendar job
     jobs: [cfgEmptyJob()],
     // Schedule
@@ -5736,7 +5752,7 @@ function cfgUpdateNav() {
   if (back) back.style.display = cfgStage > 0 ? '' : 'none';
   // Next button
   var nxt = el('cfg-btn-next');
-  if (nxt) nxt.textContent = cfgStage === CFG_STAGES - 1 ? '&#10003; Create Jobs' : 'Next \u2192';
+  if (nxt) nxt.innerHTML = cfgStage === CFG_STAGES - 1 ? '&#10003;&nbsp;Create Jobs' : 'Next &rarr;';
 }
 
 function cfgGoStage(n) {
@@ -5751,10 +5767,10 @@ function cfgGoStage(n) {
 
 function cfgNext() {
   cfgCollectStage();
-  if (cfgStage === CFG_STAGES - 1) {
-    cfgCommit();
-    return;
-  }
+  if (cfgStage === 0 && !CFG.route) { toast('Select a route type to continue'); return; }
+  if (cfgStage === 1 && !CFG.clientName.trim()) { toast('Enter a client name to continue'); return; }
+  if (cfgStage === 1 && !CFG.jobs[0].jobType) { toast('Select a job type to continue'); return; }
+  if (cfgStage === CFG_STAGES - 1) { cfgCommit(); return; }
   cfgStage++;
   cfgRenderStage();
   cfgUpdateNav();
@@ -5772,28 +5788,32 @@ function cfgBack() {
 }
 
 function cfgCollectStage() {
-  if (cfgStage === 0) cfgCollectClient();
-  if (cfgStage === 1) cfgCollectJobs();
-  if (cfgStage === 2) cfgCollectSchedule();
-  if (cfgStage === 3) cfgCollectResources();
-  if (cfgStage === 4) cfgCollectOps();
+  if (cfgStage === 0) cfgCollectRoute();
+  if (cfgStage === 1) cfgCollectBrief();
+  if (cfgStage === 2) cfgCollectScheduleAndTeam();
+  if (cfgStage === 3) cfgCollectConfirm();
 }
+
+// Shim old collect functions so cfgCommit internals still work
+function cfgCollectClient() { cfgCollectBrief(); }
+function cfgCollectJobs()   { cfgCollectBrief(); }
+function cfgCollectSchedule() { cfgCollectScheduleAndTeam(); }
+function cfgCollectResources() { cfgCollectConfirm(); }
+function cfgCollectOps() { cfgCollectConfirm(); }
 
 function cfgRenderStage() {
   var h = '';
-  if (cfgStage === 0) h = cfgRenderClient();
-  if (cfgStage === 1) h = cfgRenderJobs();
-  if (cfgStage === 2) h = cfgRenderSchedule();
-  if (cfgStage === 3) h = cfgRenderResources();
-  if (cfgStage === 4) h = cfgRenderOps();
-  el('cfg-body').innerHTML = h;
+  if (cfgStage === 0) h = cfgRenderRoute();
+  if (cfgStage === 1) h = cfgRenderBrief();
+  if (cfgStage === 2) h = cfgRenderScheduleAndTeam();
+  if (cfgStage === 3) h = cfgRenderConfirm();
+  setH('cfg-body', h);
   cfgPostRender();
 }
 
 function cfgPostRender() {
   if (cfgStage === 2) cfgBuildMatrix();
   if (cfgStage === 1) {
-    // Wire address autocomplete on all job card origin/dest inputs
     setTimeout(function() {
       for (var _ji2 = 0; _ji2 < CFG.jobs.length; _ji2++) {
         cfgBindJobAddressFields(_ji2);
@@ -5952,7 +5972,7 @@ function cfgParseEmail() {
     if (parsed.origin && CFG.jobs.length) CFG.jobs[0].origin = parsed.origin;
     if (parsed.dest && CFG.jobs.length) CFG.jobs[0].dest = parsed.dest;
     cfgRenderStage(); // re-render to show chips
-    toast('Details extracted — review the highlighted fields');
+    toast('Details extracted — review highlighted fields, then click Next');
   })
   .catch(function(err){ btn.innerHTML='&#10003; Extract Details'; btn.disabled=false; toast('Error: '+(err&&err.message?err.message:String(err))); console.error('CFG parser error:',err); });
 }
@@ -7411,8 +7431,8 @@ function cfgSaveDraft() {
 // ── COMMIT: Write configurator state → jobs[] and bookings[] ──────────
 function cfgCommit() {
   cfgCollectStage();
-  if (!CFG.clientName.trim()) { toast('Client name is required'); cfgGoStage(0); return; }
-  if (!CFG.jobs[0].jobType) { toast('Select a job type on the Jobs stage'); cfgGoStage(1); return; }
+  if (!CFG.clientName.trim()) { toast('Client name is required'); cfgGoStage(1); return; }
+  if (!CFG.jobs[0].jobType) { toast('Select a job type on the Brief stage'); cfgGoStage(1); return; }
 
   // Create journey if needed
   var journeyId = null;
@@ -11505,7 +11525,7 @@ function addMovementToJob(clientJobId) {
   CFG.moveManager   = cj.moveManager;
   CFG.originCountry = cj.originCountry;
   CFG.status        = 'Provisional'; // not Draft — ensures it saves to Azure and goes on calendar
-  cfgStage = 1; // skip to jobs stage — client details already filled
+  cfgStage = 1; // skip to Brief stage — client details already filled from master record
   el('cfg-head-ref').textContent = cj.masterJobId;
   el('cfg-head-title').textContent = 'Add Movement — ' + cj.clientName;
   el('cfg-backdrop').classList.add('on');
@@ -11825,3 +11845,739 @@ function whSelectOptions(selectedId) {
       <div style="flex:1;overflow:auto;padding:20px" id="dashboard-body"></div>
     </div>
     
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// NEW 4-STAGE BOOKING FLOW — STAGE RENDER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── ROUTE TYPES ──────────────────────────────────────────────────────────
+var ROUTE_TYPES = [
+  {
+    key: 'origin',
+    icon: '📦',
+    label: 'Origin Job',
+    sub: 'Packing & collection at client property — sea, air, road or storage in',
+    color: '#EBF4FF',
+    accent: '#0073EA',
+    jobTypes: ['Origin Sea Pack','Origin Air Pack','Origin Road Pack','Int Store Handling','Blanket Wrap','Debris Removal','Handling Only','Consolidation','Other']
+  },
+  {
+    key: 'destination',
+    icon: '🏠',
+    label: 'Destination Job',
+    sub: 'Delivery & unpack at client property — from port, airport or third party',
+    color: '#E6FFF5',
+    accent: '#00C875',
+    jobTypes: ['Destination Services','Blanket Wrap','Debris Removal','Handling Only','Other']
+  },
+  {
+    key: 'd2d',
+    icon: '🔄',
+    label: 'Door to Door',
+    sub: 'Full service origin to destination — domestic, commercial or international',
+    color: '#F5EEFF',
+    accent: '#9B59B6',
+    jobTypes: ['Door to Door','Domestic','Other']
+  },
+  {
+    key: 'storage',
+    icon: '🏭',
+    label: 'From Storage',
+    sub: 'Delivery out of our warehouse — select a client currently in storage',
+    color: '#FFF5E0',
+    accent: '#FF9F1A',
+    jobTypes: ['Ex Store Delivery','Destination Services','Other']
+  }
+];
+
+// ── STAGE 1: ROUTE ────────────────────────────────────────────────────────
+function cfgRenderRoute() {
+  var h = '';
+
+  // Route selector card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">🧭</div>';
+  h += '<div><div class="cs-card-title">What kind of job is this?</div>';
+  h += '<div class="cs-card-sub">Select a route — this determines which fields and options appear on the next stage</div></div></div>';
+  h += '<div class="cs-body">';
+  h += '<div class="route-grid">';
+  for (var ri = 0; ri < ROUTE_TYPES.length; ri++) {
+    var rt = ROUTE_TYPES[ri];
+    var sel = CFG.route === rt.key;
+    h += '<div class="route-tile' + (sel ? ' sel' : '') + '" onclick="cfgSetRoute(\'' + rt.key + '\',this)" style="--rt-accent:' + rt.accent + ';--rt-bg:' + rt.color + '">';
+    h += '<div class="route-tile-icon">' + rt.icon + '</div>';
+    h += '<div class="route-tile-label">' + rt.label + '</div>';
+    h += '<div class="route-tile-sub">' + rt.sub + '</div>';
+    if (sel) h += '<div class="route-tile-check">✓</div>';
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '</div></div>';
+
+  // AI Parser card — always visible on Stage 1
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">🤖</div>';
+  h += '<div><div class="cs-card-title">AI Email Parser</div>';
+  h += '<div class="cs-card-sub">Paste any email or instruction — Claude extracts all details instantly</div></div></div>';
+  h += '<div class="cs-body">';
+  h += '<textarea class="cfg-input" id="cfg-email-paste" rows="4" placeholder="Paste booking email, instruction sheet, or any message here...\n\ne.g. Please confirm the following move:\nClient: John Smith\nOrigin: 14 High Street, Leeds, LS1 3CD..." style="resize:vertical;min-height:80px">' + esc(CFG.sourceEmail || '') + '</textarea>';
+  h += '<div style="display:flex;gap:7px;margin-top:8px">';
+  h += '<button class="btn btn-p btn-sm" id="cfg-parse-btn" onclick="cfgParseEmail()"><span id="cfg-parse-spin"></span>✓ Extract Details</button>';
+  h += '<button class="btn btn-s btn-sm" onclick="el(\'cfg-email-paste\').value=\'\'">Clear</button>';
+  h += '</div>';
+  // AI parse results chips
+  if (CFG.aiParsed) {
+    h += '<div style="margin-top:14px;border-top:1px solid #ede9e0;padding-top:12px">';
+    h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#7A849E;margin-bottom:10px">✓ Extracted — Review & confirm (amber = assumed)</div>';
+    var ap = CFG.aiParsed;
+    var fields = [['Client Name','clientName'],['Email','clientEmail'],['Phone','clientPhone'],['Start Date','startDate'],['Origin','origin'],['Destination','dest'],['Volume','volume'],['Notes','notes']];
+    for (var fi = 0; fi < fields.length; fi++) {
+      var lbl = fields[fi][0], key = fields[fi][1];
+      var val = ap[key];
+      var conf = ap._conf && ap._conf[key] ? ap._conf[key] : (val ? 'assumed' : 'missing');
+      h += '<div class="ai-field-row">';
+      h += '<div class="ai-field-lbl">' + lbl + '</div>';
+      if (val) {
+        h += '<span class="ai-chip ' + conf + '" onclick="cfgChipEdit(this,\'' + key + '\')" title="Click to edit">' + esc(String(val).substring(0,40)) + ' <span style="opacity:.6;font-size:10px">✎</span></span>';
+        h += '<input class="ai-edit-input" id="aied-' + key + '" style="display:none" value="' + esc(String(val)) + '" onblur="cfgChipConfirm(this,\'' + key + '\')" onkeydown="if(event.key===\'Enter\')cfgChipConfirm(this,\'' + key + '\')">';
+      } else {
+        h += '<span class="ai-chip missing">✗ Not found</span>';
+        h += '<input class="ai-edit-input" id="aied-' + key + '" placeholder="Enter manually..." style="display:none" onblur="cfgChipConfirm(this,\'' + key + '\')" onkeydown="if(event.key===\'Enter\')cfgChipConfirm(this,\'' + key + '\')">';
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  h += '</div></div>';
+
+  return h;
+}
+
+function cfgSetRoute(key, tileEl) {
+  CFG.route = key;
+  var rt = ROUTE_TYPES.filter(function(r){ return r.key === key; })[0];
+  // Auto-set job type if route only has one real option
+  if (rt && rt.jobTypes.length === 1) {
+    CFG.jobs[0].jobType = rt.jobTypes[0];
+  }
+  // Storage route: auto-set storage direction on job
+  if (key === 'storage') {
+    CFG.jobs[0].storageRequired = true;
+    CFG.jobs[0].storageDirection = 'out';
+    CFG.jobs[0].jobType = CFG.jobs[0].jobType || 'Ex Store Delivery';
+  }
+  // D2D: default to Door to Door
+  if (key === 'd2d') {
+    CFG.jobs[0].jobType = CFG.jobs[0].jobType || 'Door to Door';
+  }
+  document.querySelectorAll('.route-tile').forEach(function(t){ t.classList.remove('sel'); t.querySelector('.route-tile-check') && t.querySelector('.route-tile-check').remove(); });
+  if (tileEl) {
+    tileEl.classList.add('sel');
+    if (!tileEl.querySelector('.route-tile-check')) {
+      var chk = document.createElement('div');
+      chk.className = 'route-tile-check';
+      chk.textContent = '✓';
+      tileEl.appendChild(chk);
+    }
+  }
+  CFG.route = key;
+}
+
+function cfgCollectRoute() {
+  // Route is set directly by cfgSetRoute — nothing to collect from DOM
+  // But save email parser text
+  CFG.sourceEmail = (el('cfg-email-paste') || {}).value || CFG.sourceEmail;
+}
+
+// ── STAGE 2: BRIEF ────────────────────────────────────────────────────────
+function cfgRenderBrief() {
+  var h = '';
+  var rt = ROUTE_TYPES.filter(function(r){ return r.key === CFG.route; })[0];
+  var routeJobTypes = rt ? rt.jobTypes : JOB_TYPES.map(function(j){ return j.type; });
+
+  // Storage route — show live storage records to pick from
+  if (CFG.route === 'storage') {
+    h += cfgRenderStoragePicker();
+  }
+
+  // Job type card — filtered to route
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:' + (rt ? rt.color : '#EBF4FF') + '">' + (rt ? rt.icon : '📋') + '</div>';
+  h += '<div><div class="cs-card-title">Job Type</div>';
+  h += '<div class="cs-card-sub">' + (rt ? rt.label + ' — ' + rt.sub : 'Select type') + '</div></div></div>';
+  h += '<div class="cs-body">';
+  h += '<div class="jtype-grid">';
+  for (var ti = 0; ti < JOB_TYPES.length; ti++) {
+    var jt = JOB_TYPES[ti];
+    if (routeJobTypes.indexOf(jt.type) < 0) continue;
+    h += '<div class="jtype-tile' + (CFG.jobs[0].jobType === jt.type ? ' sel' : '') + '" onclick="cfgSetJobType(0,this,\'' + jt.type.replace(/'/g,"\\'") + '\')">';
+    h += '<span class="jtype-icon">' + jt.icon + '</span>';
+    h += '<div class="jtype-lbl">' + jt.type + '</div>';
+    h += '<div class="jtype-sub">' + jt.sub + '</div>';
+    h += '</div>';
+  }
+  h += '</div></div></div>';
+
+  // Addresses card — smart based on job type + route
+  if (CFG.route !== 'storage') {
+    h += cfgRenderBriefAddresses();
+  }
+
+  // Volume card
+  var jb = CFG.jobs[0];
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">📐</div>';
+  h += '<div class="cs-card-title">Volume</div></div>';
+  h += '<div class="cs-body">';
+  h += '<div class="vol-row">';
+  h += '<input class="cfg-input" id="jcfg-vol-0" type="number" value="' + esc(jb.volFt || '') + '" min="0" placeholder="0" style="width:140px">';
+  h += '<button class="vol-unit-btn' + (jb.volUnit !== 'cbm' ? ' sel' : '') + '" onclick="cfgSetVolUnit(0,\'ft\',this)">ft³</button>';
+  h += '<button class="vol-unit-btn' + (jb.volUnit === 'cbm' ? ' sel' : '') + '" onclick="cfgSetVolUnit(0,\'cbm\',this)">CBM</button>';
+  h += '</div></div></div>';
+
+  // Client details card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">👤</div>';
+  h += '<div class="cs-card-title">Client Details</div></div>';
+  h += '<div class="cs-body">';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  h += cfgField('Client Name *', 'cfg-client', CFG.clientName, 'text', 'Full name or company');
+  h += cfgField('Client Email', 'cfg-cemail', CFG.clientEmail, 'email', 'client@example.com');
+  h += cfgField('Client Phone', 'cfg-cphone', CFG.clientPhone, 'text', '07700 000 000');
+  h += cfgField('Client Reference', 'cfg-cref', CFG.clientRef, 'text', 'e.g. GBH-12345 (optional)');
+  h += '</div></div></div>';
+
+  // Brand & admin card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#F5EEFF">🏢</div>';
+  h += '<div class="cs-card-title">Brand &amp; Admin</div></div>';
+  h += '<div class="cs-body">';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  h += '<div class="cfg-field"><label class="cfg-label">Brand</label><select class="cfg-input cfg-select" id="cfg-brand">';
+  for (var bi = 0; bi < BRANDS.length; bi++) h += '<option' + (CFG.brand === BRANDS[bi] ? ' selected' : '') + '>' + BRANDS[bi] + '</option>';
+  h += '</select></div>';
+  h += '<div class="cfg-field"><label class="cfg-label">Channel</label><select class="cfg-input cfg-select" id="cfg-channel">';
+  ['Partner','Account','Domestic'].forEach(function(c){ h += '<option' + (CFG.channel === c ? ' selected' : '') + '>' + c + '</option>'; });
+  h += '</select></div>';
+  h += '<div class="cfg-field"><label class="cfg-label">Move Manager</label><select class="cfg-input cfg-select" id="cfg-mm">';
+  h += '<option value="">— None —</option>';
+  for (var mi = 0; mi < MOVE_MANAGERS.length; mi++) h += '<option value="' + esc(MOVE_MANAGERS[mi].name) + '"' + (CFG.moveManager === MOVE_MANAGERS[mi].name ? ' selected' : '') + '>' + esc(MOVE_MANAGERS[mi].name) + ' (' + esc(MOVE_MANAGERS[mi].brand) + ')</option>';
+  h += '</select></div>';
+  // Origin country
+  h += '<div class="cfg-field"><label class="cfg-label">Origin Country</label>';
+  h += '<input class="cfg-input" id="cfg-origin-country" value="' + esc(CFG.originCountry || 'XX') + '" placeholder="UK, US, FR or full name" style="text-transform:uppercase" oninput="cfgPreviewJobId()">';
+  h += '</div>';
+  h += '</div>';
+  // Job ID preview
+  var _previewType = CFG.jobs[0].jobType || 'Door to Door';
+  var _previewCC   = CFG.originCountry || 'XX';
+  h += '<div style="margin-top:10px;padding:8px 12px;background:var(--blt);border-radius:6px;border:1px solid rgba(0,115,234,.2);font-family:monospace;font-size:12px;font-weight:700;color:var(--blue)" id="cfg-jobid-preview">';
+  h += esc(countryToCode(_previewCC)) + '-' + esc(jobTypeCode(_previewType)) + '-XXXXXXX';
+  h += '</div>';
+  h += '</div></div>';
+
+  // Multi-job option (if not storage)
+  if (CFG.route !== 'storage') {
+    h += '<div class="cs-card">';
+    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#f0efe9">➕</div>';
+    h += '<div><div class="cs-card-title">Additional Job Components</div>';
+    h += '<div class="cs-card-sub">e.g. a sea pack AND an air pack on the same move</div></div></div>';
+    h += '<div class="cs-body">';
+    if (CFG.jobs.length > 1) {
+      for (var ji = 1; ji < CFG.jobs.length; ji++) {
+        h += cfgRenderJobCard(ji, CFG.jobs[ji]);
+      }
+    }
+    h += '<button class="btn btn-s btn-sm" style="width:100%" onclick="cfgAddJob()">+ Add Another Job Component</button>';
+    h += '</div></div>';
+  }
+
+  return h;
+}
+
+function cfgRenderBriefAddresses() {
+  var jb = CFG.jobs[0];
+  var _ac = getAddrConfig(jb.jobType);
+  var _defWh = getDefaultWarehouse();
+  var _defWhAddr = _defWh ? _defWh.address : (APP_SETTINGS.warehouseAddress || '');
+  var _defWhName = _defWh ? _defWh.name : 'Warehouse';
+  var _whId = jb.warehouseId || '';
+
+  var h = '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📍</div>';
+  h += '<div class="cs-card-title">Route Addresses</div>';
+  if (!jb.jobType) {
+    h += '<div class="cs-card-sub" style="color:var(--amber)">Select a job type above first</div>';
+  }
+  h += '</div>';
+  h += '<div class="cs-body">';
+
+  if (!jb.jobType) {
+    h += '<div style="text-align:center;padding:20px;color:var(--t3);font-size:12.5px">👆 Select a job type to configure address fields</div>';
+    h += '</div></div>';
+    return h;
+  }
+
+  h += '<div class="jcfg-row col2 jcfg-route-section">';
+
+  // Origin
+  if (_ac && _ac.originRole === 'warehouse') {
+    h += '<div class="cfg-field">';
+    h += '<label class="cfg-label">' + esc(_ac.originLabel || 'Origin') + '</label>';
+    if (WAREHOUSES.length > 1) {
+      h += '<select class="cfg-input" onchange="cfgSetWarehouse(0,\'orig\',this.value)">' + whSelectOptions(_whId) + '</select>';
+    }
+    h += '<input class="cfg-input" id="jcfg-origin-0" value="' + esc(jb.origin || _defWhAddr) + '" readonly style="background:var(--s2);color:var(--t3);cursor:default;margin-top:4px">';
+    h += '<div style="font-size:10px;color:var(--blue);margin-top:3px">✓ Auto-filled from ' + esc(_defWhName) + '</div>';
+    h += '</div>';
+  } else {
+    h += '<div class="cfg-field"><label class="cfg-label">' + esc((_ac && _ac.originLabel) || 'Origin Address') + '</label>';
+    h += '<input class="cfg-input" id="jcfg-origin-0" value="' + esc(jb.origin || '') + '" placeholder="' + (_ac && _ac.originRole === 'port' ? 'Port, airport or depot' : 'Full address or postcode') + '">';
+    h += '</div>';
+  }
+
+  // Destination
+  if (_ac && _ac.destRole === 'warehouse') {
+    h += '<div class="cfg-field">';
+    h += '<label class="cfg-label">' + esc(_ac.destLabel || 'Destination') + '</label>';
+    if (WAREHOUSES.length > 1) {
+      h += '<select class="cfg-input" onchange="cfgSetWarehouse(0,\'dest\',this.value)">' + whSelectOptions(_whId) + '</select>';
+    }
+    h += '<input class="cfg-input" id="jcfg-dest-0" value="' + esc(jb.dest || _defWhAddr) + '" readonly style="background:var(--s2);color:var(--t3);cursor:default;margin-top:4px">';
+    h += '<div style="font-size:10px;color:var(--blue);margin-top:3px">✓ Auto-filled from ' + esc(_defWhName) + '</div>';
+    h += '</div>';
+  } else {
+    h += '<div class="cfg-field"><label class="cfg-label">' + esc((_ac && _ac.destLabel) || 'Destination Address') + '</label>';
+    h += '<input class="cfg-input" id="jcfg-dest-0" value="' + esc(jb.dest || '') + '" placeholder="' + (_ac && _ac.destRole === 'port' ? 'Port, airport or depot' : 'Full address or postcode') + '">';
+    h += '</div>';
+  }
+
+  h += '</div>';
+  h += '</div></div>';
+  return h;
+}
+
+// Storage picker for 'From Storage' route
+function cfgRenderStoragePicker() {
+  var h = '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">🏭</div>';
+  h += '<div><div class="cs-card-title">Client in Storage</div>';
+  h += '<div class="cs-card-sub">Select the storage record — addresses and volume will auto-fill</div></div></div>';
+  h += '<div class="cs-body">';
+
+  var activeRecords = STORAGE_RECORDS.filter(function(s){ return s.status === 'active'; });
+
+  if (!activeRecords.length) {
+    h += '<div style="text-align:center;padding:20px;color:var(--t3);font-size:12.5px">No active storage records found. <a onclick="cfgSetRoute(\'origin\',null);cfgRenderStage()" style="color:var(--blue);cursor:pointer">Switch to Origin job</a></div>';
+    h += '</div></div>';
+    return h;
+  }
+
+  h += '<div style="margin-bottom:10px"><input class="cfg-input" id="sto-quick-search" placeholder="Search by client name..." oninput="cfgFilterStoragePicker(this.value)" style="max-width:280px"></div>';
+  h += '<div id="sto-picker-list">';
+  for (var si = 0; si < activeRecords.length; si++) {
+    var rec = activeRecords[si];
+    var isSel = CFG.jobs[0].storageId === rec.id;
+    h += '<div class="sto-pick-row' + (isSel ? ' sel' : '') + '" onclick="cfgPickStorage(\'' + rec.id + '\')">';
+    h += '<div class="sto-pick-main">';
+    h += '<div class="sto-pick-name">' + esc(rec.client || 'Unnamed') + '</div>';
+    h += '<div class="sto-pick-meta">' + esc(rec.id) + ' &bull; ' + (rec.volRemaining || rec.volFt || 0) + ' ft³ remaining &bull; ' + (rec.containers ? rec.containers.length : 0) + ' containers</div>';
+    h += '</div>';
+    h += '<div class="sto-pick-brand">' + bbadge(rec.brand, 'sm') + '</div>';
+    if (isSel) h += '<div class="sto-pick-check">✓ Selected</div>';
+    h += '</div>';
+  }
+  h += '</div>';
+
+  // If selected, show container picker inline
+  if (CFG.jobs[0].storageId) {
+    h += cfgRenderStorageOut(0, CFG.jobs[0]);
+    // Also auto-fill delivery address field
+    h += '<div class="cfg-field" style="margin-top:12px"><label class="cfg-label">Delivery Address</label>';
+    h += '<input class="cfg-input" id="jcfg-dest-0" value="' + esc(CFG.jobs[0].dest || '') + '" placeholder="Full address or postcode">';
+    h += '</div>';
+  }
+
+  h += '</div></div>';
+  return h;
+}
+
+function cfgPickStorage(id) {
+  var rec = STORAGE_RECORDS.filter(function(s){ return s.id === id; })[0];
+  if (!rec) return;
+  CFG.jobs[0].storageId = id;
+  CFG.jobs[0].storageRequired = true;
+  CFG.jobs[0].storageDirection = 'out';
+  // Auto-fill client name and volume from storage record
+  if (!CFG.clientName) CFG.clientName = rec.client || '';
+  if (!CFG.brand && rec.brand) CFG.brand = rec.brand;
+  var defWh = getDefaultWarehouse();
+  CFG.jobs[0].origin = defWh ? defWh.address : (APP_SETTINGS.warehouseAddress || '');
+  CFG.jobs[0].volFt = rec.volRemaining || rec.volFt || 0;
+  cfgRenderStage();
+}
+
+function cfgFilterStoragePicker(q) {
+  var rows = document.querySelectorAll('.sto-pick-row');
+  rows.forEach(function(row) {
+    var name = row.querySelector('.sto-pick-name');
+    var match = !q || (name && name.textContent.toLowerCase().indexOf(q.toLowerCase()) >= 0);
+    row.style.display = match ? '' : 'none';
+  });
+}
+
+function cfgCollectBrief() {
+  // Client
+  CFG.clientName  = (el('cfg-client')  || {}).value || CFG.clientName;
+  CFG.clientEmail = (el('cfg-cemail')  || {}).value || CFG.clientEmail;
+  CFG.clientPhone = (el('cfg-cphone')  || {}).value || CFG.clientPhone;
+  CFG.clientRef   = (el('cfg-cref')    || {}).value || CFG.clientRef;
+  CFG.brand       = (el('cfg-brand')   || {}).value || CFG.brand;
+  CFG.channel     = (el('cfg-channel') || {}).value || CFG.channel;
+  CFG.moveManager = (el('cfg-mm')      || {}).value || CFG.moveManager;
+  CFG.status      = CFG.status || 'Provisional';
+  var ocEl = el('cfg-origin-country');
+  if (ocEl && ocEl.value) CFG.originCountry = countryToCode(ocEl.value) || 'XX';
+  // Jobs
+  var jb = CFG.jobs[0];
+  jb.origin = (el('jcfg-origin-0') || {}).value || jb.origin;
+  jb.dest   = (el('jcfg-dest-0')   || {}).value || jb.dest;
+  var volEl = el('jcfg-vol-0');
+  if (volEl) { if (jb.volUnit === 'cbm') jb.volCbm = volEl.value; else jb.volFt = volEl.value; }
+  // Collect all additional job cards
+  for (var ji = 1; ji < CFG.jobs.length; ji++) {
+    var jbi = CFG.jobs[ji];
+    jbi.origin = (el('jcfg-origin-' + ji) || {}).value || jbi.origin;
+    jbi.dest   = (el('jcfg-dest-' + ji)   || {}).value || jbi.dest;
+    var vEl = el('jcfg-vol-' + ji);
+    if (vEl) { if (jbi.volUnit === 'cbm') jbi.volCbm = vEl.value; else jbi.volFt = vEl.value; }
+  }
+  // Storage out: vol to remove
+  var vrEl = el('sto-volremove-0'); if (vrEl) jb.volToRemove = parseFloat(vrEl.value) || 0;
+}
+
+// ── STAGE 3: SCHEDULE & TEAM ─────────────────────────────────────────────
+function cfgRenderScheduleAndTeam() {
+  var h = '';
+
+  // Date selection card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📅</div>';
+  h += '<div class="cs-card-title">Date Selection</div></div>';
+  h += '<div class="cs-body">';
+
+  h += '<div style="display:flex;gap:14px;margin-bottom:16px">';
+  h += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;font-weight:600">';
+  h += '<input type="radio" name="cfg-dateoption" value="fix" ' + ((CFG.selectedDates && CFG.selectedDates.length) || CFG.startDate ? 'checked' : '') + ' onchange="cfgToggleDateOption(\'fix\')">Assign dates now</label>';
+  h += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;font-weight:600">';
+  h += '<input type="radio" name="cfg-dateoption" value="nodate" ' + ((!CFG.selectedDates || !CFG.selectedDates.length) && !CFG.startDate ? 'checked' : '') + ' onchange="cfgToggleDateOption(\'nodate\')">No date yet — save as enquiry</label>';
+  h += '</div>';
+
+  h += '<div id="cfg-date-section" style="' + ((CFG.selectedDates && CFG.selectedDates.length) || CFG.startDate ? '' : 'display:none') + '">';
+  if (!CFG.isMultiDay) {
+    var singleVal = (CFG.selectedDates && CFG.selectedDates[0]) ? CFG.selectedDates[0] : (CFG.startDate || '');
+    if (!CFG.id) singleVal = '';
+    h += '<div class="cfg-field"><label class="cfg-label">Select from matrix below, or type manually</label>';
+    h += '<input class="cfg-input" id="cfg-startdate" type="date" value="' + singleVal + '" onchange="cfgManualDateChange()" style="max-width:200px"></div>';
+  } else {
+    var n = CFG.numDays || 2;
+    var chosen = CFG.selectedDates ? CFG.selectedDates.slice() : [];
+    var filled = chosen.filter(function(d){ return !!d; }).length;
+    h += '<div class="dayslot-progress"><div class="dp-label' + (filled >= n ? ' done' : '') + '">' + (filled >= n ? '✓ All ' + n + ' days selected' : filled + ' of ' + n + ' days selected') + '</div>';
+    h += '<div class="dp-bar-wrap"><div class="dp-bar" style="width:' + Math.round((filled / n) * 100) + '%"></div></div></div>';
+    h += '<div style="margin-bottom:12px">';
+    for (var si = 0; si < n; si++) {
+      var slotDate = chosen[si] || '';
+      h += '<div class="dayslot-row">';
+      h += '<div class="dayslot-num' + (slotDate ? ' filled' : '') + '">Day ' + (si + 1) + '</div>';
+      h += '<div class="dayslot-val' + (slotDate ? ' filled' : '') + '" id="ds-val-' + si + '">';
+      if (slotDate) { h += '<span>📅 ' + fmtNice(slotDate) + ' (' + ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(slotDate).getDay()] + ')</span><span class="ds-clear" onclick="cfgClearSlot(' + si + ')">✕</span>'; }
+      else { h += '<span style="color:#B0B8CC">Click a date below</span>'; }
+      h += '</div></div>';
+    }
+    h += '</div>';
+  }
+  h += '</div>';
+  h += '</div></div>';
+
+  // Duration & options card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">🌙</div>';
+  h += '<div class="cs-card-title">Duration &amp; Options</div></div>';
+  h += '<div class="cs-body">';
+  h += '<div class="mday-row"><label class="mday-toggle"><input type="checkbox" id="cfg-multiday"' + (CFG.isMultiDay ? ' checked' : '') + ' onchange="cfgToggleMultiday(this)"><span class="mday-slider"></span></label>';
+  h += '<div style="flex:1"><div class="mday-lbl">Multi-day job</div><div class="mday-sub">Spans more than one calendar day</div></div>';
+  if (CFG.isMultiDay) { h += '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--t3)">Days:</span><input class="cfg-input" id="cfg-numdays" type="number" min="2" max="30" value="' + (CFG.numDays || 2) + '" style="width:64px" onchange="cfgNumDaysChange(this)"></div>'; }
+  h += '</div>';
+  h += '<div class="mday-row"><label class="mday-toggle"><input type="checkbox" id="cfg-overnight"' + (CFG.hasOvernight ? ' checked' : '') + ' onchange="cfgToggleOvernight(this)"><span class="mday-slider"></span></label>';
+  h += '<div style="flex:1"><div class="mday-lbl">Overnight stays</div><div class="mday-sub">Crew needs accommodation</div></div>';
+  if (CFG.hasOvernight) { h += '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0"><input class="cfg-input" id="cfg-numnights" type="number" min="1" max="14" value="' + (CFG.numNights || 1) + '" style="width:56px"><span style="font-size:12px;color:var(--t3)">nights @ £</span><input class="cfg-input" id="cfg-nightallow" type="number" min="0" value="' + (CFG.overnightAllowance || 65) + '" style="width:68px"><span style="font-size:12px;color:var(--t3)">/person</span></div>'; }
+  h += '</div>';
+  h += '<div class="mday-row"><label class="mday-toggle"><input type="checkbox" id="cfg-weekend"' + (CFG.weekendWorking ? ' checked' : '') + '><span class="mday-slider"></span></label>';
+  h += '<div><div class="mday-lbl">Weekend working</div><div class="mday-sub">Saturday or Sunday required</div></div></div>';
+  h += '<div class="mday-row" style="margin-bottom:0"><label class="mday-toggle"><input type="checkbox" id="cfg-linkjourney"' + (CFG.linkJourney ? ' checked' : '') + ' onchange="cfgToggleLinkJourney(this)"><span class="mday-slider"></span></label>';
+  h += '<div style="flex:1"><div class="mday-lbl">Part of a Journey / Run</div><div class="mday-sub">Link to existing journey or create new</div></div>';
+  if (CFG.linkJourney) { h += '<select class="cfg-input cfg-select" id="cfg-journeysel" style="width:200px;flex-shrink:0"><option value="_new">+ Create new journey</option>'; for (var jni = 0; jni < JOURNEYS.length; jni++) { h += '<option value="' + JOURNEYS[jni].id + '"' + (CFG.journeyId === JOURNEYS[jni].id ? ' selected' : '') + '>' + esc(JOURNEYS[jni].label) + '</option>'; } h += '</select>'; }
+  h += '</div>';
+  h += '</div></div>';
+
+  // Availability matrix card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">📊</div>';
+  h += '<div class="cs-card-title">Availability</div>';
+  h += CFG.isMultiDay ? '<div class="cs-card-sub">Click to fill day slots — can be non-consecutive</div>' : '<div class="cs-card-sub">Click any date to select it</div>';
+  h += '</div>';
+  h += '<div class="cs-body" id="cfg-avail-body"><div style="text-align:center;color:var(--t3);padding:20px;font-size:12px">Building availability...</div></div>';
+  h += '</div>';
+
+  // Crew assignment card — shown filtered to selected date
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">👷</div>';
+  h += '<div class="cs-card-title">Crew Assignment</div>';
+  var ds = CFG.startDate || '';
+  if (ds) h += '<div class="cs-card-sub">' + fmtNice(ds) + '</div>';
+  h += '</div><div class="cs-body">';
+  for (var ci = 0; ci < CREW.length; ci++) {
+    var cr = CREW[ci];
+    var isSel = CFG.crewAssigned.indexOf(cr.name) >= 0;
+    var avail = cfgCrewAvailStatus(cr.name, CFG.startDate);
+    h += '<div class="res-person' + (isSel ? ' sel' : '') + '" onclick="cfgToggleCrew(this,\'' + cr.name + '\')">';
+    h += '<div class="res-person-av" style="background:' + cr.col + '">' + cr.name.slice(0,2) + '</div>';
+    h += '<div style="flex:1"><div class="res-person-name">' + esc(cr.name) + '</div><div class="res-person-role">' + esc(cr.role) + ' — £' + cr.chargeRate + '/day</div></div>';
+    h += '<span class="res-person-status ' + avail.cls + '">' + avail.lbl + '</span>';
+    h += '</div>';
+  }
+  h += '</div></div>';
+
+  // Vehicles card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">🚐</div>';
+  h += '<div class="cs-card-title">Vehicle Assignment</div></div>';
+  h += '<div class="cs-body">';
+  var needsSmall = CFG.jobs.some(function(jb){ return jb.access && (jb.access.smallVehicle || jb.access.tightAccess || jb.access.rdRestriction); });
+  if (needsSmall) h += '<div class="cs-hint" style="margin-bottom:10px">⚠ Access flags suggest a small vehicle may be required</div>';
+  for (var vi = 0; vi < VEHICLES.length; vi++) {
+    var veh = VEHICLES[vi];
+    var isSelV = CFG.vehAssigned.indexOf(veh.id) >= 0;
+    var vAvail = cfgVehAvailStatus(veh.id, CFG.startDate);
+    h += '<div class="res-person' + (isSelV ? ' sel' : '') + '" onclick="cfgToggleVeh(this,\'' + veh.id + '\')">';
+    h += '<div class="res-person-av" style="background:#4A5568;font-size:9px">🚐</div>';
+    h += '<div style="flex:1"><div class="res-person-name">' + esc(veh.name) + ' <span style="font-size:10.5px;color:#7A849E">' + esc(veh.reg) + '</span></div>';
+    h += '<div class="res-person-role">' + esc(veh.type) + ' — ' + veh.volCapFt + 'ft³ — £' + veh.dayRate + '/day</div></div>';
+    h += '<span class="res-person-status ' + vAvail.cls + '">' + vAvail.lbl + '</span>';
+    h += '</div>';
+  }
+  h += '</div></div>';
+
+  return h;
+}
+
+function cfgCollectScheduleAndTeam() {
+  // Date
+  var fixRadio = document.querySelector('input[name="cfg-dateoption"][value="fix"]');
+  var nodate = !fixRadio || !fixRadio.checked;
+  if (nodate) { CFG.startDate = ''; CFG.endDate = ''; CFG.selectedDates = []; }
+  else {
+    if (!CFG.isMultiDay) { var sdEl = el('cfg-startdate'); if (sdEl && sdEl.value) { CFG.startDate = sdEl.value; CFG.selectedDates = [sdEl.value]; } }
+  }
+  var mdEl = el('cfg-multiday'); if (mdEl) CFG.isMultiDay = mdEl.checked;
+  var ndEl = el('cfg-numdays'); if (ndEl) CFG.numDays = parseInt(ndEl.value) || 2;
+  var onEl = el('cfg-overnight'); if (onEl) CFG.hasOvernight = onEl.checked;
+  var nnEl = el('cfg-numnights'); if (nnEl) CFG.numNights = parseInt(nnEl.value) || 1;
+  var naEl = el('cfg-nightallow'); if (naEl) CFG.overnightAllowance = parseFloat(naEl.value) || 65;
+  var wkEl = el('cfg-weekend'); if (wkEl) CFG.weekendWorking = wkEl.checked;
+  var ljEl = el('cfg-linkjourney'); if (ljEl) CFG.linkJourney = ljEl.checked;
+  var jsEl = el('cfg-journeysel'); if (jsEl) CFG.journeyId = (jsEl.value === '_new' ? null : jsEl.value);
+}
+
+// ── STAGE 4: CONFIRM ─────────────────────────────────────────────────────
+function cfgRenderConfirm() {
+  var h = '';
+  var totalVol = CFG.jobs.reduce(function(s, jb){ return s + (parseFloat(jb.volFt) || 0); }, 0);
+  var totalRev = CFG.jobs.reduce(function(s, jb){ return s + jb.billing.reduce(function(bs, bl){ return bs + (bl.amt || 0); }, 0); }, 0);
+
+  // Summary bar
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">✅</div>';
+  h += '<div class="cs-card-title">Job Summary</div>';
+  var statusCls = CFG.status === 'Confirmed' ? 'obs-confirmed' : CFG.status === 'Provisional' ? 'obs-provisional' : 'obs-draft';
+  h += '<span class="' + statusCls + '">' + CFG.status + '</span>';
+  h += '</div><div class="cs-body">';
+  h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
+  h += '<div class="ops-di"><div class="ops-dl">Client</div><div class="ops-dv">' + esc(CFG.clientName || '—') + '</div></div>';
+  h += '<div class="ops-di"><div class="ops-dl">Route</div><div class="ops-dv">' + esc(CFG.jobs[0].jobType || CFG.route || '—') + '</div></div>';
+  h += '<div class="ops-di"><div class="ops-dl">Date</div><div class="ops-dv" style="color:var(--blue)">' + (CFG.startDate ? fmtNice(CFG.startDate) : 'Enquiry') + '</div></div>';
+  h += '<div class="ops-di"><div class="ops-dl">Volume</div><div class="ops-dv">' + (totalVol ? totalVol + 'ft³' : 'TBC') + '</div></div>';
+  h += '<div class="ops-di"><div class="ops-dl">Brand</div><div class="ops-dv">' + bbadge(CFG.brand) + '</div></div>';
+  h += '<div class="ops-di"><div class="ops-dl">Revenue</div><div class="ops-dv" style="color:var(--blue)">' + (totalRev ? spv(fmt(totalRev)) : 'TBC') + '</div></div>';
+  h += '</div></div></div>';
+
+  // Services & access card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">🛠</div>';
+  h += '<div class="cs-card-title">Additional Services</div></div>';
+  h += '<div class="cs-body">';
+  var jb0 = CFG.jobs[0];
+  h += '<div class="svc-grid">';
+  for (var si = 0; si < SERVICES.length; si++) {
+    var sv = SERVICES[si];
+    h += '<div class="svc-toggle' + (jb0.svcs[sv.key] ? ' on' : '') + '" onclick="cfgToggleSvc(0,this,\'' + sv.key + '\')">';
+    h += '<span style="font-size:14px">' + sv.icon + '</span><span style="font-size:11.5px;font-weight:600;color:#1A2035;flex:1">' + sv.lbl + '</span>';
+    h += '<div class="svc-check">' + (jb0.svcs[sv.key] ? '✓' : '') + '</div></div>';
+  }
+  h += '</div>';
+  h += '<div style="margin-top:12px"><div class="cs-sub-label">Access &amp; Logistics</div>';
+  h += '<div class="acc-grid">';
+  for (var ai = 0; ai < ACCESS_FLAGS.length; ai++) {
+    var af = ACCESS_FLAGS[ai];
+    h += '<div class="acc-flag svc-toggle' + (jb0.access[af.key] ? ' on' : '') + '" onclick="cfgToggleAccess(0,this,\'' + af.key + '\')">';
+    h += '<span style="font-size:14px">' + af.icon + '</span><span style="font-size:11.5px;font-weight:600;flex:1">' + af.lbl + '</span>';
+    h += '<div class="svc-check">' + (jb0.access[af.key] ? '✓' : '') + '</div></div>';
+  }
+  h += '</div></div></div></div>';
+
+  // Materials & charges card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📦</div>';
+  h += '<div class="cs-card-title">Materials &amp; Charges</div></div>';
+  h += '<div class="cs-body">';
+  for (var mi = 0; mi < MATERIALS.length; mi++) {
+    var mat = MATERIALS[mi];
+    var selMat = (CFG.materials || []).filter(function(m){ return m.id === mat.id; })[0];
+    var qty = selMat ? (selMat.qty || 0) : 0;
+    h += '<div class="res-person" style="cursor:default">';
+    h += '<div style="flex:1;font-size:12.5px;font-weight:500">' + esc(mat.name) + '</div>';
+    h += '<div style="display:flex;align-items:center;gap:6px"><input type="number" class="cfg-input" id="cfgmat-' + mat.id + '" value="' + qty + '" min="0" style="width:70px;text-align:right" placeholder="Qty"><span style="font-size:11px;color:var(--t3)">@ £' + mat.unitCost + ' ea</span></div>';
+    h += '</div>';
+  }
+  h += '<div style="margin-top:12px"><div class="cs-sub-label">Charges &amp; Taxes</div>';
+  h += '<div id="cfg-charges-list">';
+  var selChgs = CFG.charges || [];
+  for (var chgi = 0; chgi < selChgs.length; chgi++) h += cfgChgRow(chgi, selChgs[chgi].name, selChgs[chgi].amt);
+  h += '</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">';
+  for (var chgi2 = 0; chgi2 < CHARGES.length; chgi2++) h += '<button class="btn btn-s btn-sm" onclick="cfgAddCharge(\'' + esc(CHARGES[chgi2].name) + '\',' + CHARGES[chgi2].defaultAmt + ')">+ ' + esc(CHARGES[chgi2].name) + '</button>';
+  h += '</div></div></div></div>';
+
+  // Billing card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF0F0">💷</div>';
+  h += '<div class="cs-card-title">Billing Lines</div></div>';
+  h += '<div class="cs-body">';
+  h += '<div id="jcfg-blines-0">';
+  var jblines = jb0.billing || [];
+  for (var bi = 0; bi < jblines.length; bi++) h += cfgBline(0, bi, jblines[bi].item, jblines[bi].amt);
+  if (!jblines.length) h += cfgBline(0, 0, '', '');
+  h += '</div>';
+  h += '<button class="btn btn-s btn-sm" style="margin-top:4px" onclick="cfgAddBline(0)">+ Add billing line</button>';
+  h += '</div></div>';
+
+  // Notes card
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#F5EEFF">📝</div>';
+  h += '<div class="cs-card-title">Notes</div></div>';
+  h += '<div class="cs-body">';
+  h += '<div class="cfg-field"><label class="cfg-label">Ops Notes (crew instructions, access details)</label>';
+  h += '<textarea class="cfg-input" id="cfg-opsnotes" rows="3" style="resize:vertical">' + esc(CFG.opsNotes || '') + '</textarea></div>';
+  h += '<div class="cfg-field" style="margin-top:10px"><label class="cfg-label">Client-Facing Notes (for confirmation email)</label>';
+  h += '<textarea class="cfg-input" id="cfg-clientnotes" rows="2" style="resize:vertical">' + esc(CFG.clientNotes || '') + '</textarea></div>';
+  h += '</div></div>';
+
+  // Cancellation (edit mode only)
+  if (CFG.id) {
+    h += '<div class="cs-card">';
+    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFECEF">❌</div><div class="cs-card-title">Cancellation</div></div>';
+    h += '<div class="cs-body">';
+    h += '<div style="display:flex;gap:8px;margin-bottom:10px">';
+    ['Date Changed','Date Postponed','Job Cancelled'].forEach(function(r) {
+      var sel = CFG.cancelReason === r;
+      h += '<div onclick="CFG.cancelReason=\'' + r + '\';cfgRenderStage()" style="flex:1;border:2px solid ' + (sel ? 'var(--red)' : 'var(--b1)') + ';border-radius:7px;padding:8px;text-align:center;cursor:pointer;background:' + (sel ? '#FFECEF' : 'var(--w)') + ';font-size:12px;font-weight:600;color:' + (sel ? 'var(--red)' : 'var(--t2)') + '">' + r + '</div>';
+    });
+    h += '</div>';
+    h += '<div class="cfg-field"><label class="cfg-label">Cancellation Notes</label>';
+    h += '<textarea class="cfg-input" id="cfg-cancel-notes" rows="2" style="resize:vertical">' + esc(CFG.cancelNotes || '') + '</textarea></div>';
+    h += '</div></div>';
+  }
+
+  // Change log
+  if (CFG.changeLog && CFG.changeLog.length) {
+    h += '<div class="cs-card">';
+    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📋</div><div class="cs-card-title">Change History</div></div>';
+    h += '<div class="cs-body" style="padding:0">';
+    CFG.changeLog.slice().reverse().forEach(function(entry) {
+      var d = new Date(entry.ts);
+      var when = d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      var actionCol = entry.action === 'Created' ? 'var(--green)' : entry.action === 'Cancelled' ? 'var(--red)' : 'var(--blue)';
+      h += '<div style="padding:9px 16px;border-bottom:1px solid var(--s2);display:flex;gap:10px;align-items:flex-start">';
+      h += '<div style="font-size:10px;font-weight:700;color:' + actionCol + ';min-width:64px;padding-top:1px">' + entry.action + '</div>';
+      h += '<div style="flex:1">';
+      if (entry.changes && entry.changes.length) h += '<div style="font-size:11.5px;color:var(--t2)">' + entry.changes.map(function(c){ return esc(c); }).join(' · ') + '</div>';
+      if (entry.note) h += '<div style="font-size:11px;color:var(--t3);margin-top:2px">' + esc(entry.note) + '</div>';
+      h += '</div>';
+      h += '<div style="font-size:10.5px;color:var(--t4);white-space:nowrap">' + when + '<br>' + esc(entry.user || '') + '</div>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+  }
+
+  // Status & publish
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#D1FAE5">🚀</div>';
+  h += '<div class="cs-card-title">Status &amp; Publish</div></div>';
+  h += '<div class="cs-body">';
+  h += '<div style="display:flex;gap:10px">';
+  ['Draft','Provisional','Confirmed'].forEach(function(s) {
+    h += '<div onclick="cfgSetStatus(this,\'' + s + '\')" style="flex:1;border:2px solid ' + (CFG.status === s ? '#0073EA' : '#E3E7F0') + ';border-radius:8px;padding:10px;text-align:center;cursor:pointer;background:' + (CFG.status === s ? '#EBF4FF' : '#fff') + '" class="cfg-status-opt">';
+    h += '<div style="font-size:16px">' + (s === 'Draft' ? '📋' : s === 'Provisional' ? '🕐' : '✅') + '</div>';
+    h += '<div style="font-size:12px;font-weight:700;margin-top:4px">' + s + '</div>';
+    h += '<div style="font-size:10px;color:var(--t3);margin-top:2px">' + (s === 'Draft' ? 'Save without calendar' : s === 'Provisional' ? 'Hold on calendar' : 'Fully confirmed') + '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  if (CFG.status === 'Draft') h += '<div class="cs-hint" style="margin-top:10px">📋 Draft — jobs will NOT appear on the calendar until status is Provisional or Confirmed.</div>';
+  h += '</div></div>';
+
+  return h;
+}
+
+function cfgCollectConfirm() {
+  // Services, access, materials, charges, billing, notes — exact same logic as old cfgCollectResources + cfgCollectOps
+  // Materials
+  var mats = [];
+  for (var mi = 0; mi < MATERIALS.length; mi++) {
+    var qEl = el('cfgmat-' + MATERIALS[mi].id);
+    var qty = parseInt((qEl || {}).value) || 0;
+    if (qty > 0) mats.push({ id: MATERIALS[mi].id, qty: qty });
+  }
+  CFG.materials = mats;
+  // Charges
+  var chgs = [];
+  var list = el('cfg-charges-list');
+  if (list) {
+    var rows = list.children;
+    for (var ci = 0; ci < rows.length; ci++) {
+      var nameEl = rows[ci].querySelector('div[style*="flex:1"]');
+      var amtEl = rows[ci].querySelector('input[type="number"]');
+      if (nameEl && amtEl) chgs.push({ name: nameEl.textContent.trim(), amt: parseFloat(amtEl.value) || 0 });
+    }
+  }
+  CFG.charges = chgs;
+  // Billing lines
+  var blines = [];
+  var cont = el('jcfg-blines-0');
+  if (cont) {
+    var brows = cont.querySelectorAll('[id^="jbl-0-"]');
+    brows.forEach(function(row) {
+      var itemEl = row.querySelector('[id^="jbli"]'), amtEl2 = row.querySelector('[id^="jbla"]');
+      var item = (itemEl || {}).value || ''; var amt = parseFloat((amtEl2 || {}).value) || 0;
+      if (item) blines.push({ item: item, amt: amt });
+    });
+  }
+  CFG.jobs[0].billing = blines;
+  // Notes
+  CFG.opsNotes    = (el('cfg-opsnotes')     || {}).value || CFG.opsNotes;
+  CFG.clientNotes = (el('cfg-clientnotes')  || {}).value || CFG.clientNotes;
+  CFG.cancelNotes = (el('cfg-cancel-notes') || {}).value || CFG.cancelNotes;
+}
+
+</script>
