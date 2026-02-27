@@ -7596,8 +7596,10 @@ function cfgCommit() {
       }
     }
 
-    // Only add to calendar if not draft
-    if (CFG.status !== 'Draft') {
+    // Add to jobs array:
+    // - Always if linked to a client job record (movement must persist)
+    // - Otherwise only if not a Draft (standalone jobs need a status)
+    if (CFG.status !== 'Draft' || CFG.clientJobId) {
       jobs = jobs.filter(function(j){return j.id !== jobId;});
       jobs.push(newJob);
       createdJobIds.push(jobId);
@@ -7678,17 +7680,28 @@ function cfgCommit() {
   renderBkList();
   // Always save jobs to Azure if linked to a client job record
   // For standalone drafts, only save if not Draft
-  var _shouldSave = CFG.status !== 'Draft' || !!CFG.clientJobId;
-  if (CFG.status !== 'Draft') {
+  var _isLinked = !!CFG.clientJobId;
+  var _notDraft = CFG.status !== 'Draft';
+
+  if (_notDraft) {
     renderCal();
-    toast(createdJobIds.length + ' movement(s) added to calendar');
-  } else if (CFG.clientJobId) {
-    toast('Movement saved to client record (Draft — not yet on calendar)');
+  }
+  if (_isLinked) {
+    if (curMod === 'bookings') renderClientJobsList();
+    toast(createdJobIds.length + ' movement(s) saved' + (_notDraft ? ' — added to calendar' : ' to client record'));
+  } else if (_notDraft) {
+    toast(createdJobIds.length + ' job(s) added to calendar — ' + CFG.ref);
   } else {
     toast('Draft saved — ' + CFG.ref + ' (not on calendar)');
   }
-  if (_shouldSave) {
-    (function(){ for(var _ci=0;_ci<jobs.length;_ci++){ if(createdJobIds.indexOf(jobs[_ci].id)>=0) saveData('job',jobs[_ci].id,jobs[_ci]); } })();
+
+  // Save all created jobs to Azure — always when linked to client record, otherwise only when not Draft
+  if (_notDraft || _isLinked) {
+    for (var _ci = 0; _ci < jobs.length; _ci++) {
+      if (createdJobIds.indexOf(jobs[_ci].id) >= 0) {
+        saveData('job', jobs[_ci].id, jobs[_ci]);
+      }
+    }
   }
 }
 
