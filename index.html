@@ -1364,10 +1364,11 @@ textarea.fi{resize:vertical;min-height:60px}
               <input class="fi" id="cj-search" placeholder="&#128269; Search clients, refs..." style="width:100%;padding:6px 10px 6px 28px;font-size:12px" oninput="renderClientJobsList()">
               <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:.4;pointer-events:none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             </div>
-            <div style="display:flex;gap:4px;margin-top:8px">
-              <button class="vt on" id="cjf-all"    onclick="setCjFilter('all',this)"    style="flex:1;font-size:11px">All</button>
-              <button class="vt"    id="cjf-active" onclick="setCjFilter('active',this)"  style="flex:1;font-size:11px">Active</button>
-              <button class="vt"    id="cjf-done"   onclick="setCjFilter('done',this)"    style="flex:1;font-size:11px">Done</button>
+            <div style="display:flex;gap:3px;margin-top:8px">
+              <button class="vt on" id="cjf-all"      onclick="setCjFilter('all',this)"      style="flex:1;font-size:10.5px">All</button>
+              <button class="vt"    id="cjf-active"   onclick="setCjFilter('active',this)"   style="flex:1;font-size:10.5px">Active</button>
+              <button class="vt"    id="cjf-done"     onclick="setCjFilter('done',this)"     style="flex:1;font-size:10.5px">Done</button>
+              <button class="vt"    id="cjf-archived" onclick="setCjFilter('archived',this)" style="flex:1;font-size:10.5px">&#128451;</button>
             </div>
           </div>
           <div id="cj-list" style="flex:1;overflow-y:auto"></div>
@@ -11102,7 +11103,7 @@ var cjFilter = 'all';
 
 function setCjFilter(f, btn) {
   cjFilter = f;
-  document.querySelectorAll('#cjf-all,#cjf-active,#cjf-done').forEach(function(b){ b.classList.remove('on'); });
+  document.querySelectorAll('#cjf-all,#cjf-active,#cjf-done,#cjf-archived').forEach(function(b){ b.classList.remove('on'); });
   if (btn) btn.classList.add('on');
   renderClientJobsList();
 }
@@ -11112,8 +11113,11 @@ function renderClientJobsList() {
   var q = search.toLowerCase();
   var list = CLIENT_JOBS.slice().sort(function(a,b){ return b.createdAt > a.createdAt ? 1 : -1; });
 
-  if (cjFilter === 'active') list = list.filter(function(cj){ return cj.status === 'Active'; });
-  if (cjFilter === 'done')   list = list.filter(function(cj){ return cj.status !== 'Active'; });
+  if (cjFilter === 'active')   list = list.filter(function(cj){ return cj.status === 'Active'; });
+  if (cjFilter === 'done')     list = list.filter(function(cj){ return cj.status === 'Completed'; });
+  if (cjFilter === 'archived') list = list.filter(function(cj){ return cj.status === 'Archived'; });
+  // Default 'all' view hides archived to keep it clean — archived only visible in their own tab
+  if (cjFilter === 'all')      list = list.filter(function(cj){ return cj.status !== 'Archived'; });
   if (q) list = list.filter(function(cj){
     return (cj.clientName||'').toLowerCase().indexOf(q)>=0
         || (cj.masterJobId||'').toLowerCase().indexOf(q)>=0
@@ -11215,6 +11219,12 @@ function renderClientJobDetail(cj) {
   h += '<button class="btn btn-p btn-sm" onclick="addMovementToJob(\''+cj.id+'\')">+ Add Movement</button>';
   h += '<button class="btn btn-s btn-sm" onclick="editClientJob(\''+cj.id+'\')">&#9998; Edit</button>';
   h += '<button class="btn btn-s btn-sm" onclick="updateClientJobCountry(\''+cj.id+'\')">&#127758; Update Country</button>';
+  if (cj.status !== 'Archived') {
+    h += '<button class="btn btn-s btn-sm" onclick="archiveClientJob(\''+cj.id+'\')" style="color:var(--t3)" title="Archive hides this record from Active view">&#128451; Archive</button>';
+  } else {
+    h += '<button class="btn btn-s btn-sm" onclick="unarchiveClientJob(\''+cj.id+'\')" style="color:var(--green)">&#9099; Restore</button>';
+  }
+  h += '<button class="btn btn-s btn-sm" onclick="deleteClientJob(\''+cj.id+'\')" style="color:var(--red)" title="Permanently delete this record">&#128465; Delete</button>';
   h += '</div>';
   h += '</div>';
 
@@ -11398,6 +11408,67 @@ function cfgPreviewJobId() {
 // Show client records when switching to bookings module
 function initBookingMod() {
   renderClientJobsList();
+}
+
+
+function archiveClientJob(id) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id===id; })[0];
+  if (!cj) return;
+  cj.status = 'Archived';
+  cj.archivedAt = new Date().toISOString();
+  cj.archivedBy = window._authUser || 'Unknown';
+  saveData('clientjob', cj.id, cj);
+  toast(cj.clientName + ' archived');
+  renderClientJobsList();
+  renderClientJobDetail(cj);
+}
+
+function unarchiveClientJob(id) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id===id; })[0];
+  if (!cj) return;
+  cj.status = 'Active';
+  delete cj.archivedAt;
+  delete cj.archivedBy;
+  saveData('clientjob', cj.id, cj);
+  toast(cj.clientName + ' restored to Active');
+  renderClientJobsList();
+  renderClientJobDetail(cj);
+}
+
+function deleteClientJob(id) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id===id; })[0];
+  if (!cj) return;
+  var linkedCount = jobs.filter(function(j){ return j.clientJobId===id; }).length;
+  var msg = 'Permanently delete client record for ' + cj.clientName + ' (' + cj.masterJobId + ')?';
+  if (linkedCount > 0) {
+    msg += '\n\nThis record has ' + linkedCount + ' linked movement(s) on the calendar. Those jobs will remain on the calendar but will no longer be linked to a client record.';
+  }
+  msg += '\n\nThis cannot be undone.';
+  if (!confirm(msg)) return;
+
+  // Unlink any calendar jobs
+  jobs.forEach(function(j) {
+    if (j.clientJobId === id) {
+      delete j.clientJobId;
+      delete j.masterJobId;
+      delete j.movementRef;
+      saveData('job', j.id, j);
+    }
+  });
+
+  // Remove from CLIENT_JOBS array
+  CLIENT_JOBS = CLIENT_JOBS.filter(function(x){ return x.id !== id; });
+
+  // Delete from Azure — send a delete marker
+  apiPost(TABLE_MAP.clientjob, { id: id, _deleted: true, deletedAt: new Date().toISOString() });
+
+  // Clear detail panel
+  curClientJobId = null;
+  setH('cj-detail', '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;min-height:400px;color:var(--t3);text-align:center;padding:40px"><div style="font-size:14px;font-weight:600;color:var(--t2);margin-bottom:8px">Record deleted</div><div style="font-size:12.5px">Select another record from the list.</div></div>');
+
+  renderClientJobsList();
+  lsSave();
+  toast('Client record deleted');
 }
 
 </script>
