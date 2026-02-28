@@ -39,7 +39,13 @@ async function getAccessToken(tenantId, clientId, clientSecret) {
   });
 
   if (result.status !== 200) {
-    throw new Error('Token fetch failed: ' + result.body);
+    // Parse error for better message
+    let errMsg = 'Token fetch failed (' + result.status + ')';
+    try {
+      const parsed = JSON.parse(result.body);
+      errMsg = parsed.error_description || parsed.error || errMsg;
+    } catch(e) {}
+    throw new Error(errMsg);
   }
 
   const parsed = JSON.parse(result.body);
@@ -92,55 +98,44 @@ module.exports = async function (context, req) {
   const tenantId     = process.env.SP_TENANT_ID;
   const clientId     = process.env.SP_CLIENT_ID;
   const clientSecret = process.env.SP_CLIENT_SECRET;
-  const siteUrl      = process.env.SP_SITE_URL; // https://movesquadgroup.sharepoint.com/sites/MoveSquadGroup
+  const siteUrl      = process.env.SP_SITE_URL;
 
   if (!tenantId || !clientId || !clientSecret || !siteUrl) {
-    context.log.error('SharePoint credentials not fully configured');
-    context.res = { status: 500, body: 'SharePoint environment variables not configured' };
+    const missing = ['SP_TENANT_ID','SP_CLIENT_ID','SP_CLIENT_SECRET','SP_SITE_URL']
+      .filter(k => !process.env[k]).join(', ');
+    context.res = { status: 500, body: JSON.stringify({ error: 'Missing env vars: ' + missing }) };
     return;
   }
 
   const { action, payload } = req.body || {};
   if (!action) {
-    context.res = { status: 400, body: 'Missing action in request body' };
+    context.res = { status: 400, body: JSON.stringify({ error: 'Missing action' }) };
     return;
   }
 
   try {
     const token = await getAccessToken(tenantId, clientId, clientSecret);
 
-    // ── Derive site ID from site URL ────────────────────────────────────
-    // GET /v1.0/sites/{hostname}:{path}
-    const urlObj    = new URL(siteUrl);
-    const hostname  = urlObj.hostname;                          // movesquadgroup.sharepoint.com
-    const sitePath  = urlObj.pathname;                          // /sites/MoveSquadGroup
-    const siteIdPath = '/v1.0/sites/' + hostname + ':' + sitePath;
+    // Derive site path from URL
+    const urlParts  = siteUrl.replace('https://', '').split('/');
+    const spHost    = urlParts[0];
+    const spPath    = '/' + urlParts.slice(1).join('/');
+    const siteIdPath = '/v1.0/sites/' + spHost + ':' + spPath;
 
     let result;
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: getSiteId — resolves the Graph site ID for the SharePoint site
-    // ════════════════════════════════════════════════════════════════════
     if (action === 'getSiteId') {
       result = await graphRequest(token, 'GET', siteIdPath, null);
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: getDriveId — gets the document library drive ID
-    // payload: { siteId }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'getDriveId') {
       result = await graphRequest(token, 'GET',
         '/v1.0/sites/' + payload.siteId + '/drives', null);
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: createFolder — creates a folder (and parents if needed)
-    // payload: { siteId, driveId, parentPath, folderName }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'createFolder') {
-      const encodedPath = encodeURIComponent(payload.parentPath).replace(/%2F/g, '/');
+      const parentPath = payload.parentPath.replace(/^\//, '');
       result = await graphRequest(token, 'POST',
         '/v1.0/sites/' + payload.siteId + '/drives/' + payload.driveId +
-        '/root:/' + encodedPath + ':/children',
+        '/root:/' + parentPath + ':/children',
         {
           name:   payload.folderName,
           folder: {},
@@ -148,38 +143,28 @@ module.exports = async function (context, req) {
         }
       );
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: listFolder — lists contents of a folder
-    // payload: { siteId, driveId, folderPath }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'listFolder') {
-      const encodedPath = encodeURIComponent(payload.folderPath).replace(/%2F/g, '/');
+      const folderPath = payload.folderPath.replace(/^\//, '');
       result = await graphRequest(token, 'GET',
         '/v1.0/sites/' + payload.siteId + '/drives/' + payload.driveId +
-        '/root:/' + encodedPath + ':/children?$orderby=name&$top=200', null);
+        '/root:/' + folderPath + ':/children?$orderby=name&$top=200', null);
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: uploadFile — uploads a file (up to ~4MB via simple upload)
-    // payload: { siteId, driveId, filePath, fileContent (base64), contentType }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'uploadFile') {
       const fileBuffer  = Buffer.from(payload.fileContent, 'base64');
-      const encodedPath = encodeURIComponent(payload.filePath).replace(/%2F/g, '/');
+      const filePath    = payload.filePath.replace(/^\//, '');
 
-      // Simple upload (files < 4MB)
       result = await new Promise((resolve, reject) => {
         const options = {
           hostname: 'graph.microsoft.com',
           path:     '/v1.0/sites/' + payload.siteId + '/drives/' + payload.driveId +
-                    '/root:/' + encodedPath + ':/content',
+                    '/root:/' + filePath + ':/content',
           method:   'PUT',
           headers:  {
-            'Authorization': 'Bearer ' + token,
-            'Content-Type':  payload.contentType || 'application/octet-stream',
+            'Authorization':  'Bearer ' + token,
+            'Content-Type':   payload.contentType || 'application/octet-stream',
             'Content-Length': fileBuffer.length
           }
         };
-
         const req = https.request(options, (res) => {
           let data = '';
           res.on('data', chunk => { data += chunk; });
@@ -191,10 +176,6 @@ module.exports = async function (context, req) {
         req.end();
       });
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: updateMetadata — writes custom metadata columns to a file
-    // payload: { siteId, driveId, itemId, metadata: { key: value } }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'updateMetadata') {
       result = await graphRequest(token, 'PATCH',
         '/v1.0/sites/' + payload.siteId + '/drives/' + payload.driveId +
@@ -202,54 +183,61 @@ module.exports = async function (context, req) {
         payload.metadata
       );
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: createShareLink — generates a 90-day view-only sharing link
-    // payload: { siteId, driveId, itemId }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'createShareLink') {
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + 90);
-
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + 90);
       result = await graphRequest(token, 'POST',
         '/v1.0/sites/' + payload.siteId + '/drives/' + payload.driveId +
         '/items/' + payload.itemId + '/createLink',
-        {
-          type:            'view',
-          scope:           'anonymous',
-          expirationDateTime: expiryDate.toISOString()
-        }
+        { type: 'view', scope: 'anonymous', expirationDateTime: expiry.toISOString() }
       );
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: deleteItem — deletes a file or folder
-    // payload: { siteId, driveId, itemId }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'deleteItem') {
       result = await graphRequest(token, 'DELETE',
         '/v1.0/sites/' + payload.siteId + '/drives/' + payload.driveId +
         '/items/' + payload.itemId, null);
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: getDownloadUrl — gets a temporary download URL for a file
-    // payload: { siteId, driveId, itemId }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'getDownloadUrl') {
       result = await graphRequest(token, 'GET',
         '/v1.0/sites/' + payload.siteId + '/drives/' + payload.driveId +
         '/items/' + payload.itemId + '?select=id,name,@microsoft.graph.downloadUrl', null);
 
-    // ════════════════════════════════════════════════════════════════════
-    // ACTION: searchFiles — searches across the library
-    // payload: { siteId, driveId, query }
-    // ════════════════════════════════════════════════════════════════════
     } else if (action === 'searchFiles') {
       result = await graphRequest(token, 'GET',
         '/v1.0/sites/' + payload.siteId + '/drives/' + payload.driveId +
         '/root/search(q=\'' + encodeURIComponent(payload.query) + '\')?$top=50', null);
 
-    } else {
-      context.res = { status: 400, body: 'Unknown action: ' + action };
+    } else if (action === 'testConnection') {
+      // Diagnostic action — returns full detail of what's happening
+      const tokenOk = !!token;
+      const siteResult = await graphRequest(token, 'GET', siteIdPath, null);
+      let siteBody;
+      try { siteBody = JSON.parse(siteResult.body); } catch(e) { siteBody = siteResult.body; }
+      context.res = {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokenOk,
+          siteUrl,
+          siteIdPath,
+          siteStatus: siteResult.status,
+          siteResponse: siteBody
+        })
+      };
       return;
+
+    } else {
+      context.res = { status: 400, body: JSON.stringify({ error: 'Unknown action: ' + action }) };
+      return;
+    }
+
+    // Parse body and surface any Graph errors clearly
+    let parsed;
+    try { parsed = JSON.parse(result.body); } catch(e) { parsed = { rawBody: result.body }; }
+
+    if (result.status >= 400) {
+      const errMsg = (parsed.error && (parsed.error.message || parsed.error.code)) || result.body;
+      context.log.error('Graph API error:', result.status, errMsg);
     }
 
     context.res = {
@@ -260,6 +248,10 @@ module.exports = async function (context, req) {
 
   } catch (err) {
     context.log.error('SharePoint proxy error:', err.message);
-    context.res = { status: 502, body: 'Proxy error: ' + err.message };
+    context.res = {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: err.message })
+    };
   }
 };

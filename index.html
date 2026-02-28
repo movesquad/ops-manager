@@ -3322,7 +3322,7 @@ function renderSettingsBrands() {
   var h = '<div style="max-width:860px">';
   h += '<div class="settings-card"><div class="sc-head"><div><div class="sc-title">Brands</div>';
   h += '<div class="sc-sub">Upload a JPG or PNG logo for each brand. It will appear everywhere the brand is shown.</div></div>';
-  h += '<button class="btn btn-p btn-sm" onclick="saveBrands()">Save changes</button></div>';
+  h += '<button class="btn btn-p btn-sm" onclick="saveBrands()">Save changes</button><button class="btn btn-s btn-sm" onclick="spTestConnection()" style="margin-left:8px">🔗 Test SharePoint</button></div>';
   h += '<table class="sc-table"><thead><tr><th style="width:80px">Logo</th><th>Brand Name</th><th style="width:110px">Colour</th><th style="width:120px">Channel</th><th>Default MM</th><th style="min-width:180px">SharePoint Folder</th><th style="width:32px"></th></tr></thead><tbody>';
   for (var i = 0; i < BRAND_DATA.length; i++) {
     var b = BRAND_DATA[i];
@@ -12140,11 +12140,35 @@ async function spCall(action, payload) {
 var _spSiteId  = '';
 var _spDriveId = '';
 
+async function spTestConnection() {
+  toast('Testing SharePoint connection…');
+  var res = await spCall('testConnection', {});
+  console.log('SharePoint test result:', res);
+  if (res.siteStatus === 200) {
+    toast('✅ SharePoint connected! Site: ' + (res.siteResponse && res.siteResponse.displayName || 'OK'));
+  } else if (res.siteStatus === 401) {
+    toast('❌ Unauthorised — check SP_CLIENT_ID and SP_CLIENT_SECRET in Azure');
+  } else if (res.siteStatus === 403) {
+    toast('❌ Forbidden — Sites.ReadWrite.All permission needs admin consent in Entra ID');
+  } else if (res.siteStatus === 404) {
+    toast('❌ Site not found — check SP_SITE_URL is correct');
+  } else if (res.error) {
+    toast('❌ ' + res.error);
+  } else {
+    toast('❌ Unexpected response (' + res.siteStatus + ') — check browser console');
+  }
+}
+
 async function spGetSiteAndDrive() {
   if (_spSiteId && _spDriveId) return { siteId: _spSiteId, driveId: _spDriveId };
   // Get site ID
   var siteRes = await spCall('getSiteId', {});
-  if (!siteRes.id) { toast('SharePoint: Could not connect to site — check configuration'); return null; }
+  if (!siteRes.id) {
+    var errDetail = (siteRes.error && siteRes.error.message) || (siteRes.error) || JSON.stringify(siteRes);
+    toast('SharePoint error: ' + errDetail);
+    console.error('SharePoint getSiteId response:', siteRes);
+    return null;
+  }
   _spSiteId = siteRes.id;
   // Get drive ID (Shared Documents = default drive)
   var drivesRes = await spCall('getDriveId', { siteId: _spSiteId });
