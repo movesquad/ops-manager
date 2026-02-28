@@ -2249,6 +2249,8 @@ function renderCalVertical(mode) {
       if (cjForCard) {
         var docStatus = spDocReadiness(cjForCard, j.start);
         h += '<span class="jflag doc-status-'+docStatus.cls+'" title="'+esc(docStatus.tip)+'">'+docStatus.icon+'</span>';
+      } else {
+        h += '<span class="jflag doc-status-grey" title="No client record linked — open job to connect one" style="font-size:10px">📁</span>';
       }
       h += '<div class="jcard-flag-row">';
       if (j.storageId) {
@@ -2342,8 +2344,8 @@ function renderCalVertical(mode) {
         h += '</div>';
       }
 
-      // Send to Crew button — confirmed jobs only
-      if (j.status === 'Confirmed') {
+      // Send to Crew button — scheduled/confirmed jobs only
+      if (j.status === 'Confirmed' || j.status === 'Scheduled' || j.status === 'Provisional') {
         var synced = j.appenateSynced;
         h += '<div style="padding:5px 12px 8px;border-top:1px solid var(--s2);display:flex;align-items:center;justify-content:space-between;gap:8px">';
         h += '<button class="btn btn-s btn-sm" style="font-size:11px;'+(synced?'color:var(--green);border-color:var(--green)':'color:var(--blue)')+'" onclick="event.stopPropagation();sendToCrew(\''+j.id+'\')">';
@@ -3321,7 +3323,7 @@ function renderSettingsBrands() {
   h += '<div class="settings-card"><div class="sc-head"><div><div class="sc-title">Brands</div>';
   h += '<div class="sc-sub">Upload a JPG or PNG logo for each brand. It will appear everywhere the brand is shown.</div></div>';
   h += '<button class="btn btn-p btn-sm" onclick="saveBrands()">Save changes</button></div>';
-  h += '<table class="sc-table"><thead><tr><th style="width:80px">Logo</th><th>Brand Name</th><th style="width:110px">Colour</th><th style="width:120px">Channel</th><th>Default MM</th><th style="width:32px"></th></tr></thead><tbody>';
+  h += '<table class="sc-table"><thead><tr><th style="width:80px">Logo</th><th>Brand Name</th><th style="width:110px">Colour</th><th style="width:120px">Channel</th><th>Default MM</th><th style="min-width:180px">SharePoint Folder</th><th style="width:32px"></th></tr></thead><tbody>';
   for (var i = 0; i < BRAND_DATA.length; i++) {
     var b = BRAND_DATA[i];
     var mm = mmForBrand(b.name);
@@ -10681,7 +10683,24 @@ function _doDbInit(cb) {
           if (s.MATERIALS)    MATERIALS    = s.MATERIALS;
           if (s.CHARGES)      CHARGES      = s.CHARGES;
           if (s.MOVE_MANAGERS) MOVE_MANAGERS = s.MOVE_MANAGERS;
-          if (s.BRAND_DATA)   { BRAND_DATA = s.BRAND_DATA; BC = {}; BRAND_DATA.forEach(function(b){ BC[b.name]=b.color; }); }
+          if (s.BRAND_DATA)   {
+            BRAND_DATA = s.BRAND_DATA;
+            // Patch: merge in spFolder defaults from hardcoded list for any brand missing it
+            var SP_FOLDER_DEFAULTS = {
+              'SIRVA':'SIRVA','EMS':'EMS','STERLING':'Sterling Lexicon',
+              'DOREE BONNER':'Doree Bonner','BTR':'BTR','JOHN MASON':'John Mason',
+              'BAXTERS':'Baxters','SOLARIS':'Solaris','GOSSELIN':'Gosselin',
+              'CROWN WORKSPACE':'Crown Workspace','CROWN':'Crown',
+              'BRADSHAW':'Bradshaw International',"BISHOP'S MOVE":"Bishop's Move",
+              'WBC':'WBC (Warrington Borough Council)'
+            };
+            BRAND_DATA.forEach(function(b) {
+              if (!b.spFolder && SP_FOLDER_DEFAULTS[b.name]) b.spFolder = SP_FOLDER_DEFAULTS[b.name];
+              // Fix legacy b.color → b.col
+              if (!b.col && b.color) b.col = b.color;
+            });
+            buildBrandMaps();
+          }
           if (s.SL_CONFIG)    SL_CONFIG    = s.SL_CONFIG;
           if (s.APP_SETTINGS) {
             APP_SETTINGS = s.APP_SETTINGS;
