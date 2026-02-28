@@ -285,7 +285,7 @@ html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size
 .cnav{display:flex;align-items:center;gap:5px}
 .cn-btn{width:26px;height:26px;border-radius:5px;border:1px solid var(--b1);background:var(--w);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;transition:all .1s}
 .cn-btn:hover{border-color:var(--blue);color:var(--blue)}
-.cn-lbl{font-weight:600;font-size:13px;min-width:160px;text-align:center;letter-spacing:-.2px}
+.cn-lbl{font-weight:600;font-size:13px;min-width:160px;text-align:center;letter-spacing:-.2px;border-radius:5px;padding:3px 8px;transition:background .1s}.cn-lbl:hover{background:var(--s2)}
 .today-btn{padding:4px 10px;border-radius:5px;border:1px solid var(--b1);background:var(--w);color:var(--t2);cursor:pointer;font-size:12px;font-weight:700;font-family:'DM Sans',sans-serif;transition:all .1s}
 .today-btn:hover{border-color:var(--blue);color:var(--blue)}
 .tb-r{margin-left:auto;display:flex;align-items:center;gap:6px}
@@ -308,26 +308,26 @@ html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size
   position:sticky;top:0;z-index:10;
   display:flex;align-items:center;gap:12px;
   padding:7px 18px;
-  background:var(--s1);
-  border-bottom:2px solid var(--b1);
-  border-top:1px solid var(--b1);
+  background:var(--blue);
+  border-bottom:2px solid rgba(0,0,0,.12);
+  border-top:1px solid rgba(0,0,0,.08);
   cursor:pointer;
   transition:background .1s;
   user-select:none;
 }
 .cal-date-hdr:first-child{border-top:none}
-.cal-date-hdr:hover{background:var(--blt)}
-.cal-date-hdr.today{background:#EBF4FF;border-left:4px solid var(--blue)}
-.cal-date-hdr.today .cdh-num{color:var(--blue)}
-.cal-date-hdr.empty{opacity:.45}
-.cdh-dow{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t3);width:24px}
-.cdh-num{font-size:22px;font-weight:800;color:var(--t2);line-height:1;letter-spacing:-1px;min-width:28px}
-.cdh-mon{font-size:12px;font-weight:600;color:var(--t3);min-width:28px}
-.cdh-jobs{font-size:11px;font-weight:600;color:var(--t3);margin-left:4px}
-.cdh-today-pill{background:var(--blue);color:#fff;font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.3px}
-.cdh-rev{font-size:11px;font-weight:700;color:var(--blue);margin-left:auto}
-.cdh-add{font-size:11px;font-weight:600;color:var(--t4);margin-left:8px;padding:2px 7px;border:1px solid var(--b1);border-radius:4px;background:var(--w)}
-.cdh-add:hover{color:var(--blue);border-color:var(--blue)}
+.cal-date-hdr:hover{background:#005ec0}
+.cal-date-hdr.today{background:#0055b3;border-left:4px solid #fff}
+.cal-date-hdr.today .cdh-num{color:#fff}
+.cal-date-hdr.empty{opacity:.55}
+.cdh-dow{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgba(255,255,255,.75);width:24px}
+.cdh-num{font-size:22px;font-weight:800;color:#fff;line-height:1;letter-spacing:-1px;min-width:28px}
+.cdh-mon{font-size:12px;font-weight:600;color:rgba(255,255,255,.8);min-width:28px}
+.cdh-jobs{font-size:11px;font-weight:600;color:rgba(255,255,255,.75);margin-left:4px}
+.cdh-today-pill{background:#fff;color:var(--blue);font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.3px}
+.cdh-rev{font-size:11px;font-weight:700;color:#fff;margin-left:auto;opacity:.9}
+.cdh-add{font-size:11px;font-weight:600;color:rgba(255,255,255,.8);margin-left:8px;padding:2px 7px;border:1px solid rgba(255,255,255,.4);border-radius:4px;background:rgba(255,255,255,.15)}
+.cdh-add:hover{color:#fff;border-color:#fff;background:rgba(255,255,255,.25)}
 
 /* Journey group banner */
 .jrn-banner{
@@ -1186,6 +1186,11 @@ textarea.fi{resize:vertical;min-height:60px}
 .sto-pick-meta{font-size:11px;color:#7A849E;margin-top:2px}
 .sto-pick-check{font-size:11px;font-weight:700;color:#0073EA;white-space:nowrap}
 .sto-pick-brand{flex-shrink:0}
+
+/* Date Jumper */
+@keyframes dj-pop{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+.dj-quick{padding:4px 10px;border:1.5px solid #E3E7F0;border-radius:5px;background:#fff;font-size:11.5px;font-weight:600;color:#4A5568;cursor:pointer;transition:all .1s}
+.dj-quick:hover{border-color:#0073EA;color:#0073EA;background:#EBF4FF}
 </style>
 <body>
 
@@ -1286,7 +1291,7 @@ textarea.fi{resize:vertical;min-height:60px}
     <div class="divider"></div>
     <div class="cnav">
       <button class="cn-btn" onclick="navPrev()">&#8249;</button>
-      <div class="cn-lbl" id="cn-lbl">&mdash;</div>
+      <div class="cn-lbl" id="cn-lbl" onclick="openDateJumper('main')" title="Click to jump to a specific date" style="cursor:pointer">&mdash;</div>
       <button class="cn-btn" onclick="navNext()">&#8250;</button>
       <button class="today-btn" onclick="goToday()">Today</button>
     </div>
@@ -1340,7 +1345,7 @@ textarea.fi{resize:vertical;min-height:60px}
       <div class="divider"></div>
       <div class="cnav" id="wh-cnav">
         <button class="cn-btn" onclick="whNavPrev()">&#8249;</button>
-        <div class="cn-lbl" id="wh-cn-lbl">&mdash;</div>
+        <div class="cn-lbl" id="wh-cn-lbl" onclick="openDateJumper('warehouse')" title="Click to jump to a specific date" style="cursor:pointer">&mdash;</div>
         <button class="cn-btn" onclick="whNavNext()">&#8250;</button>
         <button class="today-btn" onclick="whGoToday()">Today</button>
       </div>
@@ -6898,7 +6903,7 @@ function cfgBuildMatrix() {
   // Navigation bar
   h += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 4px 10px;gap:8px">';
   h += '<button class="btn btn-s btn-sm" onclick="cfgMatrixNav(-1)" ' + (cfgMatrixOffset<=0?'disabled style="opacity:.4"':'') + '>&#8249; Earlier</button>';
-  h += '<div style="font-size:12px;font-weight:600;color:var(--t2);text-align:center">' + fromLabel + ' — ' + toLabel + '</div>';
+  h += '<div style="font-size:12px;font-weight:600;color:var(--blue);text-align:center;cursor:pointer;padding:3px 8px;border-radius:5px;transition:background .1s" onclick="openDateJumper(\'matrix\')" title="Click to jump to a specific week">' + fromLabel + ' — ' + toLabel + ' <span style="font-size:10px;opacity:.6">&#9660;</span></div>';
   h += '<button class="btn btn-s btn-sm" onclick="cfgMatrixNav(1)">Later &#8250;</button>';
   h += '</div>';
 
@@ -11840,6 +11845,29 @@ function whSelectOptions(selectedId) {
       <span>Crew</span>
     </button>
   </nav>
+
+<!-- Date Jumper Modal -->
+<div id="dj-backdrop" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:800;align-items:center;justify-content:center" onclick="if(event.target===this)closeDateJumper()">
+  <div id="dj-modal" style="background:#fff;border-radius:14px;padding:24px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,.25);animation:dj-pop .15s cubic-bezier(.34,1.56,.64,1)">
+    <div style="font-size:14px;font-weight:700;color:#1A2035;margin-bottom:4px">Jump to Date</div>
+    <div style="font-size:11.5px;color:#7A849E;margin-bottom:16px">Select any date to navigate directly there</div>
+    <input type="date" id="dj-input" style="width:100%;padding:9px 12px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:14px;font-family:inherit;color:#1A2035;box-sizing:border-box;outline:none" oninput="djPreview(this.value)">
+    <div id="dj-preview" style="margin-top:10px;font-size:12px;color:#7A849E;min-height:18px;text-align:center"></div>
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button onclick="closeDateJumper()" style="flex:1;padding:9px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;font-weight:600;color:#7A849E;cursor:pointer">Cancel</button>
+      <button id="dj-go-btn" onclick="doDateJump()" style="flex:2;padding:9px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer;opacity:.5" disabled>Go →</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:14px;padding-top:12px;border-top:1px solid #f0efe9">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#B0B8CC;width:100%;margin-bottom:2px">Quick jump</div>
+      <button onclick="djQuick(0)" class="dj-quick">This week</button>
+      <button onclick="djQuick(-4)" class="dj-quick">4 weeks ago</button>
+      <button onclick="djQuick(-13)" class="dj-quick">3 months ago</button>
+      <button onclick="djQuick(-26)" class="dj-quick">6 months ago</button>
+      <button onclick="djQuick(-52)" class="dj-quick">1 year ago</button>
+      <button onclick="djQuick(4)" class="dj-quick">4 weeks ahead</button>
+    </div>
+  </div>
+</div>
 </body>
 </html><div class="page" id="mod-dashboard">
       <div style="flex:1;overflow:auto;padding:20px" id="dashboard-body"></div>
@@ -12579,5 +12607,93 @@ function cfgCollectConfirm() {
   CFG.clientNotes = (el('cfg-clientnotes')  || {}).value || CFG.clientNotes;
   CFG.cancelNotes = (el('cfg-cancel-notes') || {}).value || CFG.cancelNotes;
 }
+
+
+// ── DATE JUMPER ──────────────────────────────────────────────────────────
+var _djTarget = 'main'; // 'main' | 'warehouse' | 'matrix'
+
+function openDateJumper(target) {
+  _djTarget = target || 'main';
+  var backdrop = el('dj-backdrop');
+  backdrop.style.display = 'flex';
+  var input = el('dj-input');
+  // Pre-fill with current date for that target
+  var today = new Date();
+  if (target === 'warehouse') {
+    input.value = d2s(whDate || today);
+  } else {
+    input.value = d2s(curDate || today);
+  }
+  djPreview(input.value);
+  setTimeout(function(){ input.focus(); }, 50);
+}
+
+function closeDateJumper() {
+  el('dj-backdrop').style.display = 'none';
+}
+
+function djPreview(val) {
+  var btn = el('dj-go-btn');
+  var preview = el('dj-preview');
+  if (!val) {
+    preview.textContent = '';
+    btn.disabled = true;
+    btn.style.opacity = '.5';
+    return;
+  }
+  var d = new Date(val + 'T00:00:00');
+  if (isNaN(d)) {
+    preview.textContent = '';
+    btn.disabled = true;
+    btn.style.opacity = '.5';
+    return;
+  }
+  var ws = weekMon(d);
+  var we = addDays(ws, 6);
+  preview.textContent = 'Week of ' + MS[ws.getMonth()].substr(0,3) + ' ' + ws.getDate() + ' – ' + MS[we.getMonth()].substr(0,3) + ' ' + we.getDate() + ', ' + we.getFullYear();
+  preview.style.color = '#0073EA';
+  btn.disabled = false;
+  btn.style.opacity = '1';
+}
+
+function doDateJump() {
+  var val = (el('dj-input') || {}).value;
+  if (!val) return;
+  var d = new Date(val + 'T00:00:00');
+  if (isNaN(d)) return;
+  closeDateJumper();
+  if (_djTarget === 'warehouse') {
+    whDate = d;
+    renderWarehouse();
+  } else if (_djTarget === 'matrix') {
+    // For the availability matrix in the booking configurator
+    // Calculate how many weeks offset from today
+    var today = new Date();
+    today.setHours(0,0,0,0);
+    var diffDays = Math.round((weekMon(d) - weekMon(today)) / 86400000);
+    var diffWeeks = Math.round(diffDays / 7);
+    cfgMatrixOffset = Math.max(0, diffWeeks);
+    if (el('cfg-avail-body')) cfgBuildMatrix();
+  } else {
+    curDate = d;
+    renderActiveMod();
+  }
+}
+
+function djQuick(weeksOffset) {
+  var d = addDays(weekMon(new Date()), weeksOffset * 7);
+  el('dj-input').value = d2s(d);
+  djPreview(d2s(d));
+}
+
+// Allow Enter key to confirm
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && el('dj-backdrop') && el('dj-backdrop').style.display !== 'none') {
+    closeDateJumper();
+  }
+  if (e.key === 'Enter' && el('dj-backdrop') && el('dj-backdrop').style.display !== 'none') {
+    if (!el('dj-go-btn').disabled) doDateJump();
+  }
+});
 
 </script>
