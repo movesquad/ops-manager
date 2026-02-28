@@ -11985,8 +11985,517 @@ function whSelectOptions(selectedId) {
     </div>
   </div>
 </div>
-</body>
-</html><div class="page" id="mod-dashboard">
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// SHAREPOINT + APPENATE — FULL INTEGRATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── DOCUMENT CHECKLIST DEFINITION ────────────────────────────────────────
+// timing: 'before' = required before job date, 'after' = expected after job
+// required: true = counts toward red/amber indicator
+// jobTypes: which job types this applies to (empty = all)
+
+var SP_CHECKLIST = [
+  { slug:'survey',        label:'Survey & Quote',          folder:'01 — Survey & Quote',          icon:'📋', timing:'before', required:true,  jobTypes:['Origin Sea Pack','Origin Air Pack','Origin Road Pack','Door to Door','Destination Services','Ex Store Delivery','Blanket Wrap','Handling Only'] },
+  { slug:'auth',          label:'Authorisation & Booking', folder:'02 — Authorisation & Booking', icon:'✅', timing:'before', required:true,  jobTypes:[] },
+  { slug:'jobpaperwork',  label:'Job Paperwork',           folder:'03 — Job Paperwork',           icon:'📄', timing:'before', required:true,  jobTypes:[] },
+  { slug:'inventory',     label:'Inventory & Packing',     folder:'04 — Inventory & Packing Lists',icon:'📦', timing:'mixed',  required:false, jobTypes:[] },
+  { slug:'images',        label:'Images',                  folder:'05 — Images',                  icon:'🖼',  timing:'after',  required:false, jobTypes:[] },
+  { slug:'invoices',      label:'Invoices & Finance',      folder:'06 — Invoices & Finance',      icon:'💷', timing:'after',  required:false, jobTypes:[] },
+  { slug:'pod',           label:'POD & Completion',        folder:'07 — POD & Completion',        icon:'🖊',  timing:'after',  required:false, jobTypes:[] },
+];
+
+// Inventory timing rule: 'before' for destination/ex-store, 'after' for origin/D2D
+function spInventoryTiming(jobType) {
+  var destTypes = ['Destination Services','Ex Store Delivery'];
+  return destTypes.indexOf(jobType) >= 0 ? 'before' : 'after';
+}
+
+// ── DOC READINESS for calendar indicator ─────────────────────────────────
+function spDocReadiness(cj, jobDateStr) {
+  if (!cj.spFolderId) {
+    return { cls:'grey', icon:'📁', tip:'No SharePoint folder created' };
+  }
+  var checklist = cj.docChecklist || {};
+  var jobDate = jobDateStr ? new Date(jobDateStr + 'T00:00:00') : null;
+  var today = new Date(); today.setHours(0,0,0,0);
+  var daysToJob = jobDate ? Math.round((jobDate - today) / 86400000) : 999;
+  var jobType = cj.jobType || '';
+
+  var missingRequired = [];
+  var missingAfter = [];
+
+  SP_CHECKLIST.forEach(function(item) {
+    // Skip if N/A
+    if (checklist[item.slug] === 'na') return;
+    // Check job type filter
+    if (item.jobTypes.length && item.jobTypes.indexOf(jobType) < 0) return;
+
+    var timing = item.slug === 'inventory' ? spInventoryTiming(jobType) : item.timing;
+    var status = checklist[item.slug];
+    var fileCount = (cj.spFileCounts && cj.spFileCounts[item.slug]) || 0;
+    var hasFiles = fileCount > 0 || status === 'received';
+
+    if (timing === 'before' && !hasFiles) {
+      missingRequired.push(item.label);
+    }
+    if (timing === 'after' && jobDate && today > jobDate && !hasFiles) {
+      missingAfter.push(item.label);
+    }
+  });
+
+  if (missingRequired.length > 0 && daysToJob <= 7) {
+    return { cls:'red', icon:'🔴', tip:'AT RISK: Missing before job — ' + missingRequired.join(', ') };
+  }
+  if (missingRequired.length > 0) {
+    return { cls:'amber', icon:'🟡', tip:'Outstanding: ' + missingRequired.join(', ') };
+  }
+  if (missingAfter.length > 0) {
+    return { cls:'amber', icon:'🟡', tip:'Post-job docs outstanding: ' + missingAfter.join(', ') };
+  }
+  return { cls:'green', icon:'🟢', tip:'All required documents received' };
+}
+
+// ── SP CHECKLIST RENDER ───────────────────────────────────────────────────
+function spDocChecklist(cj) {
+  var checklist = cj.docChecklist || {};
+  var jobType = cj.jobType || '';
+  var today = new Date(); today.setHours(0,0,0,0);
+  var h = '<div>';
+
+  SP_CHECKLIST.forEach(function(item) {
+    var timing = item.slug === 'inventory' ? spInventoryTiming(jobType) : item.timing;
+    var override = checklist[item.slug];
+    var fileCount = (cj.spFileCounts && cj.spFileCounts[item.slug]) || 0;
+    var isNA = override === 'na';
+    var isReceived = override === 'received' || fileCount > 0;
+
+    // Status
+    var statusCls, statusLbl;
+    if (isNA) { statusCls = 'na'; statusLbl = 'N/A'; }
+    else if (isReceived) { statusCls = 'received'; statusLbl = '✓ Received'; }
+    else if (timing === 'before') { statusCls = 'outstanding'; statusLbl = 'Outstanding'; }
+    else if (timing === 'after') { statusCls = 'after'; statusLbl = 'After job'; }
+    else { statusCls = 'outstanding'; statusLbl = 'Awaiting'; }
+
+    h += '<div class="sp-checklist-row' + (isNA ? '" style="opacity:.45' : '') + '">';
+    h += '<div class="sp-cl-icon">' + item.icon + '</div>';
+    h += '<div class="sp-cl-name">' + esc(item.label) + '</div>';
+    if (fileCount) h += '<div class="sp-cl-count">' + fileCount + ' file' + (fileCount!==1?'s':'') + '</div>';
+    h += '<div class="sp-cl-status ' + statusCls + '">' + statusLbl + '</div>';
+    h += '<div class="sp-cl-actions">';
+    if (cj.spFolderId) {
+      h += '<button class="btn btn-s" style="padding:2px 7px;font-size:10.5px" onclick="spUploadToFolder(\''+cj.id+'\',\''+item.slug+'\',\''+esc(item.folder)+'\')">⬆</button>';
+      h += '<button class="btn btn-s" style="padding:2px 7px;font-size:10.5px;color:'+(isNA?'var(--green)':'var(--t3)')+'" onclick="spToggleNA(\''+cj.id+'\',\''+item.slug+'\')" title="'+(isNA?'Mark as required':'Mark as not needed')+'">'+(isNA?'↩ Undo N/A':'N/A')+'</button>';
+    }
+    h += '</div></div>';
+  });
+
+  // Upload zone
+  if (cj.spFolderId) {
+    h += '<div class="sp-upload-zone" onclick="spUploadFile(\''+cj.id+'\')" ondragover="event.preventDefault()" ondrop="spHandleDrop(event,\''+cj.id+'\')">';
+    h += '<div style="font-size:22px;margin-bottom:6px">⬆️</div>';
+    h += '<div style="font-size:12.5px;font-weight:600;color:var(--t2)">Drop files here or click to upload</div>';
+    h += '<div style="font-size:11px;color:var(--t3);margin-top:3px">Word, PDF, images, spreadsheets supported</div>';
+    h += '</div>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+// ── SP API HELPERS ────────────────────────────────────────────────────────
+async function spCall(action, payload) {
+  var res = await fetch('/api/sharepoint', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: action, payload: payload || {} })
+  });
+  var text = await res.text();
+  try { return JSON.parse(text); } catch(e) { return { error: text }; }
+}
+
+// Cache site/drive IDs so we don't re-fetch every time
+var _spSiteId  = '';
+var _spDriveId = '';
+
+async function spGetSiteAndDrive() {
+  if (_spSiteId && _spDriveId) return { siteId: _spSiteId, driveId: _spDriveId };
+  // Get site ID
+  var siteRes = await spCall('getSiteId', {});
+  if (!siteRes.id) { toast('SharePoint: Could not connect to site — check configuration'); return null; }
+  _spSiteId = siteRes.id;
+  // Get drive ID (Shared Documents = default drive)
+  var drivesRes = await spCall('getDriveId', { siteId: _spSiteId });
+  var drives = (drivesRes.value || []);
+  var drive = drives.filter(function(d){ return d.name === 'Documents' || d.name === 'Shared Documents'; })[0] || drives[0];
+  if (!drive) { toast('SharePoint: Could not find document library'); return null; }
+  _spDriveId = drive.id;
+  return { siteId: _spSiteId, driveId: _spDriveId };
+}
+
+function spBrandFolder(brand) {
+  var bd = BRAND_DATA.filter(function(b){ return b.name === brand; })[0];
+  return bd && bd.spFolder ? bd.spFolder : '';
+}
+
+function spFolderName(cj) {
+  var ref = cj.partnerRef || cj.clientRef || '';
+  var ourRef = cj.masterJobId || '';
+  var client = cj.clientName || '';
+  if (ref && ourRef) return ref + ' — ' + ourRef + ' — ' + client;
+  if (ourRef) return ourRef + ' — ' + client;
+  return client || 'Unknown';
+}
+
+// ── CREATE SHAREPOINT FOLDER ─────────────────────────────────────────────
+async function spCreateFolder(cjId) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
+  if (!cj) return;
+
+  var brandFolder = spBrandFolder(cj.brand);
+  if (!brandFolder) {
+    toast('No SharePoint folder configured for brand "' + cj.brand + '" — set it in Settings → Brands');
+    return;
+  }
+  if (!(cj.partnerRef || cj.clientRef)) {
+    toast('Add the partner reference before creating the SharePoint folder');
+    return;
+  }
+
+  var btn = event && event.target;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
+  toast('Creating SharePoint folder…');
+
+  var sd = await spGetSiteAndDrive();
+  if (!sd) { if(btn){btn.disabled=false;btn.textContent='📁 Create SharePoint Folder';} return; }
+
+  var topFolderName = spFolderName(cj);
+  var basePath = 'Partners/' + brandFolder;
+
+  // Create top-level job folder
+  var topRes = await spCall('createFolder', {
+    siteId: sd.siteId, driveId: sd.driveId,
+    parentPath: basePath,
+    folderName: topFolderName
+  });
+  if (!topRes.id) {
+    toast('Failed to create folder: ' + (topRes.error || JSON.stringify(topRes)));
+    if(btn){btn.disabled=false;btn.textContent='📁 Create SharePoint Folder';}
+    return;
+  }
+
+  var jobFolderPath = basePath + '/' + topFolderName;
+
+  // Create all 7 sub-folders
+  var subFolders = SP_CHECKLIST.map(function(item){ return item.folder; });
+  for (var i = 0; i < subFolders.length; i++) {
+    await spCall('createFolder', {
+      siteId: sd.siteId, driveId: sd.driveId,
+      parentPath: jobFolderPath,
+      folderName: subFolders[i]
+    });
+  }
+
+  // Store folder details on client record
+  cj.spFolderId   = topRes.id;
+  cj.spFolderUrl  = topRes.webUrl;
+  cj.spFolderPath = jobFolderPath;
+  cj.spSiteId     = sd.siteId;
+  cj.spDriveId    = sd.driveId;
+  saveData('clientjob', cj.id, cj);
+
+  toast('✅ SharePoint folder created with 7 sub-folders');
+  if (curMod === 'bookings') renderClientJobDetail(cj);
+}
+
+// ── UPLOAD FILE ───────────────────────────────────────────────────────────
+function spUploadFile(cjId) {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.heic';
+  input.onchange = function() { spHandleFiles(cjId, input.files, null); };
+  input.click();
+}
+
+function spUploadToFolder(cjId, slug, folderName) {
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.multiple = true;
+  input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.heic';
+  input.onchange = function() { spHandleFiles(cjId, input.files, folderName); };
+  input.click();
+}
+
+function spHandleDrop(event, cjId) {
+  event.preventDefault();
+  spHandleFiles(cjId, event.dataTransfer.files, null);
+}
+
+async function spHandleFiles(cjId, files, targetFolder) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
+  if (!cj || !cj.spFolderId) { toast('No SharePoint folder linked to this job'); return; }
+  if (!files || !files.length) return;
+
+  // If no target folder specified, show folder picker
+  if (!targetFolder) {
+    targetFolder = await spPickFolder();
+    if (!targetFolder) return;
+  }
+
+  var folderPath = cj.spFolderPath + '/' + targetFolder;
+  toast('Uploading ' + files.length + ' file(s)…');
+
+  for (var i = 0; i < files.length; i++) {
+    var file = files[i];
+    var reader = new FileReader();
+    await new Promise(function(resolve) {
+      reader.onload = async function(e) {
+        var base64 = e.target.result.split(',')[1];
+        var filePath = folderPath + '/' + file.name;
+        var res = await spCall('uploadFile', {
+          siteId:      cj.spSiteId,
+          driveId:     cj.spDriveId,
+          filePath:    filePath,
+          fileContent: base64,
+          contentType: file.type || 'application/octet-stream'
+        });
+        if (res.id) {
+          // Write metadata
+          var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
+          await spCall('updateMetadata', {
+            siteId:  cj.spSiteId,
+            driveId: cj.spDriveId,
+            itemId:  res.id,
+            metadata: {
+              OpsJobRef:        cj.masterJobId || '',
+              PartnerRef:       cj.partnerRef || cj.clientRef || '',
+              ClientName:       cj.clientName || '',
+              Brand:            cj.brand || '',
+              MoveManager:      cj.moveManager || '',
+              MoveManagerEmail: mm ? (mm.email || '') : '',
+              DocumentType:     targetFolder,
+              UploadedBy:       (APP_SETTINGS.userName || 'Ops Team')
+            }
+          });
+          // Mark checklist item as received
+          var matchItem = SP_CHECKLIST.filter(function(it){ return it.folder === targetFolder; })[0];
+          if (matchItem) {
+            if (!cj.docChecklist) cj.docChecklist = {};
+            cj.docChecklist[matchItem.slug] = 'received';
+            if (!cj.spFileCounts) cj.spFileCounts = {};
+            cj.spFileCounts[matchItem.slug] = (cj.spFileCounts[matchItem.slug] || 0) + 1;
+            saveData('clientjob', cj.id, cj);
+          }
+        }
+        resolve();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  toast('✅ ' + files.length + ' file(s) uploaded to SharePoint');
+  if (curMod === 'bookings') renderClientJobDetail(cj);
+}
+
+function spPickFolder() {
+  return new Promise(function(resolve) {
+    var opts = SP_CHECKLIST.map(function(item, i) {
+      return '<option value="'+esc(item.folder)+'">'+esc(item.label)+'</option>';
+    }).join('');
+    var modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:24px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,.2)">'
+      + '<div style="font-size:14px;font-weight:700;margin-bottom:12px">Select document type</div>'
+      + '<select id="_sp_folder_pick" style="width:100%;padding:9px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:16px">'+opts+'</select>'
+      + '<div style="display:flex;gap:8px">'
+      + '<button onclick="this.closest(\'div\').parentNode.parentNode._resolve(null);this.closest(\'div\').parentNode.remove()" style="flex:1;padding:9px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;cursor:pointer">Cancel</button>'
+      + '<button onclick="this.closest(\'div\').parentNode.parentNode._resolve(document.getElementById(\'_sp_folder_pick\').value);this.closest(\'div\').parentNode.remove()" style="flex:2;padding:9px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Upload →</button>'
+      + '</div></div>';
+    modal._resolve = resolve;
+    document.body.appendChild(modal);
+  });
+}
+
+// ── TOGGLE N/A on checklist item ─────────────────────────────────────────
+function spToggleNA(cjId, slug) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
+  if (!cj) return;
+  if (!cj.docChecklist) cj.docChecklist = {};
+  cj.docChecklist[slug] = cj.docChecklist[slug] === 'na' ? '' : 'na';
+  saveData('clientjob', cj.id, cj);
+  if (curMod === 'bookings') renderClientJobDetail(cj);
+}
+
+// ── SHARE FOLDER ─────────────────────────────────────────────────────────
+async function spShareFolder(cjId) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
+  if (!cj || !cj.spFolderId) { toast('No SharePoint folder linked'); return; }
+
+  toast('Generating share link…');
+  var res = await spCall('createShareLink', {
+    siteId:  cj.spSiteId,
+    driveId: cj.spDriveId,
+    itemId:  cj.spFolderId
+  });
+
+  var linkUrl = res.link && res.link.webUrl ? res.link.webUrl : '';
+  if (!linkUrl) { toast('Could not generate share link'); return; }
+
+  // Calculate expiry
+  var expiry = new Date();
+  expiry.setDate(expiry.getDate() + 90);
+  var expiryStr = expiry.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][expiry.getMonth()] + ' ' + expiry.getFullYear();
+
+  // Find move manager details
+  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
+  var mmName  = mm ? mm.name  : (cj.moveManager || 'Move Manager');
+  var mmEmail = mm ? (mm.email || '') : '';
+
+  // Build share message
+  var subject = 'Documents — ' + (cj.partnerRef||cj.clientRef||'') + ' / ' + (cj.masterJobId||'') + ' — ' + (cj.clientName||'');
+  var body = 'Hi ' + mmName + ',\n\n'
+    + 'Please find the documentation folder for the above move below.\n\n'
+    + 'Client:           ' + (cj.clientName||'—') + '\n'
+    + 'Your Reference:   ' + (cj.partnerRef||cj.clientRef||'—') + '\n'
+    + 'Our Reference:    ' + (cj.masterJobId||'—') + '\n'
+    + 'Brand:            ' + (cj.brand||'—') + '\n'
+    + 'Move Manager:     ' + mmName + (mmEmail ? ' (' + mmEmail + ')' : '') + '\n\n'
+    + 'Documents:\n→ View folder: ' + linkUrl + '\n  (Valid until ' + expiryStr + ' — view only)\n\n'
+    + 'If you have any questions please reply to this email.\n\n'
+    + 'Kind regards\nMoveSquad Operations';
+
+  spShowShareModal(subject, body, linkUrl, mmEmail, expiryStr);
+}
+
+function spShowShareModal(subject, body, linkUrl, toEmail, expiryStr) {
+  var existing = document.getElementById('sp-share-modal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'sp-share-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'
+    + '<div style="font-size:15px;font-weight:700;color:#1A2035">🔗 Share Document Folder</div>'
+    + '<button onclick="document.getElementById(\'sp-share-modal\').remove()" style="width:28px;height:28px;border-radius:6px;border:1px solid #E3E7F0;background:#f5f5f5;cursor:pointer;font-size:16px">✕</button>'
+    + '</div>'
+    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">Subject</div>'
+    + '<input id="sp-sh-subj" value="'+esc(subject)+'" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:12px;box-sizing:border-box;font-family:inherit">'
+    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">Message</div>'
+    + '<textarea id="sp-sh-body" rows="12" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:12px;resize:vertical;box-sizing:border-box;font-family:monospace;line-height:1.5">'+esc(body)+'</textarea>'
+    + '<div style="font-size:10.5px;color:#7A849E;margin-top:6px">⏰ Link expires '+esc(expiryStr)+' — view only, no sign-in required</div>'
+    + '<div style="display:flex;gap:8px;margin-top:16px">'
+    + '<button onclick="navigator.clipboard.writeText(document.getElementById(\'sp-sh-body\').value);toast(\'Copied to clipboard\')" style="flex:1;padding:10px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;font-weight:600;cursor:pointer">📋 Copy Message</button>'
+    + (toEmail ? '<a href="mailto:'+esc(toEmail)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)+'" style="flex:2;padding:10px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center">✉️ Open in Email</a>' : '')
+    + '</div></div>';
+  document.body.appendChild(modal);
+}
+
+// ── SEND TO CREW (Appenate) ───────────────────────────────────────────────
+async function sendToCrew(jobId) {
+  var job = jobs.filter(function(j){ return j.id === jobId; })[0];
+  if (!job) { toast('Job not found'); return; }
+
+  var crew = (job.drivers || []).concat(job.porters || []).filter(function(x){ return x; });
+  if (!crew.length) { toast('No crew assigned to this job'); return; }
+
+  // Find linked client job for partner ref, docs link etc.
+  var cj = job.clientJobId ? CLIENT_JOBS.filter(function(x){ return x.id === job.clientJobId; })[0] : null;
+  var partnerRef = cj ? (cj.partnerRef || cj.clientRef || '') : '';
+  var mm = cj && cj.moveManager ? MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0] : null;
+
+  // CompleteBy = job date at 17:00 UTC
+  var completeBy = (job.start || d2s(new Date())) + 'T17:00:00';
+
+  // Build AdditionalInfo
+  var info = [
+    'JOB: ' + (job.type || job.jobType || ''),
+    'CLIENT: ' + (job.client || ''),
+    'PARTNER REF: ' + (partnerRef || 'TBC'),
+    'OUR REF: ' + (job.ref || ''),
+    'BRAND: ' + (job.brand || ''),
+    'ORIGIN: ' + (job.origin || '—'),
+    'DESTINATION: ' + (job.dest || '—'),
+    'VOLUME: ' + (job.volFt ? job.volFt + ' ft³' : 'TBC'),
+  ];
+  if (mm) info.push('MOVE MANAGER: ' + mm.name + (mm.email ? ' (' + mm.email + ')' : ''));
+  if (job.access) {
+    var flags = Object.keys(job.access).filter(function(k){ return job.access[k]; });
+    if (flags.length) info.push('ACCESS: ' + flags.join(', '));
+  }
+  if (job.opsNotes) info.push('OPS NOTES: ' + job.opsNotes);
+  if (cj && cj.spFolderUrl) info.push('DOCUMENTS: ' + cj.spFolderUrl);
+  var additionalInfo = info.join('\n');
+
+  var taskName = (job.type || job.jobType || 'Job') + ' — ' + (job.client || '') + ' — ' + (job.start ? job.start : '');
+
+  toast('Sending to crew (' + crew.length + ' member' + (crew.length!==1?'s':'') + ')…');
+
+  var successCount = 0;
+  var taskIds = [];
+
+  for (var ci = 0; ci < crew.length; ci++) {
+    var crewName = crew[ci];
+    var crewMember = CREW.filter(function(c){ return c.name === crewName; })[0];
+    var crewEmail = crewMember ? (crewMember.email || '') : '';
+    if (!crewEmail) {
+      toast('⚠ No email set for ' + crewName + ' — skipped. Add email in Settings → Crew.');
+      continue;
+    }
+
+    var taskPayload = {
+      Name:            taskName,
+      UserEmail:       crewEmail,
+      CompleteBy:      completeBy,
+      CompleteAtText:  job.origin || '',
+      CompleteAtLat:   job.originLat || 0,
+      CompleteAtLon:   job.originLon || 0,
+      AdditionalInfo:  additionalInfo,
+      ExternalId:      (job.ref || job.id) + '-' + crewEmail,
+      UserCanReject:   true,
+      STaskActivities: [
+        { Instruction: 'Review job brief and confirm details are correct for: ' + taskName }
+      ]
+    };
+
+    var res = await fetch('/api/appenate', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'createTask', payload: taskPayload })
+    });
+    var data = await res.json().catch(function(){ return {}; });
+    var parsed = typeof data === 'string' ? {} : data;
+    var taskId = (parsed.STask && parsed.STask.Id) || (parsed.Id) || '';
+
+    if (taskId) {
+      successCount++;
+      taskIds.push({ crew: crewName, taskId: taskId });
+    }
+  }
+
+  if (successCount > 0) {
+    // Store task IDs on the job
+    if (!job.appenateTaskIds) job.appenateTaskIds = [];
+    job.appenateTaskIds = job.appenateTaskIds.concat(taskIds);
+    job.appenateSynced = true;
+    saveData('job', job.id, job);
+    toast('✅ Sent to ' + successCount + ' crew member' + (successCount!==1?'s':'') + ' via Appenate');
+    renderActiveMod();
+  } else {
+    toast('❌ Failed to send — check crew email addresses in Settings → Crew');
+  }
+}
+
+// Crew email field is handled inline in renderSettingsCrew
+
+</script>
+
+<div class="page" id="mod-dashboard">
       <div style="flex:1;overflow:auto;padding:20px" id="dashboard-body"></div>
     </div>
     
@@ -12814,518 +13323,5 @@ document.addEventListener('keydown', function(e) {
 });
 
 </script>
-<script>
-// ═══════════════════════════════════════════════════════════════════════════
-// SHAREPOINT + APPENATE — FULL INTEGRATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ── DOCUMENT CHECKLIST DEFINITION ────────────────────────────────────────
-// timing: 'before' = required before job date, 'after' = expected after job
-// required: true = counts toward red/amber indicator
-// jobTypes: which job types this applies to (empty = all)
-
-var SP_CHECKLIST = [
-  { slug:'survey',        label:'Survey & Quote',          folder:'01 — Survey & Quote',          icon:'📋', timing:'before', required:true,  jobTypes:['Origin Sea Pack','Origin Air Pack','Origin Road Pack','Door to Door','Destination Services','Ex Store Delivery','Blanket Wrap','Handling Only'] },
-  { slug:'auth',          label:'Authorisation & Booking', folder:'02 — Authorisation & Booking', icon:'✅', timing:'before', required:true,  jobTypes:[] },
-  { slug:'jobpaperwork',  label:'Job Paperwork',           folder:'03 — Job Paperwork',           icon:'📄', timing:'before', required:true,  jobTypes:[] },
-  { slug:'inventory',     label:'Inventory & Packing',     folder:'04 — Inventory & Packing Lists',icon:'📦', timing:'mixed',  required:false, jobTypes:[] },
-  { slug:'images',        label:'Images',                  folder:'05 — Images',                  icon:'🖼',  timing:'after',  required:false, jobTypes:[] },
-  { slug:'invoices',      label:'Invoices & Finance',      folder:'06 — Invoices & Finance',      icon:'💷', timing:'after',  required:false, jobTypes:[] },
-  { slug:'pod',           label:'POD & Completion',        folder:'07 — POD & Completion',        icon:'🖊',  timing:'after',  required:false, jobTypes:[] },
-];
-
-// Inventory timing rule: 'before' for destination/ex-store, 'after' for origin/D2D
-function spInventoryTiming(jobType) {
-  var destTypes = ['Destination Services','Ex Store Delivery'];
-  return destTypes.indexOf(jobType) >= 0 ? 'before' : 'after';
-}
-
-// ── DOC READINESS for calendar indicator ─────────────────────────────────
-function spDocReadiness(cj, jobDateStr) {
-  if (!cj.spFolderId) {
-    return { cls:'grey', icon:'📁', tip:'No SharePoint folder created' };
-  }
-  var checklist = cj.docChecklist || {};
-  var jobDate = jobDateStr ? new Date(jobDateStr + 'T00:00:00') : null;
-  var today = new Date(); today.setHours(0,0,0,0);
-  var daysToJob = jobDate ? Math.round((jobDate - today) / 86400000) : 999;
-  var jobType = cj.jobType || '';
-
-  var missingRequired = [];
-  var missingAfter = [];
-
-  SP_CHECKLIST.forEach(function(item) {
-    // Skip if N/A
-    if (checklist[item.slug] === 'na') return;
-    // Check job type filter
-    if (item.jobTypes.length && item.jobTypes.indexOf(jobType) < 0) return;
-
-    var timing = item.slug === 'inventory' ? spInventoryTiming(jobType) : item.timing;
-    var status = checklist[item.slug];
-    var fileCount = (cj.spFileCounts && cj.spFileCounts[item.slug]) || 0;
-    var hasFiles = fileCount > 0 || status === 'received';
-
-    if (timing === 'before' && !hasFiles) {
-      missingRequired.push(item.label);
-    }
-    if (timing === 'after' && jobDate && today > jobDate && !hasFiles) {
-      missingAfter.push(item.label);
-    }
-  });
-
-  if (missingRequired.length > 0 && daysToJob <= 7) {
-    return { cls:'red', icon:'🔴', tip:'AT RISK: Missing before job — ' + missingRequired.join(', ') };
-  }
-  if (missingRequired.length > 0) {
-    return { cls:'amber', icon:'🟡', tip:'Outstanding: ' + missingRequired.join(', ') };
-  }
-  if (missingAfter.length > 0) {
-    return { cls:'amber', icon:'🟡', tip:'Post-job docs outstanding: ' + missingAfter.join(', ') };
-  }
-  return { cls:'green', icon:'🟢', tip:'All required documents received' };
-}
-
-// ── SP CHECKLIST RENDER ───────────────────────────────────────────────────
-function spDocChecklist(cj) {
-  var checklist = cj.docChecklist || {};
-  var jobType = cj.jobType || '';
-  var today = new Date(); today.setHours(0,0,0,0);
-  var h = '<div>';
-
-  SP_CHECKLIST.forEach(function(item) {
-    var timing = item.slug === 'inventory' ? spInventoryTiming(jobType) : item.timing;
-    var override = checklist[item.slug];
-    var fileCount = (cj.spFileCounts && cj.spFileCounts[item.slug]) || 0;
-    var isNA = override === 'na';
-    var isReceived = override === 'received' || fileCount > 0;
-
-    // Status
-    var statusCls, statusLbl;
-    if (isNA) { statusCls = 'na'; statusLbl = 'N/A'; }
-    else if (isReceived) { statusCls = 'received'; statusLbl = '✓ Received'; }
-    else if (timing === 'before') { statusCls = 'outstanding'; statusLbl = 'Outstanding'; }
-    else if (timing === 'after') { statusCls = 'after'; statusLbl = 'After job'; }
-    else { statusCls = 'outstanding'; statusLbl = 'Awaiting'; }
-
-    h += '<div class="sp-checklist-row' + (isNA ? '" style="opacity:.45' : '') + '">';
-    h += '<div class="sp-cl-icon">' + item.icon + '</div>';
-    h += '<div class="sp-cl-name">' + esc(item.label) + '</div>';
-    if (fileCount) h += '<div class="sp-cl-count">' + fileCount + ' file' + (fileCount!==1?'s':'') + '</div>';
-    h += '<div class="sp-cl-status ' + statusCls + '">' + statusLbl + '</div>';
-    h += '<div class="sp-cl-actions">';
-    if (cj.spFolderId) {
-      h += '<button class="btn btn-s" style="padding:2px 7px;font-size:10.5px" onclick="spUploadToFolder(\''+cj.id+'\',\''+item.slug+'\',\''+esc(item.folder)+'\')">⬆</button>';
-      h += '<button class="btn btn-s" style="padding:2px 7px;font-size:10.5px;color:'+(isNA?'var(--green)':'var(--t3)')+'" onclick="spToggleNA(\''+cj.id+'\',\''+item.slug+'\')" title="'+(isNA?'Mark as required':'Mark as not needed')+'">'+(isNA?'↩ Undo N/A':'N/A')+'</button>';
-    }
-    h += '</div></div>';
-  });
-
-  // Upload zone
-  if (cj.spFolderId) {
-    h += '<div class="sp-upload-zone" onclick="spUploadFile(\''+cj.id+'\')" ondragover="event.preventDefault()" ondrop="spHandleDrop(event,\''+cj.id+'\')">';
-    h += '<div style="font-size:22px;margin-bottom:6px">⬆️</div>';
-    h += '<div style="font-size:12.5px;font-weight:600;color:var(--t2)">Drop files here or click to upload</div>';
-    h += '<div style="font-size:11px;color:var(--t3);margin-top:3px">Word, PDF, images, spreadsheets supported</div>';
-    h += '</div>';
-  }
-
-  h += '</div>';
-  return h;
-}
-
-// ── SP API HELPERS ────────────────────────────────────────────────────────
-async function spCall(action, payload) {
-  var res = await fetch('/api/sharepoint', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: action, payload: payload || {} })
-  });
-  var text = await res.text();
-  try { return JSON.parse(text); } catch(e) { return { error: text }; }
-}
-
-// Cache site/drive IDs so we don't re-fetch every time
-var _spSiteId  = '';
-var _spDriveId = '';
-
-async function spGetSiteAndDrive() {
-  if (_spSiteId && _spDriveId) return { siteId: _spSiteId, driveId: _spDriveId };
-  // Get site ID
-  var siteRes = await spCall('getSiteId', {});
-  if (!siteRes.id) { toast('SharePoint: Could not connect to site — check configuration'); return null; }
-  _spSiteId = siteRes.id;
-  // Get drive ID (Shared Documents = default drive)
-  var drivesRes = await spCall('getDriveId', { siteId: _spSiteId });
-  var drives = (drivesRes.value || []);
-  var drive = drives.filter(function(d){ return d.name === 'Documents' || d.name === 'Shared Documents'; })[0] || drives[0];
-  if (!drive) { toast('SharePoint: Could not find document library'); return null; }
-  _spDriveId = drive.id;
-  return { siteId: _spSiteId, driveId: _spDriveId };
-}
-
-function spBrandFolder(brand) {
-  var bd = BRAND_DATA.filter(function(b){ return b.name === brand; })[0];
-  return bd && bd.spFolder ? bd.spFolder : '';
-}
-
-function spFolderName(cj) {
-  var ref = cj.partnerRef || cj.clientRef || '';
-  var ourRef = cj.masterJobId || '';
-  var client = cj.clientName || '';
-  if (ref && ourRef) return ref + ' — ' + ourRef + ' — ' + client;
-  if (ourRef) return ourRef + ' — ' + client;
-  return client || 'Unknown';
-}
-
-// ── CREATE SHAREPOINT FOLDER ─────────────────────────────────────────────
-async function spCreateFolder(cjId) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj) return;
-
-  var brandFolder = spBrandFolder(cj.brand);
-  if (!brandFolder) {
-    toast('No SharePoint folder configured for brand "' + cj.brand + '" — set it in Settings → Brands');
-    return;
-  }
-  if (!(cj.partnerRef || cj.clientRef)) {
-    toast('Add the partner reference before creating the SharePoint folder');
-    return;
-  }
-
-  var btn = event && event.target;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
-  toast('Creating SharePoint folder…');
-
-  var sd = await spGetSiteAndDrive();
-  if (!sd) { if(btn){btn.disabled=false;btn.textContent='📁 Create SharePoint Folder';} return; }
-
-  var topFolderName = spFolderName(cj);
-  var basePath = 'Partners/' + brandFolder;
-
-  // Create top-level job folder
-  var topRes = await spCall('createFolder', {
-    siteId: sd.siteId, driveId: sd.driveId,
-    parentPath: basePath,
-    folderName: topFolderName
-  });
-  if (!topRes.id) {
-    toast('Failed to create folder: ' + (topRes.error || JSON.stringify(topRes)));
-    if(btn){btn.disabled=false;btn.textContent='📁 Create SharePoint Folder';}
-    return;
-  }
-
-  var jobFolderPath = basePath + '/' + topFolderName;
-
-  // Create all 7 sub-folders
-  var subFolders = SP_CHECKLIST.map(function(item){ return item.folder; });
-  for (var i = 0; i < subFolders.length; i++) {
-    await spCall('createFolder', {
-      siteId: sd.siteId, driveId: sd.driveId,
-      parentPath: jobFolderPath,
-      folderName: subFolders[i]
-    });
-  }
-
-  // Store folder details on client record
-  cj.spFolderId   = topRes.id;
-  cj.spFolderUrl  = topRes.webUrl;
-  cj.spFolderPath = jobFolderPath;
-  cj.spSiteId     = sd.siteId;
-  cj.spDriveId    = sd.driveId;
-  saveData('clientjob', cj.id, cj);
-
-  toast('✅ SharePoint folder created with 7 sub-folders');
-  if (curMod === 'bookings') renderClientJobDetail(cj);
-}
-
-// ── UPLOAD FILE ───────────────────────────────────────────────────────────
-function spUploadFile(cjId) {
-  var input = document.createElement('input');
-  input.type = 'file';
-  input.multiple = true;
-  input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.heic';
-  input.onchange = function() { spHandleFiles(cjId, input.files, null); };
-  input.click();
-}
-
-function spUploadToFolder(cjId, slug, folderName) {
-  var input = document.createElement('input');
-  input.type = 'file';
-  input.multiple = true;
-  input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.heic';
-  input.onchange = function() { spHandleFiles(cjId, input.files, folderName); };
-  input.click();
-}
-
-function spHandleDrop(event, cjId) {
-  event.preventDefault();
-  spHandleFiles(cjId, event.dataTransfer.files, null);
-}
-
-async function spHandleFiles(cjId, files, targetFolder) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj || !cj.spFolderId) { toast('No SharePoint folder linked to this job'); return; }
-  if (!files || !files.length) return;
-
-  // If no target folder specified, show folder picker
-  if (!targetFolder) {
-    targetFolder = await spPickFolder();
-    if (!targetFolder) return;
-  }
-
-  var folderPath = cj.spFolderPath + '/' + targetFolder;
-  toast('Uploading ' + files.length + ' file(s)…');
-
-  for (var i = 0; i < files.length; i++) {
-    var file = files[i];
-    var reader = new FileReader();
-    await new Promise(function(resolve) {
-      reader.onload = async function(e) {
-        var base64 = e.target.result.split(',')[1];
-        var filePath = folderPath + '/' + file.name;
-        var res = await spCall('uploadFile', {
-          siteId:      cj.spSiteId,
-          driveId:     cj.spDriveId,
-          filePath:    filePath,
-          fileContent: base64,
-          contentType: file.type || 'application/octet-stream'
-        });
-        if (res.id) {
-          // Write metadata
-          var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-          await spCall('updateMetadata', {
-            siteId:  cj.spSiteId,
-            driveId: cj.spDriveId,
-            itemId:  res.id,
-            metadata: {
-              OpsJobRef:        cj.masterJobId || '',
-              PartnerRef:       cj.partnerRef || cj.clientRef || '',
-              ClientName:       cj.clientName || '',
-              Brand:            cj.brand || '',
-              MoveManager:      cj.moveManager || '',
-              MoveManagerEmail: mm ? (mm.email || '') : '',
-              DocumentType:     targetFolder,
-              UploadedBy:       (APP_SETTINGS.userName || 'Ops Team')
-            }
-          });
-          // Mark checklist item as received
-          var matchItem = SP_CHECKLIST.filter(function(it){ return it.folder === targetFolder; })[0];
-          if (matchItem) {
-            if (!cj.docChecklist) cj.docChecklist = {};
-            cj.docChecklist[matchItem.slug] = 'received';
-            if (!cj.spFileCounts) cj.spFileCounts = {};
-            cj.spFileCounts[matchItem.slug] = (cj.spFileCounts[matchItem.slug] || 0) + 1;
-            saveData('clientjob', cj.id, cj);
-          }
-        }
-        resolve();
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  toast('✅ ' + files.length + ' file(s) uploaded to SharePoint');
-  if (curMod === 'bookings') renderClientJobDetail(cj);
-}
-
-function spPickFolder() {
-  return new Promise(function(resolve) {
-    var opts = SP_CHECKLIST.map(function(item, i) {
-      return '<option value="'+esc(item.folder)+'">'+esc(item.label)+'</option>';
-    }).join('');
-    var modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:center;justify-content:center';
-    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:24px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,.2)">'
-      + '<div style="font-size:14px;font-weight:700;margin-bottom:12px">Select document type</div>'
-      + '<select id="_sp_folder_pick" style="width:100%;padding:9px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:16px">'+opts+'</select>'
-      + '<div style="display:flex;gap:8px">'
-      + '<button onclick="this.closest(\'div\').parentNode.parentNode._resolve(null);this.closest(\'div\').parentNode.remove()" style="flex:1;padding:9px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;cursor:pointer">Cancel</button>'
-      + '<button onclick="this.closest(\'div\').parentNode.parentNode._resolve(document.getElementById(\'_sp_folder_pick\').value);this.closest(\'div\').parentNode.remove()" style="flex:2;padding:9px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Upload →</button>'
-      + '</div></div>';
-    modal._resolve = resolve;
-    document.body.appendChild(modal);
-  });
-}
-
-// ── TOGGLE N/A on checklist item ─────────────────────────────────────────
-function spToggleNA(cjId, slug) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj) return;
-  if (!cj.docChecklist) cj.docChecklist = {};
-  cj.docChecklist[slug] = cj.docChecklist[slug] === 'na' ? '' : 'na';
-  saveData('clientjob', cj.id, cj);
-  if (curMod === 'bookings') renderClientJobDetail(cj);
-}
-
-// ── SHARE FOLDER ─────────────────────────────────────────────────────────
-async function spShareFolder(cjId) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj || !cj.spFolderId) { toast('No SharePoint folder linked'); return; }
-
-  toast('Generating share link…');
-  var res = await spCall('createShareLink', {
-    siteId:  cj.spSiteId,
-    driveId: cj.spDriveId,
-    itemId:  cj.spFolderId
-  });
-
-  var linkUrl = res.link && res.link.webUrl ? res.link.webUrl : '';
-  if (!linkUrl) { toast('Could not generate share link'); return; }
-
-  // Calculate expiry
-  var expiry = new Date();
-  expiry.setDate(expiry.getDate() + 90);
-  var expiryStr = expiry.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][expiry.getMonth()] + ' ' + expiry.getFullYear();
-
-  // Find move manager details
-  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-  var mmName  = mm ? mm.name  : (cj.moveManager || 'Move Manager');
-  var mmEmail = mm ? (mm.email || '') : '';
-
-  // Build share message
-  var subject = 'Documents — ' + (cj.partnerRef||cj.clientRef||'') + ' / ' + (cj.masterJobId||'') + ' — ' + (cj.clientName||'');
-  var body = 'Hi ' + mmName + ',\n\n'
-    + 'Please find the documentation folder for the above move below.\n\n'
-    + 'Client:           ' + (cj.clientName||'—') + '\n'
-    + 'Your Reference:   ' + (cj.partnerRef||cj.clientRef||'—') + '\n'
-    + 'Our Reference:    ' + (cj.masterJobId||'—') + '\n'
-    + 'Brand:            ' + (cj.brand||'—') + '\n'
-    + 'Move Manager:     ' + mmName + (mmEmail ? ' (' + mmEmail + ')' : '') + '\n\n'
-    + 'Documents:\n→ View folder: ' + linkUrl + '\n  (Valid until ' + expiryStr + ' — view only)\n\n'
-    + 'If you have any questions please reply to this email.\n\n'
-    + 'Kind regards\nMoveSquad Operations';
-
-  spShowShareModal(subject, body, linkUrl, mmEmail, expiryStr);
-}
-
-function spShowShareModal(subject, body, linkUrl, toEmail, expiryStr) {
-  var existing = document.getElementById('sp-share-modal');
-  if (existing) existing.remove();
-
-  var modal = document.createElement('div');
-  modal.id = 'sp-share-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:flex;align-items:center;justify-content:center;padding:20px';
-  modal.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'
-    + '<div style="font-size:15px;font-weight:700;color:#1A2035">🔗 Share Document Folder</div>'
-    + '<button onclick="document.getElementById(\'sp-share-modal\').remove()" style="width:28px;height:28px;border-radius:6px;border:1px solid #E3E7F0;background:#f5f5f5;cursor:pointer;font-size:16px">✕</button>'
-    + '</div>'
-    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">Subject</div>'
-    + '<input id="sp-sh-subj" value="'+esc(subject)+'" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:12px;box-sizing:border-box;font-family:inherit">'
-    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">Message</div>'
-    + '<textarea id="sp-sh-body" rows="12" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:12px;resize:vertical;box-sizing:border-box;font-family:monospace;line-height:1.5">'+esc(body)+'</textarea>'
-    + '<div style="font-size:10.5px;color:#7A849E;margin-top:6px">⏰ Link expires '+esc(expiryStr)+' — view only, no sign-in required</div>'
-    + '<div style="display:flex;gap:8px;margin-top:16px">'
-    + '<button onclick="navigator.clipboard.writeText(document.getElementById(\'sp-sh-body\').value);toast(\'Copied to clipboard\')" style="flex:1;padding:10px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;font-weight:600;cursor:pointer">📋 Copy Message</button>'
-    + (toEmail ? '<a href="mailto:'+esc(toEmail)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)+'" style="flex:2;padding:10px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center">✉️ Open in Email</a>' : '')
-    + '</div></div>';
-  document.body.appendChild(modal);
-}
-
-// ── SEND TO CREW (Appenate) ───────────────────────────────────────────────
-async function sendToCrew(jobId) {
-  var job = jobs.filter(function(j){ return j.id === jobId; })[0];
-  if (!job) { toast('Job not found'); return; }
-
-  var crew = (job.drivers || []).concat(job.porters || []).filter(function(x){ return x; });
-  if (!crew.length) { toast('No crew assigned to this job'); return; }
-
-  // Find linked client job for partner ref, docs link etc.
-  var cj = job.clientJobId ? CLIENT_JOBS.filter(function(x){ return x.id === job.clientJobId; })[0] : null;
-  var partnerRef = cj ? (cj.partnerRef || cj.clientRef || '') : '';
-  var mm = cj && cj.moveManager ? MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0] : null;
-
-  // CompleteBy = job date at 17:00 UTC
-  var completeBy = (job.start || d2s(new Date())) + 'T17:00:00';
-
-  // Build AdditionalInfo
-  var info = [
-    'JOB: ' + (job.type || job.jobType || ''),
-    'CLIENT: ' + (job.client || ''),
-    'PARTNER REF: ' + (partnerRef || 'TBC'),
-    'OUR REF: ' + (job.ref || ''),
-    'BRAND: ' + (job.brand || ''),
-    'ORIGIN: ' + (job.origin || '—'),
-    'DESTINATION: ' + (job.dest || '—'),
-    'VOLUME: ' + (job.volFt ? job.volFt + ' ft³' : 'TBC'),
-  ];
-  if (mm) info.push('MOVE MANAGER: ' + mm.name + (mm.email ? ' (' + mm.email + ')' : ''));
-  if (job.access) {
-    var flags = Object.keys(job.access).filter(function(k){ return job.access[k]; });
-    if (flags.length) info.push('ACCESS: ' + flags.join(', '));
-  }
-  if (job.opsNotes) info.push('OPS NOTES: ' + job.opsNotes);
-  if (cj && cj.spFolderUrl) info.push('DOCUMENTS: ' + cj.spFolderUrl);
-  var additionalInfo = info.join('\n');
-
-  var taskName = (job.type || job.jobType || 'Job') + ' — ' + (job.client || '') + ' — ' + (job.start ? job.start : '');
-
-  toast('Sending to crew (' + crew.length + ' member' + (crew.length!==1?'s':'') + ')…');
-
-  var successCount = 0;
-  var taskIds = [];
-
-  for (var ci = 0; ci < crew.length; ci++) {
-    var crewName = crew[ci];
-    var crewMember = CREW.filter(function(c){ return c.name === crewName; })[0];
-    var crewEmail = crewMember ? (crewMember.email || '') : '';
-    if (!crewEmail) {
-      toast('⚠ No email set for ' + crewName + ' — skipped. Add email in Settings → Crew.');
-      continue;
-    }
-
-    var taskPayload = {
-      Name:            taskName,
-      UserEmail:       crewEmail,
-      CompleteBy:      completeBy,
-      CompleteAtText:  job.origin || '',
-      CompleteAtLat:   job.originLat || 0,
-      CompleteAtLon:   job.originLon || 0,
-      AdditionalInfo:  additionalInfo,
-      ExternalId:      (job.ref || job.id) + '-' + crewEmail,
-      UserCanReject:   true,
-      STaskActivities: [
-        { Instruction: 'Review job brief and confirm details are correct for: ' + taskName }
-      ]
-    };
-
-    var res = await fetch('/api/appenate', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'createTask', payload: taskPayload })
-    });
-    var data = await res.json().catch(function(){ return {}; });
-    var parsed = typeof data === 'string' ? {} : data;
-    var taskId = (parsed.STask && parsed.STask.Id) || (parsed.Id) || '';
-
-    if (taskId) {
-      successCount++;
-      taskIds.push({ crew: crewName, taskId: taskId });
-    }
-  }
-
-  if (successCount > 0) {
-    // Store task IDs on the job
-    if (!job.appenateTaskIds) job.appenateTaskIds = [];
-    job.appenateTaskIds = job.appenateTaskIds.concat(taskIds);
-    job.appenateSynced = true;
-    saveData('job', job.id, job);
-    toast('✅ Sent to ' + successCount + ' crew member' + (successCount!==1?'s':'') + ' via Appenate');
-    renderActiveMod();
-  } else {
-    toast('❌ Failed to send — check crew email addresses in Settings → Crew');
-  }
-}
-
-// ── ADD CREW EMAIL FIELD TO SETTINGS ─────────────────────────────────────
-// Patch renderSettingsCrew to add email column - stored on CREW objects
-var _origRenderSettingsCrew = renderSettingsCrew;
-renderSettingsCrew = function() {
-  _origRenderSettingsCrew();
-  // The crew table is already rendered, we patch it via a post-render pass
-  // This is handled in renderSettingsCrewWithEmail below
-};
-
-</script>
+</body>
+</html>
