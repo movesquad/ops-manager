@@ -12233,12 +12233,13 @@ async function spCreateFolder(cjId) {
 
   var jobFolderPath = basePath + '/' + topFolderName;
 
-  // Create all 7 sub-folders
+  // Create all 8 sub-folders using parent folder ID (avoids encoding issues with special chars)
   var subFolders = SP_CHECKLIST.map(function(item){ return item.folder; });
+  var parentFolderId = topRes.id;
   for (var i = 0; i < subFolders.length; i++) {
-    await spCall('createFolder', {
+    await spCall('createFolderById', {
       siteId: sd.siteId, driveId: sd.driveId,
-      parentPath: jobFolderPath,
+      parentId: parentFolderId,
       folderName: subFolders[i]
     });
   }
@@ -12299,11 +12300,18 @@ async function spHandleFiles(cjId, files, targetFolder) {
     await new Promise(function(resolve) {
       reader.onload = async function(e) {
         var base64 = e.target.result.split(',')[1];
-        var filePath = folderPath + '/' + file.name;
+        // Find the sub-folder ID by listing the job folder children
+        var subFolderId = null;
+        var children = await spCall('getFolderChildren', { siteId: cj.spSiteId, driveId: cj.spDriveId, itemId: cj.spFolderId });
+        if (children.value) {
+          var match = children.value.filter(function(x){ return x.name === targetFolder; })[0];
+          if (match) subFolderId = match.id;
+        }
         var res = await spCall('uploadFile', {
           siteId:      cj.spSiteId,
           driveId:     cj.spDriveId,
-          filePath:    filePath,
+          parentId:    subFolderId || cj.spFolderId,
+          fileName:    file.name,
           fileContent: base64,
           contentType: file.type || 'application/octet-stream'
         });
