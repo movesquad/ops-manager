@@ -1398,6 +1398,9 @@ textarea.fi{resize:vertical;min-height:60px}
           <button class="stab" id="stab-costing" onclick="setStab('costing',this)">Cost of Sale &amp; Maps</button>
           <button class="stab" id="stab-company" onclick="setStab('company',this)">🏢 Branding &amp; Email</button>
         </div>
+        <div style="padding:10px 12px;border-top:1px solid var(--b1);font-size:10px;color:var(--t3);text-align:center" id="app-version-badge">
+          <!-- version injected by JS -->
+        </div>
         <div class="settings-body" id="settings-body"></div>
       </div>
     </div>
@@ -4773,6 +4776,8 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
+var APP_VERSION = 'v37n — ' + (function(){ var d=new Date(); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); })();
+
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
   warehouseAddress: 'WN7 3EQ',    // Legacy single warehouse address (kept for compatibility)
@@ -11235,6 +11240,10 @@ function clearData() {
     var el2 = document.getElementById('db-loading');
     if (el2) el2.parentNode.removeChild(el2);
 
+    // Inject version badge into settings sidebar
+    var vb = document.getElementById('app-version-badge');
+    if (vb) vb.textContent = APP_VERSION;
+
     renderDashboard();
     renderBkList();
     setBadge('job-badge', jobs.length);
@@ -13384,43 +13393,55 @@ async function sendDocReminder(cjId) {
   var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
   if (!cj) return;
 
-  // Check there are actually missing docs
   var REQUIRED_SLUGS = ['packing-list','insurance','survey-report','delivery-order'];
-  var checklist = cj.docChecklist || {};
+  var slugLabels = {
+    'packing-list':'Packing List / Inventory','insurance':'Insurance Certificate',
+    'survey-report':'Survey Report','delivery-order':'Delivery Order / Instructions'
+  };
+  var checklist   = cj.docChecklist || {};
   var missingDocs = REQUIRED_SLUGS.filter(function(s){ return !checklist[s] || checklist[s] === 'missing'; });
 
-  if (!missingDocs.length) {
-    toast('No missing required documents for this job');
-    return;
-  }
+  if (!missingDocs.length) { toast('No missing required documents for this job'); return; }
 
   var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-  if (!mm || !mm.email) {
-    toast('No email set for move manager — add one in Settings → Move Managers');
-    return;
-  }
+  if (!mm || !mm.email) { toast('No email set for move manager — add one in Settings → Move Managers'); return; }
 
   if (!confirm('Send document request to ' + mm.name + ' (' + mm.email + ')?')) return;
 
+  var partnerRef   = cj.partnerRef || cj.clientRef || '—';
+  var ourRef       = cj.masterJobId || '—';
+  var clientName   = cj.clientName  || '—';
+  var jobDateNice  = cj.startDate ? (new Date(cj.startDate+'T12:00:00')).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : 'TBC';
+  var missingList  = missingDocs.map(function(s){ return slugLabels[s]||s; }).join(', ');
+  var docsUrl      = cj.spFolderUrl || '';
+  var company      = APP_SETTINGS.companyName || 'Onwards';
+
+  var subject = 'Action Required — Missing Documents: ' + partnerRef + ' / ' + ourRef + ' — ' + clientName;
+
+  var bodyHtml = '<p>Dear ' + esc(mm.name) + ',</p>'
+    + '<p>We are writing to request the outstanding documents for the following job. Please provide these as soon as possible:</p>'
+    + '<table style="width:100%;border-collapse:collapse;margin:16px 0">'
+    + '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;background:#f8f9fb;width:150px">Client</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px">' + esc(clientName) + '</td></tr>'
+    + '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;background:#f8f9fb">Your Reference</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px">' + esc(partnerRef) + '</td></tr>'
+    + '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;background:#f8f9fb">Our Reference</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px">' + esc(ourRef) + '</td></tr>'
+    + '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;background:#f8f9fb">Job Date</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px">' + esc(jobDateNice) + '</td></tr>'
+    + '</table>'
+    + '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin:20px 0">'
+    + '<div style="font-weight:700;color:#856404;margin-bottom:8px">⚠ Missing Documents</div>'
+    + '<div style="color:#533f03;font-size:13px">' + esc(missingList) + '</div>'
+    + '</div>'
+    + (docsUrl ? '<p>Please upload to the job folder: <a href="'+esc(docsUrl)+'" style="color:#0073EA">'+esc(docsUrl)+'</a></p>' : '')
+    + '<p>If you have any questions please reply to this email.</p>'
+    + '<p>Kind regards,<br><strong>' + esc(company) + ' Operations</strong></p>';
+
+  var html = buildEmailHtml({ subject: subject, preheader: 'Missing documents required for ' + clientName, bodyHtml: bodyHtml });
+
   toast('Sending document request…');
-  try {
-    var secret = 'onwards-reminder-2026'; // must match REMINDER_SECRET env var
-    var res = await fetch('/api/reminder', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret: secret, clientJobId: cjId })
-    });
-    var data = await res.json();
-    if (data.ok && data.processed > 0) {
-      toast('✅ Document request sent to ' + mm.email);
-    } else if (data.ok && data.processed === 0) {
-      toast('⚠ No reminder sent — check move manager email in Settings');
-    } else {
-      toast('❌ Failed: ' + (data.error || 'Unknown error'));
-    }
-  } catch(e) {
-    toast('❌ Error: ' + e.message);
+  var res = await sendEmail({ to: mm.email, subject: subject, html: html });
+  if (res.ok) {
+    toast('✅ Document request sent to ' + mm.email);
+  } else {
+    toast('❌ Failed: ' + (res.error || 'Unknown error'));
   }
 }
 
@@ -13438,7 +13459,7 @@ async function sendToCrew(jobId) {
   var mm = cj && cj.moveManager ? MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0] : null;
 
   // CompleteBy = job date at 17:00 UTC
-  var completeBy = (job.start || d2s(new Date())) + 'T17:00:00';
+  var completeBy = (job.start || d2s(new Date())) + 'T17:00:00Z';
 
   // Build AdditionalInfo
   var info = [
@@ -13499,7 +13520,17 @@ async function sendToCrew(jobId) {
     });
     var data = await res.json().catch(function(){ return {}; });
     var parsed = typeof data === 'string' ? {} : data;
-    var taskId = (parsed.STask && parsed.STask.Id) || (parsed.Id) || '';
+
+    // Log full response for debugging
+    console.log('Appenate response for', crewName, ':', res.status, JSON.stringify(parsed));
+
+    if (!res.ok) {
+      var errMsg = parsed.error || parsed.Message || parsed.message || ('HTTP ' + res.status);
+      toast('❌ Appenate error for ' + crewName + ': ' + errMsg);
+      continue;
+    }
+
+    var taskId = (parsed.STask && parsed.STask.Id) || (parsed.Id) || (parsed.TaskId) || '';
 
     if (taskId) {
       successCount++;
