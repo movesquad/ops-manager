@@ -7873,6 +7873,13 @@ function cfgCommit() {
       }
     }
   }
+
+  // Auto-send job confirmation email when linked to client record and not a draft
+  if (_isLinked && _notDraft && CFG.clientJobId) {
+    setTimeout(function() {
+      sendJobConfirmationEmail(CFG.clientJobId, { resend: false });
+    }, 1500); // slight delay so saves complete first
+  }
 }
 
 function cfgWriteToBookings(calJobIds) {
@@ -11625,6 +11632,7 @@ function renderClientJobDetail(cj) {
   } else {
     h += '<button class="btn btn-s btn-sm" onclick="spUploadFile(\''+cj.id+'\')">⬆ Upload File</button>';
     h += '<button class="btn btn-s btn-sm" onclick="spShareFolder(\''+cj.id+'\')">🔗 Share Folder</button>';
+    h += '<button class="btn btn-s btn-sm" onclick="sendJobConfirmationEmail(\''+cj.id+'\',{resend:true})" title="Resend job confirmation email">📧 Resend Confirmation</button>';
   }
   h += '</div></div>';
 
@@ -12155,7 +12163,7 @@ function buildEmailHtml(opts) {
   + (footer ? '<br><span style="color:#9ca3af">' + esc(footer) + '</span>' : '')
   + (opts.footerExtra ? '<br>' + opts.footerExtra : '')
   + '</div></td></tr>'
-  + '</table></td></tr></table></html>';
+  + '</table></td></tr></table>';
 }
 
 // ── SHARE FOLDER EMAIL ────────────────────────────────────────────────────
@@ -12664,6 +12672,146 @@ async function spSendShareEmailFromModal(cjId, linkUrl, expiryStr) {
   if (!toEmail) { toast('Please enter a recipient email address'); return; }
   document.getElementById('sp-share-modal').remove();
   await spSendShareEmail(cjId, linkUrl, expiryStr, toEmail, subject);
+}
+
+// ── JOB CONFIRMATION EMAIL ───────────────────────────────────────────────────
+async function sendJobConfirmationEmail(cjId, opts) {
+  // opts: { resend: bool } — if resend, skip auto-check
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
+  if (!cj) { console.warn('sendJobConfirmationEmail: client job not found', cjId); return; }
+
+  // Determine channel from brand
+  var bd       = BRAND_DATA.filter(function(b){ return b.name === cj.brand; })[0];
+  var channel  = bd ? bd.channel : 'Partner';
+  var isDomestic = channel === 'Domestic';
+
+  // Determine recipient
+  var toEmail  = '';
+  var toName   = '';
+  if (isDomestic) {
+    toEmail = cj.clientEmail || '';
+    toName  = cj.clientName  || 'Customer';
+    if (!toEmail) { console.warn('No client email for domestic job', cjId); return; }
+  } else {
+    var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
+    toEmail = mm ? (mm.email || '') : '';
+    toName  = mm ? mm.name : (cj.moveManager || 'Move Manager');
+    if (!toEmail) {
+      if (opts && opts.resend) toast('No email set for move manager — add one in Settings → Move Managers');
+      return;
+    }
+  }
+
+  // Get all movements for this client job
+  var movs = jobs.filter(function(j){ return j.clientJobId === cjId; });
+
+  // Subject line
+  var partnerRef = cj.partnerRef || cj.clientRef || '';
+  var ourRef     = cj.masterJobId || '';
+  var subject    = isDomestic
+    ? 'Job Confirmation: ' + ourRef + ' — ' + (cj.clientName||'')
+    : 'Job Confirmation: ' + (partnerRef ? partnerRef + ' / ' : '') + ourRef + ' — ' + (cj.clientName||'');
+
+  // Build movements table rows
+  var movRows = '';
+  movs.forEach(function(j) {
+    var jobType = j.jobType || j.type || '';
+    var isWarehouseIn  = jobType === 'Int Store Handling' || (j.dest   && j.dest.indexOf('INT STORE') >= 0);
+    var isWarehouseOut = jobType === 'Ex Store Delivery'  || (j.origin && j.origin.indexOf('EX STORE') >= 0);
+    var isDTD = jobType === 'Door to Door' || jobType === 'Domestic' || (j.origin && j.dest && !isWarehouseIn && !isWarehouseOut);
+
+    // Address display logic
+    var addrHtml = '';
+    if (isWarehouseIn) {
+      addrHtml = '<strong>Origin:</strong> ' + esc(j.origin||'TBC') + '<br><strong>To:</strong> MoveSquad Warehouse';
+    } else if (isWarehouseOut) {
+      addrHtml = '<strong>From:</strong> MoveSquad Warehouse<br><strong>Destination:</strong> ' + esc(j.dest||'TBC');
+    } else if (isDTD) {
+      addrHtml = '<strong>Origin:</strong> ' + esc(j.origin||'TBC') + '<br><strong>Destination:</strong> ' + esc(j.dest||'TBC');
+    } else if (jobType && jobType.indexOf('Destination') >= 0) {
+      addrHtml = '<strong>Destination:</strong> ' + esc(j.dest||'TBC');
+    } else {
+      addrHtml = '<strong>Origin:</strong> ' + esc(j.origin||'TBC');
+    }
+
+    // Access notes
+    var accessNotes = [];
+    if (j.access) {
+      if (j.access.lift)       accessNotes.push('Lift available');
+      if (j.access.noLift)     accessNotes.push('No lift — stairs only');
+      if (j.access.parking)    accessNotes.push('Parking available');
+      if (j.access.noParking)  accessNotes.push('No parking — permits required');
+      if (j.access.longCarry)  accessNotes.push('Long carry');
+      if (j.access.narrowAccess) accessNotes.push('Narrow access');
+    }
+
+    var dateStr = j.start ? (new Date(j.start+'T12:00:00')).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : 'TBC';
+    var volStr  = j.volFt ? j.volFt + ' ft³' + (j.volCbm ? ' / ' + j.volCbm + ' m³' : '') : 'TBC';
+
+    movRows += '<tr style="border-bottom:1px solid #e8eaed">'
+      + '<td style="padding:12px 14px;vertical-align:top;min-width:140px"><strong style="color:#1a1a2e">' + esc(jobType) + '</strong><br><span style="font-size:12px;color:#6b7280">' + esc(j.ref||j.movementRef||'') + '</span></td>'
+      + '<td style="padding:12px 14px;vertical-align:top"><span style="background:#f0f4ff;color:#2563eb;font-size:12px;font-weight:600;padding:3px 8px;border-radius:4px">' + esc(dateStr) + '</span></td>'
+      + '<td style="padding:12px 14px;vertical-align:top;font-size:13px;color:#374151">' + addrHtml + '</td>'
+      + '<td style="padding:12px 14px;vertical-align:top;font-size:13px">' + esc(volStr) + '</td>'
+      + (accessNotes.length ? '<td style="padding:12px 14px;vertical-align:top;font-size:12px;color:#b45309">' + accessNotes.join('<br>') + '</td>' : '<td style="padding:12px 14px"></td>')
+      + '</tr>';
+  });
+
+  // Ref table
+  var refRows = '';
+  if (!isDomestic && partnerRef) refRows += '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb;width:160px">Your Reference</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(partnerRef) + '</td></tr>';
+  if (ourRef) refRows += '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb">Our Reference</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(ourRef) + '</td></tr>';
+  refRows += '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb">Client</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(cj.clientName||'—') + '</td></tr>';
+  if (cj.brand) refRows += '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb">Service</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(cj.brand) + '</td></tr>';
+  if (!isDomestic && cj.moveManager) refRows += '<tr><td style="padding:8px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb">Move Manager</td><td style="padding:8px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(cj.moveManager) + '</td></tr>';
+
+  // SP folder link
+  var docsLink = '';
+  if (cj.spFolderUrl) {
+    docsLink = '<p style="margin-top:24px"><strong>📁 Document Folder</strong><br><a href="' + esc(cj.spFolderUrl) + '" style="color:' + (APP_SETTINGS.emailAccentColor||'#0073EA') + '">' + esc(cj.spFolderUrl) + '</a></p>';
+  }
+
+  var greeting = isDomestic ? ('Dear ' + esc(cj.clientName||'') + ',') : ('Dear ' + esc(toName) + ',');
+  var intro    = isDomestic
+    ? '<p>Thank you for choosing ' + esc(APP_SETTINGS.companyName||'Onwards') + '. We are pleased to confirm the following job booking:</p>'
+    : '<p>Please find below the confirmed job details for the above booking:</p>';
+
+  var bodyHtml = '<p>' + greeting + '</p>'
+    + intro
+    + '<table style="width:100%;border-collapse:collapse;margin:16px 0">' + refRows + '</table>'
+    + '<p style="margin-top:24px"><strong>Job Details</strong></p>'
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '<thead><tr style="background:#f8f9fb;border-bottom:2px solid #e8eaed">'
+    + '<th style="padding:10px 14px;text-align:left;color:#374151">Type</th>'
+    + '<th style="padding:10px 14px;text-align:left;color:#374151">Date</th>'
+    + '<th style="padding:10px 14px;text-align:left;color:#374151">Address</th>'
+    + '<th style="padding:10px 14px;text-align:left;color:#374151">Volume</th>'
+    + '<th style="padding:10px 14px;text-align:left;color:#374151">Access Notes</th>'
+    + '</tr></thead><tbody>' + movRows + '</tbody></table></div>'
+    + docsLink
+    + '<p style="margin-top:24px">If you have any questions please reply to this email.</p>'
+    + '<p>Kind regards,<br><strong>' + esc(APP_SETTINGS.companyName||'Onwards') + ' Operations</strong></p>';
+
+  var html = buildEmailHtml({
+    subject,
+    preheader: 'Job confirmation for ' + (cj.clientName||'') + (partnerRef ? ' (' + partnerRef + ')' : ''),
+    bodyHtml,
+    ctaUrl:   cj.spFolderUrl || '',
+    ctaLabel: cj.spFolderUrl ? '📁 View Documents' : ''
+  });
+
+  var res = await sendEmail({ to: toEmail, subject, html, replyTo: APP_SETTINGS.emailReplyTo });
+  if (res.ok) {
+    // Log the send on the client job
+    if (!cj.emailLog) cj.emailLog = [];
+    cj.emailLog.push({ type: 'confirmation', sentAt: new Date().toISOString(), to: toEmail, subject });
+    saveData('clientjob', cj.id, cj);
+    if (opts && opts.resend) toast('✅ Confirmation email sent to ' + toEmail);
+    console.log('Job confirmation sent to', toEmail);
+  } else {
+    console.error('Job confirmation email failed:', res.error);
+    if (opts && opts.resend) toast('❌ Email failed: ' + (res.error||'Unknown error'));
+  }
 }
 
 // ── SEND TO CREW (Appenate) ───────────────────────────────────────────────
