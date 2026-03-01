@@ -1288,6 +1288,13 @@ textarea.fi{resize:vertical;min-height:60px}
       <div class="nb-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
       <span class="sb-label">Settings</span>
     </button>
+
+    <div class="sb-group-lbl" style="margin-top:10px">Crew Portal</div>
+    <button class="nb" onclick="dvShowCrewPicker()">
+      <div class="nb-ico">🚐</div>
+      <span class="sb-label">Preview as Crew</span>
+    </button>
+
   </nav>
 
   <!-- User + Logout footer -->
@@ -1580,8 +1587,8 @@ function mmForJob(j){ if(!j.brand||brandChannel(j.brand)==='Domestic') return nu
 // holiday    = holiday pay uplift % (employed only, default 12.07%)
 // notional   = chargeRate * oncost multipliers — used in Finance accounting view only
 var CREW = [
-  {name:'ADRIAN',role:'Driver',chargeRate:220,rate:180,col:'#0073EA',employed:true, ni:13.8,pension:3,holiday:12.07,photo:'',email:''},
-  {name:'MARTYN',role:'Driver',chargeRate:220,rate:180,col:'#00C875',employed:true, ni:13.8,pension:3,holiday:12.07,photo:''},
+  {name:'ADRIAN',role:'Driver',chargeRate:220,rate:180,col:'#0073EA',employed:true, ni:13.8,pension:3,holiday:12.07,photo:'',email:'adrian@onwards.network'},
+  {name:'MARTYN',role:'Driver',chargeRate:220,rate:180,col:'#00C875',employed:true, ni:13.8,pension:3,holiday:12.07,photo:'',email:'martyn@onwards.network'},
   {name:'RAY',   role:'Driver',chargeRate:215,rate:175,col:'#FF9F1A',employed:true, ni:13.8,pension:3,holiday:12.07,photo:''},
   {name:'DAYLE', role:'Driver',chargeRate:195,rate:175,col:'#A25DDC',employed:false,ni:0,   pension:0,holiday:0,   photo:''},
   {name:'DAVE',  role:'Porter',chargeRate:160,rate:130,col:'#0097C2',employed:true, ni:13.8,pension:3,holiday:12.07,photo:''},
@@ -4841,7 +4848,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v45 — 1 Mar 2026';
+var APP_VERSION = 'v46 — 1 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -11786,6 +11793,46 @@ window.addEventListener('beforeunload', lsSave);
 // DRIVER VIEW
 var _isDriverView = false;
 
+var _dvPickerCrew = [];
+function dvShowCrewPicker() {
+  _dvPickerCrew = CREW.filter(function(c){ return c.role === 'Driver' || c.role === 'Porter'; });
+  var h = '<div style="padding:20px">';
+  h += '<div style="font-size:16px;font-weight:800;color:#1C2333;margin-bottom:4px">Preview as Crew Member</div>';
+  h += '<div style="font-size:12px;color:#7A849E;margin-bottom:16px">Simulates the crew portal for testing.</div>';
+  for (var i = 0; i < _dvPickerCrew.length; i++) {
+    var c = _dvPickerCrew[i];
+    var initials = c.name.slice(0,2);
+    var emailStr = c.email || 'no email set';
+    h += '<div onclick="dvPreviewAs(' + i + ')" style="display:flex;align-items:center;gap:12px;padding:11px 14px;background:#F7F6F2;border-radius:10px;margin-bottom:8px;cursor:pointer">';
+    h += '<div style="width:36px;height:36px;border-radius:50%;background:' + (c.col||'#7A849E') + ';color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center">' + esc(initials) + '</div>';
+    h += '<div><div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(c.name) + '</div>';
+    h += '<div style="font-size:11px;color:#7A849E">' + esc(c.role) + ' &middot; ' + esc(emailStr) + '</div></div>';
+    h += '</div>';
+  }
+  h += '<button onclick="closeModal()" style="width:100%;margin-top:8px;background:none;border:1px solid #E3E7F0;border-radius:8px;padding:10px;font-size:13px;color:#7A849E;cursor:pointer">Cancel</button>';
+  h += '</div>';
+  showGenericModal(h, '');
+}
+
+function dvPreviewAs(idx) {
+  closeModal();
+  var c = _dvPickerCrew[idx];
+  if (!c) return;
+  window._driverName = c.name;
+  window._isDriverView = true;
+  activateDriverView();
+}
+
+function dvExitCrewView() {
+  window._isDriverView = false;
+  window._driverName = null;
+  el('driver-view').style.display = 'none';
+  var sb = document.querySelector('.sidebar');
+  var mn = document.querySelector('.main');
+  if (sb) sb.style.display = '';
+  if (mn) mn.style.display = '';
+}
+
 function checkDriverLock() {
   var email = (window._authEmail || '').toLowerCase().trim();
   if (!email) return;
@@ -14200,7 +14247,7 @@ function whSelectOptions(selectedId) {
             </div>
             <div style="text-align:right">
               <div id="dv-date" style="font-size:12px;color:rgba(255,255,255,.5)"></div>
-              <div id="dv-job-count" style="margin-top:4px;background:var(--blue);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#fff;display:inline-block">0 jobs</div>
+              <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin-top:4px"><div id="dv-job-count" style="background:var(--blue);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#fff">0 jobs</div><button onclick="dvExitCrewView()" style="background:rgba(255,255,255,.15);border:none;border-radius:8px;padding:4px 10px;font-size:11px;font-weight:700;color:rgba(255,255,255,.8);cursor:pointer">← Exit</button></div>
             </div>
           </div>
           <!-- Weather/status bar could go here -->
