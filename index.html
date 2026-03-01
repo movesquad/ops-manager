@@ -1410,7 +1410,8 @@ textarea.fi{resize:vertical;min-height:60px}
         <!-- LEFT: Client job list -->
         <div style="width:300px;min-width:300px;border-right:1px solid var(--b1);display:flex;flex-direction:column;background:var(--w)">
           <div style="padding:12px;border-bottom:1px solid var(--b1);flex-shrink:0">
-            <button class="btn btn-p" style="width:100%;margin-bottom:8px" onclick="newClientRecord()">+ New Client Job</button>
+            <button class="btn btn-p" style="width:100%;margin-bottom:6px" onclick="newClientRecord()">+ New Client Job</button>
+            <button class="btn btn-s" style="width:100%;margin-bottom:8px;font-size:12px" onclick="openBookingParser()">🤖 Parse from Email / Doc</button>
             <div style="position:relative">
               <input class="fi" id="cj-search" placeholder="&#128269; Search clients, refs..." style="width:100%;padding:6px 10px 6px 28px;font-size:12px" oninput="renderClientJobsList()">
               <svg style="position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:.4;pointer-events:none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -4819,6 +4820,9 @@ function openEditSurvey(id) {
   el('survey-modal-ref').textContent = sv.ref || '';
   renderSurveyForm(sv);
   el('survey-backdrop').style.display = 'flex';
+  // Show resend button if survey has client email
+  var resendBtn = el('sv-resend-btn');
+  if (resendBtn) resendBtn.style.display = sv.clientEmail ? 'inline-flex' : 'none';
 }
 
 function closeSurveyModal() {
@@ -4844,6 +4848,12 @@ function renderSurveyForm(sv) {
   // Client name
   h += '<div style="margin-bottom:12px"><label class="lbl">Client Name</label>';
   h += '<input class="fi" id="sv-client" value="'+esc(sv.clientName||'')+'" placeholder="Full name"></div>';
+
+  // Contact details
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">';
+  h += '<div><label class="lbl">Client Email</label><input class="fi" id="sv-email" type="email" value="'+esc(sv.clientEmail||'')+'" placeholder="client@example.com"></div>';
+  h += '<div><label class="lbl">Client Phone</label><input class="fi" id="sv-phone" value="'+esc(sv.clientPhone||'')+'" placeholder="07700 000000"></div>';
+  h += '</div>';
 
   // Address/postcode
   h += '<div style="margin-bottom:12px"><label class="lbl">Survey Address / Postcode</label>';
@@ -4892,8 +4902,10 @@ function saveSurvey() {
     ref:        'SV-' + String(SURVEYS.length + 1).padStart(4,'0'),
     brand:      (el('sv-brand')||{}).value || BRANDS[0],
     jobType:    (el('sv-jobtype')||{}).value || 'Door to Door',
-    clientName: client,
-    postcode:   (el('sv-postcode')||{}).value.trim(),
+    clientName:  client,
+    clientEmail: (el('sv-email')||{}).value.trim(),
+    clientPhone: (el('sv-phone')||{}).value.trim(),
+    postcode:    (el('sv-postcode')||{}).value.trim(),
     surveyDate: date,
     surveyTime: (el('sv-time')||{}).value,
     surveyor:   (el('sv-surveyor')||{}).value,
@@ -4916,6 +4928,10 @@ function saveSurvey() {
   saveData('survey', sv.id, sv);
   closeSurveyModal();
   toast('Survey saved — ' + sv.clientName + ' on ' + fmtNice(sv.surveyDate));
+  // Auto-send confirmation email if client email present
+  if (sv.clientEmail) {
+    setTimeout(function() { sendSurveyConfirmationEmail(sv.id, { resend: false }); }, 1000);
+  }
   renderBkSurveyList();
   // Refresh calendar if open
   if (curMod === 'calendar') renderActiveMod();
@@ -7878,7 +7894,10 @@ function cfgCommit() {
   if (_isLinked && _notDraft && CFG.clientJobId) {
     setTimeout(function() {
       sendJobConfirmationEmail(CFG.clientJobId, { resend: false });
-    }, 1500); // slight delay so saves complete first
+    }, 1500);
+    // Sync contacts to M365
+    var _cjForSync = CLIENT_JOBS.filter(function(x){ return x.id === CFG.clientJobId; })[0];
+    if (_cjForSync) syncJobContacts(_cjForSync);
   }
 }
 
@@ -12016,6 +12035,7 @@ function whSelectOptions(selectedId) {
       <div style="padding:18px 20px" id="survey-form-body"></div>
       <div style="padding:12px 20px 18px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--b1)">
         <button class="btn btn-s btn-sm" onclick="closeSurveyModal()">Cancel</button>
+        <button class="btn btn-s btn-sm" id="sv-resend-btn" onclick="if(curSurveyId)sendSurveyConfirmationEmail(curSurveyId,{resend:true})" style="display:none">📧 Resend Confirmation</button>
         <button class="btn btn-p btn-sm" onclick="saveSurvey()">Save Survey</button>
       </div>
     </div>
@@ -12210,6 +12230,329 @@ async function spSendShareEmail(cjId, linkUrl, expiryStr, overrideTo, overrideSu
   } else {
     toast('❌ Email failed: ' + (res.error||'Unknown error'));
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CALENDAR INVITES — GRAPH API CREATE EVENT IN MOVE MANAGER'S OUTLOOK
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function createMoveManagerCalendarEvent(cj, movs) {
+  if (!movs || !movs.length) return;
+  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
+  if (!mm || !mm.email) return;
+
+  var firstMov     = movs[0];
+  var jobType      = firstMov.jobType || firstMov.type || 'Job';
+  var clientName   = cj.clientName  || '';
+  var partnerRef   = cj.partnerRef  || cj.clientRef || '';
+  var ourRef       = cj.masterJobId || '';
+  var jobDate      = firstMov.start || cj.startDate || '';
+  if (!jobDate) return;
+
+  // Build event title and body
+  var title = jobType + ' — ' + clientName + (partnerRef ? ' (' + partnerRef + ')' : '');
+  var bodyText = [
+    'Job confirmed by ' + (APP_SETTINGS.companyName||'Onwards') + ' Operations.',
+    '',
+    'Client:         ' + clientName,
+    'Partner Ref:    ' + (partnerRef||'—'),
+    'Our Ref:        ' + (ourRef||'—'),
+    'Brand:          ' + (cj.brand||'—'),
+    'Type:           ' + jobType,
+    'Origin:         ' + (firstMov.origin||'—'),
+    'Destination:    ' + (firstMov.dest||'—'),
+    (cj.spFolderUrl ? 'Documents:      ' + cj.spFolderUrl : '')
+  ].filter(Boolean).join('\n');
+
+  // Build start/end — full day event starting at 08:00, ending at 18:00
+  var startDt = jobDate + 'T08:00:00';
+  var endDt   = jobDate + 'T18:00:00';
+
+  var eventPayload = {
+    subject: title,
+    body: { contentType: 'Text', content: bodyText },
+    start: { dateTime: startDt, timeZone: 'Europe/London' },
+    end:   { dateTime: endDt,   timeZone: 'Europe/London' },
+    location: { displayName: firstMov.origin || '' },
+    attendees: [{
+      emailAddress: { address: mm.email, name: mm.name },
+      type: 'required'
+    }],
+    isOrganizer: true,
+    showAs: 'busy'
+  };
+
+  try {
+    var res = await fetch('/api/graph', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'createCalendarEvent', payload: eventPayload, userEmail: mm.email })
+    });
+    var data = await res.json();
+    if (data.id) {
+      console.log('Calendar event created for', mm.email, data.id);
+      // Store event ID on client job for future updates/cancellations
+      if (!cj.calendarEvents) cj.calendarEvents = [];
+      cj.calendarEvents.push({ mmEmail: mm.email, eventId: data.id, jobDate });
+      saveData('clientjob', cj.id, cj);
+    } else {
+      console.warn('Calendar event failed:', data.error || JSON.stringify(data));
+    }
+  } catch(e) {
+    console.warn('Calendar event error:', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONTACT SYNC — SYNC CLIENT + PARTNER CONTACTS TO M365
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function syncContactToM365(opts) {
+  // opts: { displayName, email, phone, company, notes, jobRef }
+  if (!opts.email && !opts.displayName) return;
+  try {
+    var res = await fetch('/api/graph', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'upsertContact', payload: opts })
+    });
+    var data = await res.json();
+    if (data.id) console.log('Contact synced:', opts.displayName, data.id);
+    else console.warn('Contact sync failed:', data.error || JSON.stringify(data));
+  } catch(e) {
+    console.warn('Contact sync error:', e.message);
+  }
+}
+
+// Called after job is saved — sync client contact and move manager to M365
+function syncJobContacts(cj) {
+  if (!cj) return;
+  // Sync client contact
+  if (cj.clientEmail || cj.clientName) {
+    setTimeout(function() {
+      syncContactToM365({
+        displayName: cj.clientName || '',
+        email:       cj.clientEmail || '',
+        phone:       cj.clientPhone || '',
+        company:     cj.brand || '',
+        notes:       'OpsManager client — ' + (cj.masterJobId||cj.id),
+        jobRef:      cj.masterJobId || ''
+      });
+    }, 2000);
+  }
+  // Sync move manager contact
+  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
+  if (mm && mm.email) {
+    setTimeout(function() {
+      syncContactToM365({
+        displayName: mm.name || '',
+        email:       mm.email || '',
+        phone:       mm.phone || '',
+        company:     mm.brand || cj.brand || '',
+        notes:       'Move Manager — ' + (mm.brand||''),
+        jobRef:      ''
+      });
+    }, 3000);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOOKING PARSER — CLAUDE AI EXTRACTS BOOKING FROM EMAIL/PDF/DOC
+// ═══════════════════════════════════════════════════════════════════════════
+
+function openBookingParser() {
+  var existing = document.getElementById('booking-parser-modal');
+  if (existing) existing.remove();
+
+  var modal = document.createElement('div');
+  modal.id = 'booking-parser-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:950;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = '<div style="background:#fff;border-radius:14px;padding:0;width:100%;max-width:640px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:92vh;overflow:hidden;display:flex;flex-direction:column">'
+    // Header
+    + '<div style="padding:20px 24px 16px;border-bottom:1px solid #e8eaed;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
+    + '<div><div style="font-size:16px;font-weight:800;color:#1a1a2e">🤖 Parse Booking from Email or Document</div>'
+    + '<div style="font-size:12px;color:#6b7280;margin-top:3px">Paste email text, or drop a PDF/Word/Excel file — Claude will extract the booking details</div></div>'
+    + '<button onclick="document.getElementById(\'booking-parser-modal\').remove()" style="width:30px;height:30px;border-radius:7px;border:1px solid #e3e7f0;background:#f5f5f5;cursor:pointer;font-size:16px;flex-shrink:0">✕</button>'
+    + '</div>'
+    // Drop zone + textarea
+    + '<div style="padding:20px 24px;flex:1;overflow-y:auto">'
+    + '<div id="bp-dropzone" style="border:2px dashed #d1d5db;border-radius:10px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:border-color .2s;background:#fafafa"'
+    + ' ondragover="event.preventDefault();this.style.borderColor=&quot;#0073EA&quot;"'
+    + ' ondragleave="this.style.borderColor=&quot;#d1d5db&quot;"'
+    + ' ondrop="bpHandleDrop(event)" onclick="document.getElementById(&quot;bp-file-input&quot;).click()">'
+    + '<div style="font-size:24px;margin-bottom:8px">📄</div>'
+    + '<div style="font-size:13px;font-weight:600;color:#374151">Drop PDF, Word or Excel file here</div>'
+    + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">or click to browse</div>'
+    + '<input type="file" id="bp-file-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.eml" style="display:none" onchange="bpHandleFile(this.files[0])">'
+    + '</div>'
+    + '<textarea id="bp-text" placeholder="Paste the email body or booking instruction text here..." rows="10" style="width:100%;padding:12px;border:1.5px solid #e3e7f0;border-radius:8px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.6"></textarea>'
+    + '<div id="bp-file-name" style="font-size:11px;color:#6b7280;margin-top:6px;display:none"></div>'
+    + '</div>'
+    // Footer
+    + '<div style="padding:16px 24px;border-top:1px solid #e8eaed;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">'
+    + '<button onclick="document.getElementById(&quot;booking-parser-modal&quot;).remove()" style="padding:10px 18px;border:1.5px solid #e3e7f0;border-radius:7px;background:#fff;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>'
+    + '<button id="bp-parse-btn" onclick="bpRunParse()" style="padding:10px 24px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🤖 Extract Booking Details</button>'
+    + '</div></div>';
+
+  document.body.appendChild(modal);
+}
+
+var _bpFileContent = null;
+var _bpFileName    = null;
+
+function bpHandleDrop(e) {
+  e.preventDefault();
+  document.getElementById('bp-dropzone').style.borderColor = '#d1d5db';
+  var file = e.dataTransfer.files[0];
+  if (file) bpHandleFile(file);
+}
+
+function bpHandleFile(file) {
+  if (!file) return;
+  _bpFileName = file.name;
+  document.getElementById('bp-file-name').style.display = 'block';
+  document.getElementById('bp-file-name').textContent = '📎 ' + file.name + ' (' + Math.round(file.size/1024) + ' KB)';
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    _bpFileContent = e.target.result.split(',')[1]; // base64
+  };
+  reader.readAsDataURL(file);
+}
+
+async function bpRunParse() {
+  var textInput = (document.getElementById('bp-text')||{}).value || '';
+  var btn = document.getElementById('bp-parse-btn');
+  if (!textInput.trim() && !_bpFileContent) { toast('Please paste some text or attach a file'); return; }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Reading…';
+
+  try {
+    var messages = [];
+    var systemPrompt = 'You are a booking extraction assistant for a removals and logistics company. '
+      + 'Extract structured booking data from emails, PDFs or documents. '
+      + 'Return ONLY valid JSON — no markdown, no explanation. '
+      + 'If a field is not found, use null. '
+      + 'Dates must be YYYY-MM-DD format. '
+      + 'JSON schema: {'
+      + '"clientName":string,"clientEmail":string,"clientPhone":string,'
+      + '"partnerRef":string,"brand":string,"moveManager":string,'
+      + '"jobType":string,"startDate":string,"endDate":string,'
+      + '"origin":string,"originPostcode":string,"dest":string,"destPostcode":string,'
+      + '"volumeFt":number,"volumeCbm":number,'
+      + '"specialRequirements":string,"notes":string,'
+      + '"confidence":"high"|"medium"|"low"'
+      + '}';
+
+    if (_bpFileContent && _bpFileName) {
+      var ext = (_bpFileName||'').split('.').pop().toLowerCase();
+      var mediaType = ext === 'pdf' ? 'application/pdf'
+        : (ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : (ext === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'text/plain'));
+
+      if (ext === 'pdf') {
+        messages.push({ role: 'user', content: [
+          { type: 'document', source: { type: 'base64', media_type: mediaType, data: _bpFileContent } },
+          { type: 'text', text: 'Extract all booking details from this document and return as JSON.' + (textInput ? '\nAdditional context:\n' + textInput : '') }
+        ]});
+      } else {
+        // For non-PDF files, send as base64 text with filename context
+        messages.push({ role: 'user', content: 'Extract booking details from this file (' + _bpFileName + '). File content (base64): ' + _bpFileContent.slice(0, 8000) + (textInput ? '\n\nAdditional email text:\n' + textInput : '') });
+      }
+    } else {
+      messages.push({ role: 'user', content: 'Extract booking details from this email/text:\n\n' + textInput });
+    }
+
+    var res = await fetch('/api/claude', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: systemPrompt, messages })
+    });
+
+    var data = await res.json();
+    if (!res.ok || !data.content) {
+      throw new Error(data.error || 'Claude API error ' + res.status);
+    }
+
+    var rawText = data.content[0].text || '';
+    var cleaned = rawText.replace(/```json|```/g, '').trim();
+    var parsed;
+    try { parsed = JSON.parse(cleaned); } catch(e) { throw new Error('Could not parse Claude response: ' + rawText.slice(0,200)); }
+
+    document.getElementById('booking-parser-modal').remove();
+    bpApplyToBookingForm(parsed);
+
+  } catch(err) {
+    toast('❌ Parse failed: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = '🤖 Extract Booking Details';
+  }
+}
+
+function bpApplyToBookingForm(parsed) {
+  if (!parsed) return;
+
+  // Open new booking flow with pre-filled data
+  // Store parsed data globally so cfgInit can pick it up
+  window._bpParsed = parsed;
+
+  // Determine route type from job type
+  var jt = (parsed.jobType||'').toLowerCase();
+  var routeKey = jt.includes('door') || jt.includes('d2d') || jt.includes('domestic') ? 'd2d'
+    : (jt.includes('destination') || jt.includes('delivery') ? 'destination'
+    : (jt.includes('storage') || jt.includes('ex store') ? 'storage' : 'origin'));
+
+  // Open booking flow
+  newClientJob();
+  toast('✅ Booking details extracted — review and confirm below');
+
+  // Apply fields after a short delay for form to render
+  setTimeout(function() {
+    var p = window._bpParsed;
+    if (!p) return;
+
+    function setField(id, val) { var e = document.getElementById(id); if (e && val) e.value = val; }
+    function setSelect(id, val) {
+      var e = document.getElementById(id);
+      if (e && val) {
+        for (var i = 0; i < e.options.length; i++) {
+          if (e.options[i].value.toLowerCase().includes(val.toLowerCase()) || val.toLowerCase().includes(e.options[i].value.toLowerCase())) {
+            e.selectedIndex = i; break;
+          }
+        }
+      }
+    }
+
+    setField('bk-client',  p.clientName);
+    setField('bk-email',   p.clientEmail);
+    setField('bk-phone',   p.clientPhone);
+    setField('bk-ref',     p.partnerRef);
+    setField('bk-origin',  p.origin);
+    setField('bk-dest',    p.dest);
+    setField('bk-start',   p.startDate);
+    setField('bk-end',     p.endDate);
+    setField('bk-notes',   p.notes || p.specialRequirements);
+    if (p.volumeFt)  setField('bk-vol-ft',  p.volumeFt);
+    if (p.volumeCbm) setField('bk-vol-cbm', p.volumeCbm);
+    if (p.brand)     setSelect('bk-brand',  p.brand);
+    if (p.moveManager) setSelect('bk-mm',   p.moveManager);
+
+    // Show confidence indicator
+    var conf = p.confidence || 'medium';
+    var confColor = conf === 'high' ? '#00C875' : conf === 'medium' ? '#FF9F1A' : '#e44258';
+    var confMsg = conf === 'high' ? 'High confidence — most fields extracted cleanly'
+      : conf === 'medium' ? 'Medium confidence — please review highlighted fields carefully'
+      : 'Low confidence — manual review recommended for all fields';
+    toast(confColor === '#00C875' ? '✅ ' + confMsg : '⚠ ' + confMsg, 5000);
+
+    window._bpParsed = null;
+  }, 800);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -12674,6 +13017,131 @@ async function spSendShareEmailFromModal(cjId, linkUrl, expiryStr) {
   await spSendShareEmail(cjId, linkUrl, expiryStr, toEmail, subject);
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ICS CALENDAR FILE GENERATOR
+// ═══════════════════════════════════════════════════════════════════════════
+
+function generateIcs(opts) {
+  // opts: { summary, description, location, startDate (YYYY-MM-DD), startTime (HH:MM), durationHours, uid, organiserEmail, organiserName }
+  var start = opts.startDate.replace(/-/g,'');
+  var timeStr = (opts.startTime || '09:00').replace(':','');
+  var startDt = start + 'T' + timeStr + '00';
+
+  // Calculate end time
+  var durationH = opts.durationHours || 2;
+  var startH = parseInt(timeStr.slice(0,2));
+  var startM = parseInt(timeStr.slice(2,4));
+  var endTotalM = (startH * 60 + startM) + (durationH * 60);
+  var endH = String(Math.floor(endTotalM / 60) % 24).padStart(2,'0');
+  var endM = String(endTotalM % 60).padStart(2,'0');
+  var endDt = start + 'T' + endH + endM + '00';
+
+  var uid = opts.uid || ('ops-' + Date.now() + '@onwards.network');
+  var now = new Date().toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
+  var company = APP_SETTINGS.companyName || 'Onwards';
+  var orgEmail = opts.organiserEmail || APP_SETTINGS.companyEmail || 'updates@onwards.network';
+  var orgName  = opts.organiserName  || company + ' Operations';
+
+  var desc = (opts.description || '').split('\n').join('\\n').split(',').join('\\,');
+  var loc  = (opts.location    || '').replace(/,/g,'\,');
+  var summ = (opts.summary     || '').replace(/,/g,'\,');
+
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//' + company + '//OpsManager//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    'UID:' + uid,
+    'DTSTAMP:' + now,
+    'DTSTART:' + startDt,
+    'DTEND:' + endDt,
+    'SUMMARY:' + summ,
+    'DESCRIPTION:' + desc,
+    (loc ? 'LOCATION:' + loc : ''),
+    'ORGANIZER;CN=' + orgName + ':mailto:' + orgEmail,
+    'STATUS:CONFIRMED',
+    'SEQUENCE:0',
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ].filter(Boolean).join('\r\n');
+}
+
+function icsDataUrl(icsContent) {
+  // Returns a data URL the email can link to for one-click calendar add
+  return 'data:text/calendar;charset=utf8,' + encodeURIComponent(icsContent);
+}
+
+function icsCalendarBlock(icsContent, summary, dateStr) {
+  // Returns the HTML block to include in emails for one-click calendar add
+  var dataUrl = icsDataUrl(icsContent);
+  return '<div style="margin:24px 0;padding:16px 20px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;display:flex;align-items:center;gap:16px">'
+    + '<div style="font-size:28px">📅</div>'
+    + '<div style="flex:1">'
+    + '<div style="font-weight:700;color:#1e40af;font-size:14px">Save to your calendar</div>'
+    + '<div style="color:#374151;font-size:13px;margin-top:2px">' + esc(summary) + ' — ' + esc(dateStr) + '</div>'
+    + '</div>'
+    + '<a href="' + dataUrl + '" download="event.ics" style="background:#1e40af;color:#fff;font-size:13px;font-weight:600;padding:10px 18px;border-radius:6px;text-decoration:none;white-space:nowrap">📅 Add to Calendar</a>'
+    + '</div>'
+    + '<p style="font-size:11px;color:#9ca3af;margin-top:-12px">Works with Apple Calendar, Google Calendar and Outlook. Click the button above to save this appointment to your calendar.</p>';
+}
+
+// ── SURVEY CONFIRMATION EMAIL ────────────────────────────────────────────
+async function sendSurveyConfirmationEmail(svId, opts) {
+  var sv = SURVEYS.filter(function(x){ return x.id === svId; })[0];
+  if (!sv) return;
+  if (!sv.clientEmail) {
+    if (opts && opts.resend) toast('No client email on this survey record');
+    return;
+  }
+
+  var company   = APP_SETTINGS.companyName || 'Onwards';
+  var surveyor  = sv.surveyor  || 'our surveyor';
+  var dateNice  = sv.surveyDate ? (new Date(sv.surveyDate+'T12:00:00')).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : 'TBC';
+  var timeNice  = sv.surveyTime || 'TBC';
+  var subject   = 'Survey Appointment: ' + sv.ref + ' — ' + (sv.clientName||'');
+
+  // Generate .ics
+  var icsContent = generateIcs({
+    summary:        company + ' Survey — ' + (sv.clientName||''),
+    description:    'Survey appointment with ' + surveyor + '\nRef: ' + sv.ref + '\nAddress: ' + (sv.postcode||''),
+    location:       sv.postcode || '',
+    startDate:      sv.surveyDate,
+    startTime:      sv.surveyTime || '09:00',
+    durationHours:  1,
+    uid:            sv.id + '@onwards.network',
+    organiserEmail: APP_SETTINGS.companyEmail || 'updates@onwards.network',
+    organiserName:  company + ' Operations'
+  });
+
+  var bodyHtml = '<p>Dear ' + esc(sv.clientName||'') + ',</p>'
+    + '<p>Thank you for choosing ' + esc(company) + '. We are pleased to confirm your survey appointment:</p>'
+    + '<table style="width:100%;border-collapse:collapse;margin:20px 0">'
+    + '<tr><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb;width:140px">Date</td><td style="padding:10px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(dateNice) + '</td></tr>'
+    + '<tr><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb">Time</td><td style="padding:10px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(timeNice) + '</td></tr>'
+    + '<tr><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb">Surveyor</td><td style="padding:10px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(surveyor) + '</td></tr>'
+    + '<tr><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb">Address</td><td style="padding:10px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(sv.postcode||'TBC') + '</td></tr>'
+    + (sv.notes ? '<tr><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;font-size:13px;color:#374151;background:#f8f9fb">Notes</td><td style="padding:10px 14px;border:1px solid #e8eaed;font-size:13px;color:#1a1a2e">' + esc(sv.notes) + '</td></tr>' : '')
+    + '</table>'
+    + icsCalendarBlock(icsContent, company + ' Survey', dateNice)
+    + '<p>If you need to reschedule or have any questions, please reply to this email.</p>'
+    + '<p>Kind regards,<br><strong>' + esc(company) + ' Operations</strong></p>';
+
+  var html = buildEmailHtml({ subject, preheader: 'Your survey is confirmed for ' + dateNice, bodyHtml });
+
+  var res = await sendEmail({ to: sv.clientEmail, subject, html });
+  if (res.ok) {
+    sv.confirmationSent = new Date().toISOString();
+    saveData('survey', sv.id, sv);
+    if (opts && opts.resend) toast('✅ Survey confirmation sent to ' + sv.clientEmail);
+  } else {
+    if (opts && opts.resend) toast('❌ Email failed: ' + (res.error||'Unknown error'));
+    console.error('Survey confirmation failed:', res.error);
+  }
+}
+
 // ── JOB CONFIRMATION EMAIL ───────────────────────────────────────────────────
 async function sendJobConfirmationEmail(cjId, opts) {
   // opts: { resend: bool } — if resend, skip auto-check
@@ -12708,9 +13176,19 @@ async function sendJobConfirmationEmail(cjId, opts) {
   // Subject line
   var partnerRef = cj.partnerRef || cj.clientRef || '';
   var ourRef     = cj.masterJobId || '';
-  var subject    = isDomestic
-    ? 'Job Confirmation: ' + ourRef + ' — ' + (cj.clientName||'')
-    : 'Job Confirmation: ' + (partnerRef ? partnerRef + ' / ' : '') + ourRef + ' — ' + (cj.clientName||'');
+
+  // Extract surname — handle both "Surname, First" and "First Surname" formats
+  var fullName = cj.clientName || '';
+  var surname  = fullName.indexOf(',') >= 0
+    ? fullName.split(',')[0].trim()
+    : (fullName.split(' ').pop() || fullName);
+
+  // Get primary job type from first movement
+  var primaryJobType = movs.length ? (movs[0].jobType || movs[0].type || '') : '';
+
+  var subject = isDomestic
+    ? 'Booking Confirmation: ' + ourRef + ' — ' + surname + (primaryJobType ? ' — ' + primaryJobType : '')
+    : 'Booking Confirmation: ' + (partnerRef ? partnerRef + ' / ' : '') + ourRef + ' — ' + surname + (primaryJobType ? ' — ' + primaryJobType : '');
 
   // Build movements table rows
   var movRows = '';
@@ -12771,6 +13249,26 @@ async function sendJobConfirmationEmail(cjId, opts) {
     docsLink = '<p style="margin-top:24px"><strong>📁 Document Folder</strong><br><a href="' + esc(cj.spFolderUrl) + '" style="color:' + (APP_SETTINGS.emailAccentColor||'#0073EA') + '">' + esc(cj.spFolderUrl) + '</a></p>';
   }
 
+  // Generate .ics for first movement date
+  var icsBlock = '';
+  if (movs.length && movs[0].start) {
+    var firstMov = movs[0];
+    var jobDateNice = (new Date(firstMov.start+'T12:00:00')).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    var icsDesc = ['Ref: ' + ourRef, (partnerRef ? 'Partner Ref: ' + partnerRef : ''), 'Client: ' + (cj.clientName||''), (cj.moveManager ? 'Move Manager: ' + cj.moveManager : '')].filter(Boolean).join('\n');
+    var icsContent = generateIcs({
+      summary:       (firstMov.jobType||firstMov.type||'Job') + ' — ' + (cj.clientName||''),
+      description:   icsDesc,
+      location:      firstMov.origin || firstMov.dest || '',
+      startDate:     firstMov.start,
+      startTime:     '08:00',
+      durationHours: 8,
+      uid:           cj.id + '-' + firstMov.id + '@onwards.network',
+      organiserEmail: APP_SETTINGS.companyEmail || 'updates@onwards.network',
+      organiserName:  (APP_SETTINGS.companyName||'Onwards') + ' Operations'
+    });
+    icsBlock = icsCalendarBlock(icsContent, (firstMov.jobType||'Job') + ' — ' + (cj.clientName||''), jobDateNice);
+  }
+
   var greeting = isDomestic ? ('Dear ' + esc(cj.clientName||'') + ',') : ('Dear ' + esc(toName) + ',');
   var intro    = isDomestic
     ? '<p>Thank you for choosing ' + esc(APP_SETTINGS.companyName||'Onwards') + '. We are pleased to confirm the following job booking:</p>'
@@ -12789,6 +13287,7 @@ async function sendJobConfirmationEmail(cjId, opts) {
     + '<th style="padding:10px 14px;text-align:left;color:#374151">Access Notes</th>'
     + '</tr></thead><tbody>' + movRows + '</tbody></table></div>'
     + docsLink
+    + icsBlock
     + '<p style="margin-top:24px">If you have any questions please reply to this email.</p>'
     + '<p>Kind regards,<br><strong>' + esc(APP_SETTINGS.companyName||'Onwards') + ' Operations</strong></p>';
 
@@ -12808,6 +13307,10 @@ async function sendJobConfirmationEmail(cjId, opts) {
     saveData('clientjob', cj.id, cj);
     if (opts && opts.resend) toast('✅ Confirmation email sent to ' + toEmail);
     console.log('Job confirmation sent to', toEmail);
+    // Also create Outlook calendar event for move manager (partner/account jobs only)
+    if (!isDomestic && movs.length) {
+      setTimeout(function() { createMoveManagerCalendarEvent(cj, movs); }, 500);
+    }
   } else {
     console.error('Job confirmation email failed:', res.error);
     if (opts && opts.resend) toast('❌ Email failed: ' + (res.error||'Unknown error'));
