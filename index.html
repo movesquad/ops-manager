@@ -1475,7 +1475,7 @@ textarea.fi{resize:vertical;min-height:60px}
       <button class="btn btn-s btn-sm" id="cfg-btn-back" onclick="cfgBack()" style="display:none">&#8592; Back</button>
     </div>
     <div style="display:flex;gap:8px" id="cfg-foot-r">
-      <button class="btn btn-s btn-sm" onclick="cfgSaveDraft()">Save Draft</button>
+      <!-- Draft removed -->
       <button class="btn btn-p btn-sm" id="cfg-btn-next" onclick="cfgNext()">Next &#8594;</button>
     </div>
   </div>
@@ -4368,8 +4368,20 @@ function saveJob(){
   closePanel(); renderCal();
   if(curMod==='crew') renderCrew();
   if(curMod==='finance') renderFinance();
+  if(curMod==='bookings' && eJob.clientJobId) renderClientJobDetail(eJob.clientJobId);
   setBadge('job-badge',jobs.length);
   saveData('job', eJob.id, eJob);
+  // If a clientRef/partnerRef was updated, also save the client job record
+  if (eJob.clientJobId) {
+    var _cj = CLIENT_JOBS.filter(function(x){ return x.id === eJob.clientJobId; })[0];
+    if (_cj) {
+      if (eJob.clientRef && !_cj.partnerRef) {
+        _cj.partnerRef = eJob.clientRef;
+        _cj.clientRef  = eJob.clientRef;
+        saveData('clientjob', _cj.id, _cj);
+      }
+    }
+  }
 }
 function delJob(id){
   if(!confirm('Delete this job?')) return;
@@ -4821,7 +4833,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v42 — 1 Mar 2026';
+var APP_VERSION = 'v43 — 1 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -6307,7 +6319,7 @@ function cfgEmpty() {
     moveManager: '',
     clientName: '', clientEmail: '', clientPhone: '',
     clientRef: '',
-    status: 'Draft', // Draft | Provisional | Confirmed
+    status: 'Provisional', // Provisional | Confirmed
     route: '', // 'origin' | 'destination' | 'd2d' | 'storage'
     // Array of job configs — each becomes a separate calendar job
     jobs: [cfgEmptyJob()],
@@ -6572,7 +6584,7 @@ function cfgRenderClient() {
   for (var mi = 0; mi < MOVE_MANAGERS.length; mi++) h += '<option value="'+esc(MOVE_MANAGERS[mi].name)+'"'+(CFG.moveManager===MOVE_MANAGERS[mi].name?' selected':'')+'>'+esc(MOVE_MANAGERS[mi].name)+' ('+esc(MOVE_MANAGERS[mi].brand)+')</option>';
   h += '</select></div>';
   h += '<div class="cfg-field"><label class="cfg-label">Booking Status</label><select class="cfg-input cfg-select" id="cfg-bkstatus">';
-  ['Draft','Provisional','Confirmed'].forEach(function(s){h+='<option'+(CFG.status===s?' selected':'')+'>'+s+'</option>';});
+  ['Provisional','Confirmed'].forEach(function(s){h+='<option'+(CFG.status===s?' selected':'')+'>'+s+'</option>';});
   h += '</select></div>';
   h += '</div></div></div>';
 
@@ -8074,15 +8086,15 @@ function cfgRenderOps() {
   h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#D1FAE5">🚀</div><div class="cs-card-title">Confirm &amp; Publish</div></div>';
   h += '<div class="cs-body">';
   h += '<div style="display:flex;gap:10px">';
-  ['Draft','Provisional','Confirmed'].forEach(function(s){
+  ['Provisional','Confirmed'].forEach(function(s){
     h += '<div onclick="cfgSetStatus(this,\''+s+'\')" style="flex:1;border:2px solid '+(CFG.status===s?'#0073EA':'#E3E7F0')+';border-radius:8px;padding:10px;text-align:center;cursor:pointer;background:'+(CFG.status===s?'#EBF4FF':'#fff')+';transition:all .12s" class="cfg-status-opt">';
-    h += '<div style="font-size:16px">'+(s==='Draft'?'📋':s==='Provisional'?'🕐':'✅')+'</div>';
+    h += '<div style="font-size:16px">'+(s==='Provisional'?'🕐':'✅')+'</div>';
     h += '<div style="font-size:12px;font-weight:700;margin-top:4px;color:#1A2035">'+s+'</div>';
-    h += '<div style="font-size:10px;color:#7A849E;margin-top:2px">'+(s==='Draft'?'Save without calendar':s==='Provisional'?'Hold on calendar':'Fully confirmed')+'</div>';
+    h += '<div style="font-size:10px;color:#7A849E;margin-top:2px">'+(s==='Provisional'?'Hold on calendar — not yet confirmed':'Fully confirmed — send confirmation')+'</div>';
     h += '</div>';
   });
   h += '</div>';
-  if (CFG.status === 'Draft') h += '<div class="cs-hint" style="margin-top:10px">&#128221; Draft — jobs will NOT appear on the calendar until you change status to Provisional or Confirmed.</div>';
+  if (false && CFG.status === 'Draft') h += '<div class="cs-hint" style="margin-top:10px">&#128221; Draft — jobs will NOT appear on the calendar until you change status to Provisional or Confirmed.</div>';
   h += '</div></div>';
 
   return h;
@@ -12170,10 +12182,15 @@ function renderClientJobDetail(cj) {
 
   // ── Partner ref missing warning ──────────────────────────────────────
   if (!cj.partnerRef && !cj.clientRef) {
-    h += '<div style="background:#FFF5E0;border:1.5px solid #FF9F1A;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px">';
+    h += '<div style="background:#FFF5E0;border:1.5px solid #FF9F1A;border-radius:10px;padding:12px 16px;margin-bottom:14px" id="partnerref-warn-'+cj.id+'">';
+    h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">';
     h += '<span style="font-size:20px">⚠️</span>';
-    h += '<div style="flex:1"><div style="font-size:13px;font-weight:700;color:#9A5600">Partner Reference Missing</div>';
-    h += '<div style="font-size:11.5px;color:#9A5600;margin-top:2px">The partner\'s job reference is required to create the SharePoint folder and name documents correctly. <a onclick="editClientJob(\''+cj.id+'\')" style="color:#0073EA;cursor:pointer;font-weight:700">Add it now →</a></div>';
+    h += '<div><div style="font-size:13px;font-weight:700;color:#9A5600">Partner Reference Missing</div>';
+    h += '<div style="font-size:11.5px;color:#9A5600;margin-top:2px">Required for SharePoint folder creation and document naming.</div></div>';
+    h += '</div>';
+    h += '<div style="display:flex;gap:8px;align-items:center">';
+    h += '<input class="cfg-input" id="partnerref-inp-'+cj.id+'" placeholder="Partner job reference e.g. GBH-78432" style="flex:1;max-width:300px" onkeydown="if(event.key===\'Enter\')savePartnerRefInline(\''+cj.id+'\')"/>';
+    h += '<button class="btn btn-p btn-sm" onclick="savePartnerRefInline(\''+cj.id+'\')" style="flex-shrink:0">Save Reference</button>';
     h += '</div></div>';
   }
 
@@ -12323,6 +12340,23 @@ function addMovementToJob(clientJobId) {
   cfgUpdateNav();
 }
 
+function savePartnerRefInline(cjId) {
+  var inp = el('partnerref-inp-' + cjId);
+  if (!inp || !inp.value.trim()) { toast('Please enter a reference'); return; }
+  var ref = inp.value.trim();
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
+  if (!cj) return;
+  cj.partnerRef = ref;
+  cj.clientRef  = cj.clientRef || ref;
+  saveData('clientjob', cj.id, cj);
+  // Remove the warning banner
+  var warn = el('partnerref-warn-' + cjId);
+  if (warn) warn.parentNode.removeChild(warn);
+  toast('✓ Partner reference saved: ' + ref);
+  // Re-render the detail view to update the ref display and enable SharePoint button
+  renderClientJobDetail(cjId);
+}
+
 function editClientJob(id) {
   var cj = CLIENT_JOBS.filter(function(x){ return x.id===id; })[0];
   if (!cj) return;
@@ -12337,7 +12371,7 @@ function editClientJob(id) {
   CFG.channel       = cj.channel;
   CFG.moveManager   = cj.moveManager;
   CFG.originCountry = cj.originCountry;
-  CFG.status        = cj.status === 'Active' ? 'Provisional' : 'Draft';
+  CFG.status        = 'Provisional';
   cfgStage = 0;
   el('cfg-head-ref').textContent = cj.masterJobId;
   el('cfg-head-title').textContent = 'Edit Client Record';
@@ -14178,37 +14212,55 @@ var ROUTE_TYPES = [
     key: 'origin',
     icon: '📦',
     label: 'Origin Job',
-    sub: 'Packing & collection at client property — sea, air, road or storage in',
+    sub: 'Packing & collection at client property',
     color: '#EBF4FF',
     accent: '#0073EA',
-    jobTypes: ['Origin Sea Pack','Origin Air Pack','Origin Road Pack','Int Store Handling','Blanket Wrap','Debris Removal','Handling Only','Consolidation','Other']
+    jobTypes: ['Sea Freight','Air Freight','Origin Sea Pack','Origin Air Pack','Origin Road Pack','Int Store Handling','Blanket Wrap','Debris Removal','Handling Only','Consolidation','Other']
   },
   {
     key: 'destination',
     icon: '🏠',
     label: 'Destination Job',
-    sub: 'Delivery & unpack at client property — from port, airport or third party',
+    sub: 'Delivery & unpack at client property',
     color: '#E6FFF5',
     accent: '#00C875',
-    jobTypes: ['Destination Services','Blanket Wrap','Debris Removal','Handling Only','Other']
+    jobTypes: ['Sea Freight','Air Freight','Destination Services','Blanket Wrap','Debris Removal','Handling Only','Other']
   },
   {
     key: 'd2d',
     icon: '🔄',
     label: 'Door to Door',
-    sub: 'Full service origin to destination — domestic, commercial or international',
+    sub: 'Full residential or commercial move A to B',
     color: '#F5EEFF',
     accent: '#9B59B6',
-    jobTypes: ['Door to Door','Domestic','Other']
+    jobTypes: ['Door to Door','Domestic','Commercial','Other']
+  },
+  {
+    key: 'commercial',
+    icon: '🏢',
+    label: 'Commercial',
+    sub: 'Business to business or office move',
+    color: '#FFF0F5',
+    accent: '#E91E8C',
+    jobTypes: ['Commercial','Door to Door','Handling Only','Other']
+  },
+  {
+    key: 'handling',
+    icon: '🤲',
+    label: 'Handling Only',
+    sub: 'Load/unload, shuttle, or debris — no packing',
+    color: '#F0FFF4',
+    accent: '#38A169',
+    jobTypes: ['Handling Only','Debris Removal','Blanket Wrap','Other']
   },
   {
     key: 'storage',
     icon: '🏭',
-    label: 'From Storage',
-    sub: 'Delivery out of our warehouse — select a client currently in storage',
+    label: 'Storage / Warehouse',
+    sub: 'Into storage, out of storage, or warehouse movement',
     color: '#FFF5E0',
     accent: '#FF9F1A',
-    jobTypes: ['Ex Store Delivery','Destination Services','Other']
+    jobTypes: ['Warehouse','Int Store Handling','Ex Store Delivery','Destination Services','Other']
   }
 ];
 
@@ -14848,15 +14900,15 @@ function cfgRenderConfirm() {
   h += '<div class="cs-card-title">Status &amp; Publish</div></div>';
   h += '<div class="cs-body">';
   h += '<div style="display:flex;gap:10px">';
-  ['Draft','Provisional','Confirmed'].forEach(function(s) {
+  ['Provisional','Confirmed'].forEach(function(s) {
     h += '<div onclick="cfgSetStatus(this,\'' + s + '\')" style="flex:1;border:2px solid ' + (CFG.status === s ? '#0073EA' : '#E3E7F0') + ';border-radius:8px;padding:10px;text-align:center;cursor:pointer;background:' + (CFG.status === s ? '#EBF4FF' : '#fff') + '" class="cfg-status-opt">';
-    h += '<div style="font-size:16px">' + (s === 'Draft' ? '📋' : s === 'Provisional' ? '🕐' : '✅') + '</div>';
+    h += '<div style="font-size:16px">' + (s === 'Provisional' ? '🕐' : '✅') + '</div>';
     h += '<div style="font-size:12px;font-weight:700;margin-top:4px">' + s + '</div>';
-    h += '<div style="font-size:10px;color:var(--t3);margin-top:2px">' + (s === 'Draft' ? 'Save without calendar' : s === 'Provisional' ? 'Hold on calendar' : 'Fully confirmed') + '</div>';
+    h += '<div style="font-size:10px;color:var(--t3);margin-top:2px">' + (s === 'Provisional' ? 'Hold on calendar' : 'Fully confirmed') + '</div>';
     h += '</div>';
   });
   h += '</div>';
-  if (CFG.status === 'Draft') h += '<div class="cs-hint" style="margin-top:10px">📋 Draft — jobs will NOT appear on the calendar until status is Provisional or Confirmed.</div>';
+  if (false && CFG.status === 'Draft') h += '<div class="cs-hint" style="margin-top:10px">📋 Draft — jobs will NOT appear on the calendar until status is Provisional or Confirmed.</div>';
   h += '</div></div>';
 
   return h;
