@@ -4825,7 +4825,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v40 — 1 Mar 2026';
+var APP_VERSION = 'v41 — 1 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -6085,31 +6085,43 @@ function cfgPostRender() {
   if (cfgStage === 1) {
     setTimeout(cfgBuildMatrix, 50);
   }
-  // Bind address autocomplete to all unbound address fields
+  // Bind address fields after DOM settles
   setTimeout(function() {
+    // Generic cfg-addr fields (client & jobs stage)
     document.querySelectorAll('.cfg-addr:not([data-bound])').forEach(function(inp) {
+      inp.setAttribute('data-bound', '1');
       bindAddressField(inp);
     });
-    // Also bind jcfg-origin/dest fields if on brief stage
-    if (cfgStage === 1) {
+    // Movement origin/dest fields — explicit bind with correct closure per field
+    if (cfgStage === 1 && CFG && CFG.jobDefs) {
       for (var ji = 0; ji < CFG.jobDefs.length; ji++) {
         for (var mi = 0; mi < CFG.jobDefs[ji].movements.length; mi++) {
-          var origEl = document.getElementById('mv-origin-' + ji + '-' + mi);
-          var destEl = document.getElementById('mv-dest-' + ji + '-' + mi);
-          if (origEl && !origEl._addrBound) bindAddressField(origEl);
-          if (destEl && !destEl._addrBound) {
-            bindAddressField(destEl, {
-              showDist: true,
-              fromFn: function() {
-                var o = document.getElementById('mv-origin-' + ji + '-' + mi);
-                return o ? o.value.trim() : (APP_SETTINGS.warehouseAddress || '');
-              }
-            });
-          }
+          (function(jdi, mvi) {
+            var origEl = document.getElementById('mv-origin-' + jdi + '-' + mvi);
+            var destEl = document.getElementById('mv-dest-'   + jdi + '-' + mvi);
+            if (origEl && !origEl._addrBound) {
+              bindAddressField(origEl);
+            }
+            if (destEl && !destEl._addrBound) {
+              bindAddressField(destEl, {
+                showDist: true,
+                onCalc: function(miles) {
+                  // Store mileage on the movement
+                  if (CFG.jobDefs[jdi] && CFG.jobDefs[jdi].movements[mvi]) {
+                    CFG.jobDefs[jdi].movements[mvi].mileage = miles;
+                  }
+                },
+                fromFn: function() {
+                  var o = document.getElementById('mv-origin-' + jdi + '-' + mvi);
+                  return (o && o.value.trim()) ? o.value.trim() : (APP_SETTINGS.warehouseAddress || SL_CONFIG.companyPostcode || '');
+                }
+              });
+            }
+          })(ji, mi);
         }
       }
     }
-  }, 100);
+  }, 150);
 }
 
 function cfgUpdateStageIndicator() {
@@ -6321,6 +6333,357 @@ function cfgUpdateRefPreview() {
 }
 
 // ── STAGE 1: MOVEMENTS ─────────────────────────────────────────────────────
+
+
+
+// ── ADDRESS / MAP / DISTANCE HELPERS ────────────────────────────────────
+
+function bindAddressField(inp, opts) {
+  if (!inp || inp._addrBound) return;
+  inp._addrBound = true;
+  opts = opts || {};
+
+  // Build wrapper
+  var wrap = document.createElement('div');
+  wrap.className = 'addr-wrap';
+  inp.parentNode.insertBefore(wrap, inp);
+  wrap.appendChild(inp);
+
+  // Map button
+  var mapBtn = document.createElement('button');
+  mapBtn.type = 'button';
+  mapBtn.className = 'addr-map-btn';
+  mapBtn.title = 'View satellite / street view';
+  mapBtn.innerHTML = '🗺';
+  mapBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    var addr = inp.value.trim();
+    if (!addr) { toast('Enter an address first'); return; }
+    openMapModal(addr);
+  });
+  wrap.appendChild(mapBtn);
+
+  // Distance calc button
+  if (opts.showDist) {
+    var distBtn = document.createElement('button');
+    distBtn.type = 'button';
+    distBtn.className = 'addr-calc-btn';
+    distBtn.title = 'Calculate route distance';
+    distBtn.innerHTML = '↔';
+    distBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      var from = opts.fromFn ? opts.fromFn() : (APP_SETTINGS.warehouseAddress || SL_CONFIG.companyPostcode || '');
+      var to = inp.value.trim();
+      if (!from || !to) { toast('Need both origin and destination'); return; }
+      distBtn.style.background = 'var(--alt)';
+      calcRouteDistance(from, to, APP_SETTINGS.returnMileage, function(res) {
+        distBtn.style.background = '';
+        if (!res) { toast('Distance lookup failed — check API key'); return; }
+        // Remove old result
+        var old = wrap.nextSibling;
+        if (old && old.className === 'miles-calc-result') old.parentNode.removeChild(old);
+        var div = document.createElement('div');
+        div.className = 'miles-calc-result';
+        var legs = '<span class="leg">'+res.outMiles+'mi out</span>';
+        if (res.retMiles) legs += ' <span style="color:var(--t4)">+</span> <span class="leg">'+res.retMiles+'mi return</span>';
+        legs += ' <span class="total">= '+res.totalMiles+' mi total</span>';
+        div.innerHTML = legs;
+        if (opts.onCalc) {
+          var usebtn = document.createElement('button');
+          usebtn.className = 'btn btn-s btn-sm';
+          usebtn.style.marginLeft = 'auto';
+          usebtn.textContent = 'Use '+res.totalMiles+' mi';
+          usebtn.addEventListener('click', function(){ opts.onCalc(res.totalMiles); div.parentNode && div.parentNode.removeChild(div); });
+          div.appendChild(usebtn);
+        }
+        wrap.parentNode.insertBefore(div, wrap.nextSibling);
+      });
+    });
+    wrap.appendChild(distBtn);
+  }
+
+  // Keep map btn colour updated + sync country flag
+  function syncBtn() { mapBtn.classList.toggle('has-addr', !!(inp.value.trim())); }
+  inp.addEventListener('input', syncBtn);
+  inp.addEventListener('change', function(){ syncAddrFlag(inp); });
+  syncBtn();
+  // Sync flag for pre-filled values
+  if (inp.value) setTimeout(function(){ syncAddrFlag(inp); }, 50);
+
+  // Places autocomplete (only when Maps is loaded)
+  var _ddTimer = null;
+  inp.addEventListener('input', function() {
+    clearTimeout(_ddTimer);
+    var q = inp.value.trim();
+    removeAddrDropdown(inp);
+    if (q.length < 3 || !mapsApiLoaded()) return;
+    _ddTimer = setTimeout(function() { showAddrSuggestions(inp, q); }, 280);
+  });
+  inp.addEventListener('blur', function() {
+    setTimeout(function(){ removeAddrDropdown(inp); syncBtn(); }, 200);
+  });
+}
+
+
+function mapsApiLoaded() {
+  return _mapsLoaded && typeof google !== 'undefined' && google.maps && google.maps.places;
+}
+
+function syncAddrFlag(inp) {
+  if (!inp || !inp.value) return;
+  var flag = getFlagForAddress(inp.value);
+  updateAddrFlag(inp, flag);
+}
+
+// ── Map Modal (satellite + street view) ────────────────────────────────
+var _mapAddr = '';
+
+function showAddrSuggestions(inp, q) {
+  removeAddrDropdown(inp);
+  var wrap = inp.parentNode;
+  if (!wrap) return;
+  var dd = document.createElement('div');
+  dd.className = 'addr-dropdown';
+
+  // Country-only suggestions first (if query matches a country name)
+  var qLow = q.toLowerCase().trim();
+  var countryMatches = COUNTRY_NAMES.filter(function(c){ return c.indexOf(qLow) === 0 && qLow.length >= 2; }).slice(0, 3);
+  countryMatches.forEach(function(c) {
+    var flag = COUNTRY_FLAGS[c];
+    var row = document.createElement('div');
+    row.className = 'addr-option';
+    row.innerHTML = '<span class="addr-option-icon">'+flag+'</span>'
+      + '<div><div class="addr-option-main">'+c.replace(/\w/g, function(l){ return l.toUpperCase(); })+'</div>'
+      + '<div class="addr-option-sub" style="color:var(--blue)">Country only</div></div>';
+    row.addEventListener('mousedown', function(e) {
+      e.preventDefault();
+      var displayName = c.replace(/\w/g, function(l){ return l.toUpperCase(); });
+      inp.value = displayName;
+      inp.dataset.flag = flag;
+      updateAddrFlag(inp, flag);
+      inp.dispatchEvent(new Event('change'));
+      removeAddrDropdown(inp);
+    });
+    dd.appendChild(row);
+  });
+
+  if (!mapsApiLoaded()) {
+    if (dd.children.length) { wrap.style.position='relative'; wrap.appendChild(dd); }
+    return;
+  }
+
+  // Google Places predictions — no country restriction for international
+  var svc = new google.maps.places.AutocompleteService();
+  svc.getPlacePredictions({ input: q }, function(preds, status) {
+    if (status === 'OK' && preds && preds.length) {
+      preds.slice(0, 6 - countryMatches.length).forEach(function(pred) {
+        var parts = pred.description.split(',');
+        var main = parts[0] || pred.description;
+        var sub  = parts.slice(1).join(',').trim();
+        var flag = getFlagForAddress(pred.description);
+        var row  = document.createElement('div');
+        row.className = 'addr-option';
+        row.innerHTML = '<span class="addr-option-icon">'+flag+'</span>'
+          + '<div><div class="addr-option-main">'+esc(main)+'</div>'
+          + (sub ? '<div class="addr-option-sub">'+esc(sub)+'</div>' : '')
+          + '</div>';
+        row.addEventListener('mousedown', function(e) {
+          e.preventDefault();
+          inp.value = pred.description;
+          inp.dataset.flag = flag;
+          updateAddrFlag(inp, flag);
+          inp.dispatchEvent(new Event('change'));
+          removeAddrDropdown(inp);
+          inp.parentNode && inp.parentNode.querySelector('.addr-map-btn') &&
+            inp.parentNode.querySelector('.addr-map-btn').classList.add('has-addr');
+        });
+        dd.appendChild(row);
+      });
+    }
+    if (dd.children.length) { wrap.style.position='relative'; wrap.appendChild(dd); }
+  });
+}
+
+function removeAddrDropdown(inp) {
+  var wrap = inp.parentNode;
+  if (!wrap) return;
+  var dd = wrap.querySelector('.addr-dropdown');
+  if (dd) dd.parentNode.removeChild(dd);
+}
+
+// Country name → flag emoji lookup
+var COUNTRY_FLAGS = {
+  'united kingdom':'🇬🇧','uk':'🇬🇧','england':'🇬🇧','scotland':'🏴󠁧󠁢󠁳󠁣󠁴󠁿','wales':'🏴󠁧󠁢󠁷󠁬󠁳󠁿',
+  'france':'🇫🇷','germany':'🇩🇪','spain':'🇪🇸','italy':'🇮🇹','portugal':'🇵🇹',
+  'netherlands':'🇳🇱','holland':'🇳🇱','belgium':'🇧🇪','switzerland':'🇨🇭',
+  'austria':'🇦🇹','denmark':'🇩🇰','sweden':'🇸🇪','norway':'🇳🇴','finland':'🇫🇮',
+  'ireland':'🇮🇪','luxembourg':'🇱🇺','poland':'🇵🇱','czech republic':'🇨🇿',
+  'hungary':'🇭🇺','romania':'🇷🇴','bulgaria':'🇧🇬','greece':'🇬🇷','turkey':'🇹🇷',
+  'russia':'🇷🇺','ukraine':'🇺🇦','usa':'🇺🇸','united states':'🇺🇸','canada':'🇨🇦',
+  'australia':'🇦🇺','new zealand':'🇳🇿','south africa':'🇿🇦','uae':'🇦🇪',
+  'dubai':'🇦🇪','singapore':'🇸🇬','hong kong':'🇭🇰','japan':'🇯🇵','china':'🇨🇳',
+  'india':'🇮🇳','brazil':'🇧🇷','mexico':'🇲🇽','nigeria':'🇳🇬','kenya':'🇰🇪',
+  'ghana':'🇬🇭','tanzania':'🇹🇿','zimbabwe':'🇿🇼','qatar':'🇶🇦','saudi arabia':'🇸🇦',
+  'israel':'🇮🇱','cyprus':'🇨🇾','malta':'🇲🇹','iceland':'🇮🇸','croatia':'🇭🇷',
+  'slovakia':'🇸🇰','slovenia':'🇸🇮','serbia':'🇷🇸','bosnia':'🇧🇦','albania':'🇦🇱',
+};
+var COUNTRY_NAMES = Object.keys(COUNTRY_FLAGS);
+
+function getFlagForAddress(addr) {
+  if (!addr) return '🇬🇧';
+  var lower = addr.toLowerCase();
+  // Check last part of address for country
+  var parts = addr.split(',');
+  var last = (parts[parts.length-1]||'').trim().toLowerCase();
+  if (COUNTRY_FLAGS[last]) return COUNTRY_FLAGS[last];
+  // Check full string
+  for (var i = 0; i < COUNTRY_NAMES.length; i++) {
+    if (lower.indexOf(COUNTRY_NAMES[i]) >= 0) return COUNTRY_FLAGS[COUNTRY_NAMES[i]];
+  }
+  // UK postcodes (letters+numbers pattern)
+  if (/^[A-Z]{1,2}[0-9]/.test(addr.trim().toUpperCase())) return '🇬🇧';
+  return '🌍';
+}
+
+
+function updateAddrFlag(inp, flag) {
+  var wrap = inp.closest ? inp.closest('.addr-wrap') : inp.parentNode;
+  if (!wrap) return;
+  var existing = wrap.querySelector('.addr-flag');
+  if (flag) {
+    if (!existing) {
+      existing = document.createElement('span');
+      existing.className = 'addr-flag';
+      wrap.insertBefore(existing, inp);
+    }
+    existing.textContent = flag;
+    inp.style.paddingLeft = '30px';
+  } else if (existing) {
+    existing.parentNode.removeChild(existing);
+    inp.style.paddingLeft = '';
+  }
+}
+
+
+function calcRouteDistance(origin, destination, addReturn, cb) {
+  // Fallback: try postcode distance estimate if Maps not loaded
+  if (!mapsApiLoaded()) {
+    var est = postcodeDistanceMiles ? postcodeDistanceMiles(origin, destination) : 0;
+    if (est) {
+      var ret = addReturn ? Math.round(est) : 0;
+      cb({ outMiles: Math.round(est), retMiles: ret, totalMiles: Math.round(est) + ret });
+    } else {
+      cb(null);
+    }
+    return;
+  }
+
+  var wh = APP_SETTINGS.warehouseAddress || SL_CONFIG.companyPostcode || origin;
+  var svc = new google.maps.DistanceMatrixService();
+
+  // Build origins/destinations: outward always; return leg if requested
+  var origs = [origin];
+  var dests = [destination];
+  if (addReturn) { origs.push(destination); dests.push(wh); }
+
+  svc.getDistanceMatrix({
+    origins: origs, destinations: dests,
+    travelMode: google.maps.TravelMode.DRIVING,
+    unitSystem: google.maps.UnitSystem.IMPERIAL,
+  }, function(resp, status) {
+    if (status !== 'OK') { cb(null); return; }
+    try {
+      var outM = resp.rows[0].elements[0].distance.value; // metres
+      var outMiles = Math.round(outM / 1609.34);
+      var retMiles = 0;
+      if (addReturn && resp.rows.length > 1 && resp.rows[1].elements[1]) {
+        retMiles = Math.round(resp.rows[1].elements[1].distance.value / 1609.34);
+      }
+      cb({ outMiles: outMiles, retMiles: retMiles, totalMiles: outMiles + retMiles });
+    } catch(e) { cb(null); }
+  });
+}
+
+// Multi-stop journey distance (array of addresses)
+function openMapModal(address) {
+  closeMapModal();
+  _mapAddr = address;
+
+  var overlay = document.createElement('div');
+  overlay.className = 'map-modal-overlay';
+  overlay.id = 'map-modal-overlay';
+  overlay.addEventListener('click', function(e){ if(e.target===overlay) closeMapModal(); });
+
+  var modal = document.createElement('div');
+  modal.className = 'map-modal';
+
+  var head = document.createElement('div');
+  head.className = 'map-modal-head';
+  head.innerHTML =
+    '<div style="flex:1"><div class="map-modal-title">📍 '+esc(address)+'</div></div>'
+    + '<div class="map-modal-tabs">'
+    + '<button class="map-modal-tab on" id="mmt-sat" onclick="setMapView(\'satellite\')">🛰 Satellite</button>'
+    + '<button class="map-modal-tab" id="mmt-str" onclick="setMapView(\'street\')">🚶 Street View</button>'
+    + '</div>'
+    + '<button class="map-modal-close" onclick="closeMapModal()" title="Close">✕</button>';
+
+  var body = document.createElement('div');
+  body.className = 'map-modal-body';
+  body.id = 'map-modal-body';
+
+  modal.appendChild(head); modal.appendChild(body);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+
+  setMapView('satellite');
+}
+
+function closeMapModal() {
+  var o = el('map-modal-overlay');
+  if (o) o.parentNode.removeChild(o);
+}
+
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') closeMapModal();
+});
+
+// ── Route distance via Distance Matrix API ────────────────────────────
+// Returns {outMiles, retMiles, totalMiles} via callback
+function setMapView(mode) {
+  var body = el('map-modal-body');
+  if (!body) return;
+  var key = APP_SETTINGS.googleMapsKey;
+  var q   = encodeURIComponent(_mapAddr);
+  var src;
+
+  if (!key) {
+    // Fallback: Google Maps search embed (no key — limited but functional)
+    src = 'https://www.google.com/maps?q='+q+'&output=embed'+(mode==='street'?'&layer=t':'');
+    body.innerHTML = '<iframe src="'+src+'" style="width:100%;height:100%;min-height:480px;border:none" allowfullscreen loading="lazy"></iframe>';
+  } else if (mode === 'street') {
+    // Street view needs lat/lng — geocode address first
+    body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:480px;color:var(--t3);font-size:13px">Loading Street View...</div>';
+    fetch('https://maps.googleapis.com/maps/api/geocode/json?address='+q+'&key='+key)
+      .then(function(r){ return r.json(); })
+      .then(function(geo) {
+        var res = geo.results && geo.results[0];
+        if (!res) { body.innerHTML = '<div style="padding:40px;text-align:center;color:var(--t3)">Could not locate address for Street View</div>'; return; }
+        var lat = res.geometry.location.lat;
+        var lng = res.geometry.location.lng;
+        var svSrc = 'https://www.google.com/maps/embed/v1/streetview?key='+key+'&location='+lat+','+lng+'&heading=0&pitch=10&fov=90';
+        body.innerHTML = '<iframe src="'+svSrc+'" style="width:100%;height:100%;min-height:480px;border:none" allowfullscreen loading="lazy"></iframe>';
+      })
+      .catch(function(){ body.innerHTML = '<div style="padding:40px;text-align:center;color:var(--t3)">Street View unavailable</div>'; });
+    return; // early return — iframe set async above
+  } else {
+    src = 'https://www.google.com/maps/embed/v1/place?key='+key+'&q='+q+'&maptype=satellite';
+    body.innerHTML = '<iframe src="'+src+'" style="width:100%;height:100%;min-height:480px;border:none" allowfullscreen loading="lazy"></iframe>';
+  }
+
+  var satTab = el('mmt-sat'), strTab = el('mmt-str');
+  if (satTab) satTab.classList.toggle('on', mode==='satellite');
+  if (strTab) strTab.classList.toggle('on', mode==='street');
+}
 
 
 // ── RESTORED SCHEDULE/RESOURCE HELPERS ─────────────────────────────────
@@ -6893,7 +7256,7 @@ function cfgRenderMovementCard(jdi, mi, mv, jobTypeCode) {
   if (mv.mode === 'warehouse-out') {
     h += '<input class="cfg-input" value="' + esc(APP_SETTINGS.warehouseAddress || 'Our Warehouse') + '" disabled style="background:var(--s2)">';
   } else {
-    h += '<input class="cfg-input cfg-addr" id="mv-origin-' + jdi + '-' + mi + '" value="' + esc(mv.origin || '') + '" placeholder="Address or postcode">';
+    h += '<input class="cfg-input" id="mv-origin-' + jdi + '-' + mi + '" value="' + esc(mv.origin || '') + '" placeholder="Address or postcode">';
   }
   h += '</div>';
 
@@ -6901,7 +7264,7 @@ function cfgRenderMovementCard(jdi, mi, mv, jobTypeCode) {
   if (mv.mode === 'warehouse-in') {
     h += '<input class="cfg-input" value="' + esc(APP_SETTINGS.warehouseAddress || 'Our Warehouse') + '" disabled style="background:var(--s2)">';
   } else {
-    h += '<input class="cfg-input cfg-addr" id="mv-dest-' + jdi + '-' + mi + '" value="' + esc(mv.destination || '') + '" placeholder="Address or postcode">';
+    h += '<input class="cfg-input" id="mv-dest-' + jdi + '-' + mi + '" value="' + esc(mv.destination || '') + '" placeholder="Address or postcode">';
   }
   h += '</div></div>';
 
