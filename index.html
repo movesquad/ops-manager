@@ -4825,7 +4825,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v37n — ' + (function(){ var d=new Date(); return d.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); })();
+var APP_VERSION = 'v39 — 1 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -6071,10 +6071,18 @@ function cfgRenderStage() {
 }
 
 function cfgPostRender() {
+  // Build availability matrix if on movements stage
+  if (cfgStage === 1) {
+    setTimeout(cfgBuildMatrix, 50);
+    // Auto-activate first movement if none active
+    if (!CFG.jobDefs[cfgActiveMv.jdi] || !CFG.jobDefs[cfgActiveMv.jdi].movements[cfgActiveMv.mi]) {
+      cfgActiveMv = { jdi: 0, mi: 0 };
+    }
+  }
   // Re-bind address autocomplete on any new address fields
   document.querySelectorAll('.cfg-addr:not([data-bound])').forEach(function(inp) {
     inp.setAttribute('data-bound', '1');
-    if (mapsApiLoaded && mapsApiLoaded()) {
+    if (typeof google !== 'undefined' && google.maps && google.maps.places) {
       try {
         var ac = new google.maps.places.Autocomplete(inp, { componentRestrictions: { country: 'gb' }, types: ['geocode'] });
         ac.addListener('place_changed', function() {
@@ -6298,121 +6306,320 @@ function cfgUpdateRefPreview() {
 
 function cfgRenderMovements() {
   var h = '';
-  h += '<div style="font-size:11px;color:var(--t3);margin-bottom:14px;padding:8px 12px;background:var(--s1);border-radius:6px;border:1px solid var(--b1)">';
-  h += '📌 Each job type gets its own set of movements. Add as many legs as needed per job.';
+
+  // ── Availability Matrix ─────────────────────────────────────────────
+  h += '<div class="cs-card" style="margin-bottom:14px">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">📊</div>';
+  h += '<div style="flex:1"><div class="cs-card-title">Availability — 4 Weeks</div>';
+  h += '<div class="cs-card-sub">Click any date to assign it to the active movement below. Green = free, red = busy.</div></div>';
+  h += '</div>';
+  h += '<div class="cs-body" id="cfg-avail-body"><div style="text-align:center;color:#7A849E;padding:20px;font-size:12px">Loading matrix...</div></div>';
   h += '</div>';
 
+  // Active movement selector hint
+  h += '<div style="padding:7px 12px;background:var(--blt);border:1px solid var(--blue);border-radius:6px;margin-bottom:12px;font-size:11.5px;color:var(--blue);font-weight:600" id="cfg-active-mv-hint">';
+  h += '📅 Select a movement below, then click a date in the matrix above to assign it';
+  h += '</div>';
+
+  // ── Job movement cards ──────────────────────────────────────────────
   for (var di = 0; di < CFG.jobDefs.length; di++) {
     var jd = CFG.jobDefs[di];
     var jt = JOB_TYPES_V2.filter(function(x){ return x.code === jd.jobTypeCode; })[0] || {};
-    h += '<div class="cs-card" style="border-left:3px solid ' + (jt.accent || 'var(--b1)') + '">';
+    h += '<div class="cs-card" style="border-left:3px solid ' + (jt.accent || 'var(--b1)') + ';margin-bottom:10px">';
     h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:' + (jt.color || '#f0f0f0') + '">' + (jt.icon || '📋') + '</div>';
-    h += '<div><div class="cs-card-title">' + esc(jt.label || jd.jobTypeCode) + ' — Movements</div>';
-    h += '<div class="cs-card-sub">Define each leg of this job</div></div></div>';
-    h += '<div class="cs-body">';
+    h += '<div style="flex:1"><div class="cs-card-title">' + esc(jt.label || jd.jobTypeCode) + '</div>';
+    h += '<div class="cs-card-sub">' + jd.movements.length + ' movement' + (jd.movements.length !== 1 ? 's' : '') + '</div></div></div>';
+    h += '<div class="cs-body" style="padding-top:6px">';
 
     for (var mi = 0; mi < jd.movements.length; mi++) {
       h += cfgRenderMovementCard(di, mi, jd.movements[mi], jd.jobTypeCode);
     }
 
-    h += '<button class="btn btn-s btn-sm" style="width:100%;margin-top:8px" onclick="cfgAddMovement(' + di + ')">+ Add Movement Leg</button>';
-
-    // Storage section for WHS jobs
-    if (jd.jobTypeCode === 'WHS') {
-      h += cfgRenderStorageSection(di, jd);
-    }
-
+    h += '<button class="btn btn-s btn-sm" style="width:100%;margin-top:6px" onclick="cfgAddMovement(' + di + ')">+ Add Movement Leg</button>';
     h += '</div></div>';
   }
   return h;
 }
 
+// Track which movement is "active" for date assignment
+var cfgActiveMv = { jdi: 0, mi: 0 };
+var cfgMatrixOffset = 0;
+
+function cfgSetActiveMv(jdi, mi) {
+  cfgActiveMv = { jdi: jdi, mi: mi };
+  // Update hint text
+  var jd = CFG.jobDefs[jdi];
+  var mv = jd.movements[mi];
+  var jt = JOB_TYPES_V2.filter(function(x){ return x.code === jd.jobTypeCode; })[0] || {};
+  var hint = el('cfg-active-mv-hint');
+  if (hint) hint.innerHTML = '📅 Assigning to: <strong>' + esc(jt.label || jd.jobTypeCode) + ' — Movement ' + (mi + 1) + '</strong> ' + (mv.date ? '(currently: ' + mv.date + ')' : '(no date yet)') + ' · Click a date in the matrix above';
+  // Highlight all movement cards
+  document.querySelectorAll('.movement-card').forEach(function(c){ c.style.outline = ''; });
+  var active = el('mvcrd-' + jdi + '-' + mi);
+  if (active) active.style.outline = '2px solid var(--blue)';
+  // Rebuild matrix with new active selection
+  cfgBuildMatrix();
+}
+
+function cfgBuildMatrix() {
+  var body = el('cfg-avail-body');
+  if (!body) return;
+
+  var today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Build resource list: crew + vehicles (up to 8 cols)
+  var resources = [];
+  for (var ci = 0; ci < CREW.length; ci++) {
+    resources.push({ type: 'crew', name: CREW[ci].name, shortName: CREW[ci].name.split(' ')[0], col: CREW[ci].col });
+  }
+  for (var vi = 0; vi < VEHICLES.length; vi++) {
+    resources.push({ type: 'veh', name: VEHICLES[vi].name + ' (' + VEHICLES[vi].reg + ')', shortName: VEHICLES[vi].name, col: '#7A849E' });
+  }
+  var numCols = Math.min(resources.length, 8);
+
+  // Collect all already-assigned dates across all movements
+  var assignedDates = {};
+  CFG.jobDefs.forEach(function(jd, jdi) {
+    jd.movements.forEach(function(mv, mi) {
+      if (mv.date) {
+        if (!assignedDates[mv.date]) assignedDates[mv.date] = [];
+        var jt = JOB_TYPES_V2.filter(function(x){ return x.code === jd.jobTypeCode; })[0] || {};
+        assignedDates[mv.date].push({ jdi: jdi, mi: mi, label: (jt.icon || '') + ' ' + (mi + 1), isActive: (jdi === cfgActiveMv.jdi && mi === cfgActiveMv.mi) });
+      }
+    });
+  });
+
+  var activeDateStr = (CFG.jobDefs[cfgActiveMv.jdi] && CFG.jobDefs[cfgActiveMv.jdi].movements[cfgActiveMv.mi]) ? CFG.jobDefs[cfgActiveMv.jdi].movements[cfgActiveMv.mi].date : '';
+
+  var offsetDays = cfgMatrixOffset * 7;
+  var fromDate = new Date(today);
+  fromDate.setDate(fromDate.getDate() + offsetDays);
+  var toDate = new Date(fromDate);
+  toDate.setDate(toDate.getDate() + 27);
+
+  var fromLabel = fromDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  var toLabel   = toDate.toLocaleDateString('en-GB',   { day: 'numeric', month: 'short', year: 'numeric' });
+
+  var h = '<div class="avail-matrix">';
+
+  // Nav bar
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--b1)">';
+  h += '<button class="btn btn-s btn-sm" onclick="cfgMatrixNav(-1)"' + (cfgMatrixOffset <= 0 ? ' disabled style="opacity:.4"' : '') + '>← Earlier</button>';
+  h += '<div style="font-size:12px;font-weight:600;color:var(--blue);cursor:pointer;padding:3px 8px;border-radius:5px" onclick="openDateJumper(\'matrix\')" title="Jump to date">' + fromLabel + ' — ' + toLabel + ' ▾</div>';
+  h += '<button class="btn btn-s btn-sm" onclick="cfgMatrixNav(1)">Later →</button>';
+  h += '</div>';
+
+  // Header row
+  h += '<div class="avail-head-row">';
+  h += '<div class="avail-head-date">Date</div>';
+  for (var ri = 0; ri < numCols; ri++) {
+    h += '<div class="avail-head-res">' + esc(resources[ri].shortName) + '</div>';
+  }
+  h += '</div>';
+
+  var DAYS   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  for (var di = 0; di < 28; di++) {
+    var d = new Date(fromDate);
+    d.setDate(d.getDate() + di);
+    var ds = d.toISOString().slice(0, 10);
+    var dow = d.getDay();
+    var isWknd = dow === 0 || dow === 6;
+
+    var isActive = ds === activeDateStr;
+    var assigned = assignedDates[ds] || [];
+    var hasAssignment = assigned.length > 0;
+
+    var rowCls = 'avail-row' + (isActive ? ' chosen' : '');
+
+    h += '<div class="' + rowCls + '" id="avrow-' + ds + '" onclick="cfgMatrixSelectDate(\'' + ds + '\')">';
+    h += '<div class="avail-date-cell">';
+    h += '<span>' + d.getDate() + ' ' + MONTHS[d.getMonth()];
+    // Show assignment badges
+    if (assigned.length > 0) {
+      assigned.forEach(function(a) {
+        h += ' <span style="display:inline-block;background:' + (a.isActive ? 'var(--blue)' : 'var(--purple)') + ';color:#fff;border-radius:10px;padding:0 5px;font-size:9px;font-weight:700">' + a.label + '</span>';
+      });
+    }
+    h += '</span>';
+    h += '<span class="avail-dow">' + DAYS[dow] + '</span>';
+    h += '</div>';
+
+    for (var ri2 = 0; ri2 < numCols; ri2++) {
+      var res = resources[ri2];
+      var status = cfgGetAvail(res, ds, isWknd);
+      h += '<div class="avail-res-cell"><div class="avail-bar ' + status.cls + '">' + status.lbl + '</div></div>';
+    }
+    h += '</div>';
+  }
+
+  // Legend
+  h += '<div class="avail-legend">';
+  h += '<div class="avail-leg-i"><div class="avail-leg-dot" style="background:#D1FAE5"></div>Free</div>';
+  h += '<div class="avail-leg-i"><div class="avail-leg-dot" style="background:#FEE2E2"></div>Busy</div>';
+  h += '<div class="avail-leg-i"><div class="avail-leg-dot" style="background:#ede9e0"></div>Weekend</div>';
+  h += '<div class="avail-leg-i"><div class="avail-leg-dot" style="background:var(--blue);border-radius:50%"></div>This movement</div>';
+  h += '<div class="avail-leg-i"><div class="avail-leg-dot" style="background:var(--purple);border-radius:50%"></div>Other movements</div>';
+  h += '</div></div>';
+
+  body.innerHTML = h;
+}
+
+function cfgGetAvail(res, ds, isWknd) {
+  if (isWknd) return { cls: 'wknd', lbl: 'Wknd' };
+  for (var ji = 0; ji < jobs.length; ji++) {
+    var jb = jobs[ji];
+    if (ds < jb.start || ds > jb.end) continue;
+    if (res.type === 'crew') {
+      if ((jb.drivers || []).indexOf(res.name) >= 0 || (jb.porters || []).indexOf(res.name) >= 0) {
+        return { cls: 'busy', lbl: 'Booked' };
+      }
+    } else {
+      if ((jb.veh || []).some(function(v){ return res.name.indexOf(v) >= 0 || v.indexOf(res.shortName) >= 0; })) {
+        return { cls: 'busy', lbl: 'Booked' };
+      }
+    }
+  }
+  if (res.type === 'crew' && HOL[res.name] && HOL[res.name].indexOf(ds) >= 0) return { cls: 'busy', lbl: 'Holiday' };
+  return { cls: 'free', lbl: 'Free' };
+}
+
+function cfgMatrixSelectDate(ds) {
+  // Assign this date to the active movement
+  var jd = CFG.jobDefs[cfgActiveMv.jdi];
+  if (!jd) return;
+  var mv = jd.movements[cfgActiveMv.mi];
+  if (!mv) return;
+
+  // Toggle off if same date
+  if (mv.date === ds) {
+    mv.date = '';
+  } else {
+    mv.date = ds;
+    // Update the date input field directly if visible
+    var dateInput = el('mv-date-' + cfgActiveMv.jdi + '-' + cfgActiveMv.mi);
+    if (dateInput) dateInput.value = ds;
+    // Update avail summary
+    var avail = el('mv-avail-' + cfgActiveMv.jdi + '-' + cfgActiveMv.mi);
+    if (avail) avail.innerHTML = cfgAvailSummary(ds);
+    toast('📅 ' + ds + ' assigned to movement ' + (cfgActiveMv.mi + 1));
+  }
+
+  // Update hint and rebuild matrix without full re-render
+  var hint = el('cfg-active-mv-hint');
+  if (hint) {
+    var jt2 = JOB_TYPES_V2.filter(function(x){ return x.code === jd.jobTypeCode; })[0] || {};
+    hint.innerHTML = '📅 Assigning to: <strong>' + esc(jt2.label || jd.jobTypeCode) + ' — Movement ' + (cfgActiveMv.mi + 1) + '</strong> ' + (mv.date ? '(currently: ' + mv.date + ')' : '(no date yet)') + ' · Click a date in the matrix above';
+  }
+  cfgBuildMatrix();
+}
+
+function cfgMatrixNav(dir) {
+  cfgMatrixOffset = Math.max(0, cfgMatrixOffset + dir);
+  cfgBuildMatrix();
+}
+
+
 function cfgRenderMovementCard(jdi, mi, mv, jobTypeCode) {
   var h = '';
   var canRemove = CFG.jobDefs[jdi].movements.length > 1;
+  var isActive = (cfgActiveMv.jdi === jdi && cfgActiveMv.mi === mi);
+  var mo = MOVEMENT_MODES.filter(function(x){ return x.key === mv.mode; })[0] || {};
 
-  h += '<div class="movement-card" id="mvcrd-' + jdi + '-' + mi + '" style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:12px;margin-bottom:10px">';
+  h += '<div class="movement-card" id="mvcrd-' + jdi + '-' + mi + '" style="background:var(--s1);border:2px solid ' + (isActive ? 'var(--blue)' : 'var(--b1)') + ';border-radius:8px;padding:12px;margin-bottom:10px;transition:border-color .2s">';
 
-  // Header row
-  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
-  h += '<span style="font-size:12px;font-weight:700;color:var(--t1)">Movement ' + (mi + 1) + '</span>';
-  if (canRemove) h += '<button class="btn btn-s btn-sm" style="font-size:10px;padding:2px 8px;color:var(--red);border-color:var(--red)" onclick="cfgRemoveMovement(' + jdi + ',' + mi + ')">✕ Remove</button>';
+  // Header: activate button + date badge + remove
+  h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+  h += '<button onclick="cfgSetActiveMv(' + jdi + ',' + mi + ')" style="padding:4px 12px;border-radius:16px;font-size:11px;font-weight:700;cursor:pointer;border:2px solid ' + (isActive ? 'var(--blue)' : 'var(--b1)') + ';background:' + (isActive ? 'var(--blue)' : 'transparent') + ';color:' + (isActive ? '#fff' : 'var(--t2)') + '">' + (isActive ? '▶ Active' : 'Set Active') + '</button>';
+
+  if (mv.date) {
+    h += '<span style="padding:4px 10px;background:var(--green);color:#fff;border-radius:12px;font-size:11.5px;font-weight:700">📅 ' + mv.date + '</span>';
+    h += '<button onclick="cfgClearMovementDate(' + jdi + ',' + mi + ')" style="font-size:10px;color:var(--red);background:none;border:none;cursor:pointer;padding:2px 4px">✕</button>';
+  } else {
+    h += '<span style="padding:4px 10px;background:var(--b1);color:var(--t3);border-radius:12px;font-size:11.5px;font-weight:600">' + (isActive ? '← click matrix above' : 'No date') + '</span>';
+  }
+  h += '<span style="font-size:11px;font-weight:600;color:var(--t3);margin-left:auto">Movement ' + (mi + 1) + '</span>';
+  if (canRemove) h += '<button class="btn btn-s btn-sm" style="font-size:10px;padding:2px 8px;color:var(--red);border-color:var(--red)" onclick="cfgRemoveMovement(' + jdi + ',' + mi + ')">✕</button>';
   h += '</div>';
 
   // Mode selector
   h += '<div style="margin-bottom:10px">';
-  h += '<div style="font-size:11px;font-weight:600;color:var(--t3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Mode</div>';
-  h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+  h += '<div style="font-size:10px;font-weight:700;color:var(--t3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.4px">Movement Type</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:5px">';
   for (var moi = 0; moi < MOVEMENT_MODES.length; moi++) {
-    var mo = MOVEMENT_MODES[moi];
-    var sel = mv.mode === mo.key;
-    h += '<button onclick="cfgSetMovementMode(' + jdi + ',' + mi + ',\'' + mo.key + '\')" ';
-    h += 'style="padding:4px 10px;border-radius:16px;font-size:11.5px;font-weight:600;cursor:pointer;';
-    h += sel ? 'background:var(--blue);color:#fff;border:1px solid var(--blue)' : 'background:transparent;color:var(--t2);border:1px solid var(--b1)';
-    h += '">' + mo.icon + ' ' + mo.label + '</button>';
+    var mode = MOVEMENT_MODES[moi];
+    var sel = mv.mode === mode.key;
+    h += '<button onclick="cfgSetMovementMode(' + jdi + ',' + mi + ',\'' + mode.key + '\')" ';
+    h += 'style="padding:4px 10px;border-radius:14px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;';
+    h += sel ? 'background:var(--blue);color:#fff;border:1.5px solid var(--blue)' : 'background:transparent;color:var(--t2);border:1.5px solid var(--b1)';
+    h += '">' + mode.icon + ' ' + mode.label + '</button>';
   }
   h += '</div></div>';
 
-  // Warehouse-out: storage picker
+  // Warehouse storage picker (for warehouse-in / warehouse-out)
   if (mv.mode === 'warehouse-out' || mv.mode === 'warehouse-in') {
     h += cfgRenderMovementStoragePicker(jdi, mi, mv);
   }
 
-  // Date + availability
+  // Addresses
   h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">';
-  h += '<div class="cfg-field"><label class="cfg-label">Date</label>';
-  h += '<input type="date" class="cfg-input" id="mv-date-' + jdi + '-' + mi + '" value="' + esc(mv.date || '') + '" onchange="cfgMovementDateChange(' + jdi + ',' + mi + ',this.value)">';
-  h += '</div>';
-  // Availability mini-indicator
-  h += '<div class="cfg-field"><label class="cfg-label">Availability</label>';
-  h += '<div id="mv-avail-' + jdi + '-' + mi + '" style="padding:7px 10px;border-radius:6px;border:1px solid var(--b1);font-size:11.5px;background:var(--bg)">';
-  if (mv.date) {
-    h += cfgAvailSummary(mv.date);
-  } else {
-    h += '<span style="color:var(--t3)">Pick a date</span>';
-  }
-  h += '</div></div>';
-  h += '</div>';
-
-  // Origin + destination
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">';
-  var originLabel = 'Origin';
-  var destLabel = 'Destination';
-  if (mv.mode === 'collection') { originLabel = 'Collection Address'; destLabel = 'Delivering To'; }
-  if (mv.mode === 'delivery')   { originLabel = 'Collecting From'; destLabel = 'Delivery Address'; }
-  if (mv.mode === 'warehouse-in') { destLabel = 'Our Warehouse'; }
-  if (mv.mode === 'warehouse-out') { originLabel = 'Our Warehouse'; }
-  if (mv.mode === 'disposal') { destLabel = 'Disposal Site'; }
+  var originLabel = 'Origin Address';
+  var destLabel   = 'Destination Address';
+  if (mv.mode === 'collection')     { originLabel = 'Collection Address'; destLabel = 'Delivering To'; }
+  if (mv.mode === 'delivery')       { originLabel = 'Collecting From';    destLabel = 'Delivery Address'; }
+  if (mv.mode === 'warehouse-in')   { destLabel   = 'Our Warehouse'; }
+  if (mv.mode === 'warehouse-out')  { originLabel = 'Our Warehouse'; }
+  if (mv.mode === 'disposal')       { destLabel   = 'Disposal Site'; }
+  if (mv.mode === '3rd-party')      { originLabel = 'Handoff Point'; destLabel = 'Partner Location'; }
 
   h += '<div class="cfg-field"><label class="cfg-label">' + originLabel + '</label>';
-  h += '<input class="cfg-input cfg-addr" id="mv-origin-' + jdi + '-' + mi + '" value="' + esc(mv.origin || '') + '" placeholder="Address or postcode">';
+  if (mv.mode === 'warehouse-out') {
+    h += '<input class="cfg-input" value="' + esc(APP_SETTINGS.warehouseAddress || 'Our Warehouse') + '" disabled style="background:var(--s2)">';
+  } else {
+    h += '<input class="cfg-input cfg-addr" id="mv-origin-' + jdi + '-' + mi + '" value="' + esc(mv.origin || '') + '" placeholder="Address or postcode">';
+  }
   h += '</div>';
-  h += '<div class="cfg-field"><label class="cfg-label">' + destLabel + '</label>';
 
+  h += '<div class="cfg-field"><label class="cfg-label">' + destLabel + '</label>';
   if (mv.mode === 'warehouse-in') {
-    h += '<input class="cfg-input" value="' + esc(APP_SETTINGS.warehouseAddress || 'Our Warehouse') + '" disabled>';
-  } else if (mv.mode === 'warehouse-out') {
-    h += '<input class="cfg-input cfg-addr" id="mv-dest-' + jdi + '-' + mi + '" value="' + esc(mv.destination || '') + '" placeholder="Delivery address">';
+    h += '<input class="cfg-input" value="' + esc(APP_SETTINGS.warehouseAddress || 'Our Warehouse') + '" disabled style="background:var(--s2)">';
   } else {
     h += '<input class="cfg-input cfg-addr" id="mv-dest-' + jdi + '-' + mi + '" value="' + esc(mv.destination || '') + '" placeholder="Address or postcode">';
   }
   h += '</div></div>';
 
-  // Volume
-  h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-  h += '<label class="cfg-label" style="margin:0;min-width:55px">Volume</label>';
-  h += '<input type="number" class="cfg-input" id="mv-vol-' + jdi + '-' + mi + '" value="' + esc(mv.volFt || mv.volCbm || '') + '" min="0" placeholder="0" style="width:100px">';
+  // Volume + availability summary on same row
+  h += '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px">';
+  h += '<div style="display:flex;align-items:center;gap:6px">';
+  h += '<label class="cfg-label" style="margin:0;white-space:nowrap">Volume</label>';
+  h += '<input type="number" class="cfg-input" id="mv-vol-' + jdi + '-' + mi + '" value="' + esc(mv.volUnit === 'cbm' ? (mv.volCbm || '') : (mv.volFt || '')) + '" min="0" placeholder="0" style="width:90px">';
   h += '<button class="vol-unit-btn' + (mv.volUnit !== 'cbm' ? ' sel' : '') + '" onclick="cfgMvSetVolUnit(' + jdi + ',' + mi + ',\'ft\',this)">ft³</button>';
   h += '<button class="vol-unit-btn' + (mv.volUnit === 'cbm' ? ' sel' : '') + '" onclick="cfgMvSetVolUnit(' + jdi + ',' + mi + ',\'cbm\',this)">CBM</button>';
   h += '</div>';
 
+  // Availability for this date inline
+  if (mv.date) {
+    h += '<div id="mv-avail-' + jdi + '-' + mi + '" style="font-size:11.5px;padding:4px 10px;background:var(--bg);border:1px solid var(--b1);border-radius:6px;flex:1;min-width:150px">';
+    h += cfgAvailSummary(mv.date);
+    h += '</div>';
+  }
+  h += '</div>';
+
   // Services & notes toggle
-  h += '<div style="margin-top:8px">';
-  h += '<button class="btn btn-s btn-sm" onclick="cfgToggleMvDetails(\'' + jdi + '-' + mi + '\')" style="font-size:11px">⚙ Services &amp; Notes</button>';
-  h += '<div id="mv-details-' + jdi + '-' + mi + '" style="display:none;margin-top:10px">';
-  // Services
+  var svcsOn = mv.svcs ? Object.keys(mv.svcs).filter(function(k){ return mv.svcs[k]; }).length : 0;
+  var flagsOn = ['smallVehicle','tightAccess','shuttle','parkingSuspension','permit'].filter(function(f){ return mv[f]; }).length;
+  var extraCount = svcsOn + flagsOn;
+
+  h += '<button class="btn btn-s btn-sm" onclick="cfgToggleMvDetails(\'' + jdi + '-' + mi + '\')" style="font-size:11px">';
+  h += '⚙ Services & Notes' + (extraCount > 0 ? ' <span style="background:var(--blue);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px">' + extraCount + '</span>' : '');
+  h += '</button>';
+
+  h += '<div id="mv-details-' + jdi + '-' + mi + '" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--b1)">';
   var svcs = [['casing','Casing'],['crating','Crating'],['handyman','Handyman'],['piano','Piano'],['packingMaterials','Packing Materials'],['debris','Debris Removal']];
-  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+  h += '<div style="font-size:10px;font-weight:700;color:var(--t3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px">Services</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">';
   svcs.forEach(function(s){
     var on = mv.svcs && mv.svcs[s[0]];
     h += '<button onclick="cfgToggleMvSvc(' + jdi + ',' + mi + ',\'' + s[0] + '\',this)" style="padding:3px 10px;border-radius:14px;font-size:11px;cursor:pointer;';
@@ -6420,9 +6627,9 @@ function cfgRenderMovementCard(jdi, mi, mv, jobTypeCode) {
     h += '">' + s[1] + '</button>';
   });
   h += '</div>';
-  // Access flags
   var flags = [['smallVehicle','Small Vehicle'],['tightAccess','Tight Access'],['shuttle','Shuttle'],['parkingSuspension','Parking Suspension'],['permit','Permit Required']];
-  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+  h += '<div style="font-size:10px;font-weight:700;color:var(--t3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px">Access</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">';
   flags.forEach(function(f){
     var on = mv[f[0]];
     h += '<button onclick="cfgToggleMvFlag(' + jdi + ',' + mi + ',\'' + f[0] + '\',this)" style="padding:3px 10px;border-radius:14px;font-size:11px;cursor:pointer;';
@@ -6431,11 +6638,27 @@ function cfgRenderMovementCard(jdi, mi, mv, jobTypeCode) {
   });
   h += '</div>';
   h += '<textarea class="cfg-input" id="mv-notes-' + jdi + '-' + mi + '" rows="2" placeholder="Movement notes..." style="resize:vertical">' + esc(mv.notes || '') + '</textarea>';
-  h += '</div></div>';
+  h += '</div>';
 
   h += '</div>'; // movement-card
   return h;
 }
+
+function cfgClearMovementDate(jdi, mi) {
+  CFG.jobDefs[jdi].movements[mi].date = '';
+  cfgBuildMatrix();
+  // Update date badge area by re-rendering just this card
+  var card = el('mvcrd-' + jdi + '-' + mi);
+  if (card) {
+    var mv = CFG.jobDefs[jdi].movements[mi];
+    var newHtml = cfgRenderMovementCard(jdi, mi, mv, CFG.jobDefs[jdi].jobTypeCode);
+    var tmp = document.createElement('div');
+    tmp.innerHTML = newHtml;
+    card.parentNode.replaceChild(tmp.firstChild, card);
+    cfgPostRender();
+  }
+}
+
 
 function cfgRenderMovementStoragePicker(jdi, mi, mv) {
   var h = '<div style="margin-bottom:10px;padding:10px;background:#FFFAEB;border:1px solid #D69E2E33;border-radius:6px">';
