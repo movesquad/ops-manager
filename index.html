@@ -3547,41 +3547,70 @@ function delMM(i) {
 }
 
 function renderSettingsComms() {
-  var h = '<div style="max-width:580px">';
-  h += '<div class="settings-card"><div class="sc-head"><div class="sc-title">Company &amp; Email Settings</div></div>';
-  h += '<div class="sc-body"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
-  var fields=[['Company Name','sl-cname',SL_CONFIG.companyName],['Company Postcode','sl-postcode',SL_CONFIG.companyPostcode||'WN73EQ'],['From Email','sl-from',SL_CONFIG.fromEmail],
-    ['From Name','sl-fname',SL_CONFIG.fromName],['Company Phone','sl-phone',SL_CONFIG.companyPhone],
-    ['Reply-to Email','sl-reply',SL_CONFIG.companyEmail],['SocketLabs Server ID','sl-sid',SL_CONFIG.serverId]];
-  for(var i=0;i<fields.length;i++){
-    h+='<div class="veh-field"><div class="veh-lbl">'+fields[i][0]+'</div>';
-    h+='<input class="sc-input" id="'+fields[i][1]+'" value="'+esc(fields[i][2])+'"></div>';
-  }
-  h+='</div>';
-  h+='<div class="veh-field" style="margin-top:12px"><div class="veh-lbl">SocketLabs Injection API Key</div>';
-  h+='<input class="sc-input" id="sl-key" value="'+esc(SL_CONFIG.apiKey)+'" placeholder="Paste injection API key" type="password"></div>';
-  h+='<div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn btn-p" onclick="saveCommsSettings()">Save Settings</button></div>';
-  h+='</div></div>';
-  // Data management section
-  h+='<div class="settings-card" style="margin-top:16px"><div class="sc-head"><div class="sc-title">Data Management</div></div>';
-  h+='<div class="sc-body">';
-  h+='<div style="font-size:12.5px;color:var(--t2);margin-bottom:12px">All data is saved automatically to Azure and persists across all devices and users.</div>';
-  h+='<div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:8px">Legacy OPS Plan Import</div>';
-  h+='<div style="font-size:12px;color:var(--t2);margin-bottom:10px">Import jobs from your weekly Excel OPS Plan spreadsheet. Export as CSV from Excel first, then upload here. Duplicate refs will be skipped.</div>';
-  h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px">';
-  h+='<button class="btn btn-p btn-sm" onclick="importOPSPlan()">&#8593; Import OPS Plan CSV</button>';
-  h+='<span id="csv-import-status" style="font-size:12px;color:var(--t2)"></span>';
-  h+='</div>';
-  h+='<div style="font-size:12.5px;font-weight:600;color:var(--t1);margin-bottom:8px">Backup &amp; Restore</div>';
-  h+='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">';
-  h+='<button class="btn btn-s btn-sm" onclick="exportDataBackup()">&#8595; Export Backup (JSON)</button>';
-  h+='<button class="btn btn-s btn-sm" onclick="importDataBackup()">&#8593; Import Backup (JSON)</button>';
-  h+='<button class="btn btn-sm" style="background:#fff;border:1px solid var(--red);color:var(--red)" onclick="clearData()">&#9888; Reset All Data</button>';
-  h+='</div>';
-  h+='</div></div>';
-  h+='</div>';
+  var h = '<div style="max-width:680px">';
+
+  // Twilio SMS & Voice
+  h += '<div class="settings-card">';
+  h += '<div class="sc-head"><div><div class="sc-title">📱 Twilio — SMS & Voice</div>';
+  h += '<div class="sc-sub">Send SMS confirmations, doc reminders and appointment notifications. Supports SMS, WhatsApp and SIP calling.</div></div>';
+  h += '<button class="btn btn-p btn-sm" onclick="saveTwilioSettings()">Save</button></div>';
+
+  var twilioFields = [
+    { key:'accountSid',  label:'Account SID',       placeholder:'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', hint:'From twilio.com/console' },
+    { key:'authToken',   label:'Auth Token',         placeholder:'your auth token',                   hint:'Keep this secret', type:'password' },
+    { key:'fromNumber',  label:'From Number (SMS)',  placeholder:'+441234567890',                     hint:'Your Twilio phone number in E.164 format' },
+    { key:'fromWhatsApp',label:'WhatsApp Number',    placeholder:'whatsapp:+14155238886',              hint:'Only if WhatsApp Business is enabled on your Twilio account' },
+  ];
+  twilioFields.forEach(function(f) {
+    h += '<div style="display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:start;padding:10px 0;border-bottom:1px solid var(--s2)">';
+    h += '<div><div style="font-size:12.5px;font-weight:700;color:var(--t1)">' + f.label + '</div>';
+    h += '<div style="font-size:11px;color:var(--t3);margin-top:2px">' + f.hint + '</div></div>';
+    h += '<input class="sc-input" id="tw-'+f.key+'" type="'+(f.type||'text')+'" value="'+esc(TWILIO_CONFIG[f.key]||'')+'" placeholder="'+f.placeholder+'">';
+    h += '</div>';
+  });
+  h += '<div style="padding-top:12px;display:flex;gap:8px">';
+  h += '<button class="btn btn-s btn-sm" onclick="sendTestSms()">📱 Send test SMS</button>';
+  h += '<span style="font-size:11px;color:var(--t3);margin-left:4px;align-self:center">Sends a test SMS to your mobile number</span>';
+  h += '</div></div>';
+
+  // Warehouse / mileage postcode
+  h += '<div class="settings-card">';
+  h += '<div class="sc-head"><div class="sc-title">🏭 Warehouse & Mileage</div></div>';
+  h += '<div style="display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:center;padding:10px 0">';
+  h += '<div><div style="font-size:12.5px;font-weight:700;color:var(--t1)">Company Postcode</div>';
+  h += '<div style="font-size:11px;color:var(--t3);margin-top:2px">Used for mileage calculations</div></div>';
+  h += '<input class="sc-input" id="sl-postcode" value="'+esc(SL_CONFIG.companyPostcode||'WN73EQ')+'" placeholder="WN7 3EQ">';
+  h += '</div>';
+  h += '<button class="btn btn-p btn-sm" style="margin-top:10px" onclick="saveCommsSettings()">Save</button>';
+  h += '</div>';
+
+  h += '</div>';
   setH('settings-body', h);
 }
+
+function saveTwilioSettings() {
+  var keys = ['accountSid','authToken','fromNumber','fromWhatsApp'];
+  keys.forEach(function(k) {
+    var e = el('tw-'+k);
+    if (e) TWILIO_CONFIG[k] = e.value.trim();
+  });
+  toast('Twilio settings saved');
+  saveData('settings');
+}
+
+async function sendTestSms() {
+  if (!TWILIO_CONFIG.accountSid || !TWILIO_CONFIG.fromNumber) {
+    toast('Please enter your Twilio Account SID and From Number first');
+    return;
+  }
+  var to = prompt('Enter your mobile number for the test SMS (e.g. +447700000000):');
+  if (!to) return;
+  toast('Sending test SMS…');
+  var res = await sendSms({ to, body: 'Test message from ' + (APP_SETTINGS.companyName||'Onwards') + ' Ops Manager. If you received this, Twilio is configured correctly!' });
+  if (res.ok) toast('✅ Test SMS sent to ' + to);
+  else toast('❌ SMS failed: ' + (res.error||'Unknown'));
+}
+
 
 function saveCommsSettings() {
   SL_CONFIG.companyName=el('sl-cname').value; SL_CONFIG.companyPostcode=(el('sl-postcode')||{}).value||SL_CONFIG.companyPostcode; SL_CONFIG.fromEmail=el('sl-from').value;
@@ -4731,14 +4760,16 @@ var bkMode = 'none'; // 'new' | 'edit' | 'view'
 
 // SocketLabs config — user fills these in Settings
 var SL_CONFIG = {
-  serverId: '',
-  apiKey: '',
-  fromEmail: 'bookings@yourcompany.com',
-  fromName: 'OPS Manager',
-  companyName: 'Your Removals Company',
-  companyPhone: '0800 000 0000',
-  companyEmail: 'info@yourcompany.com',
+  // Legacy SocketLabs config — kept for mileage calculation compatibility only
   companyPostcode: 'WN73EQ',  // Origin postcode for mileage calculations
+};
+
+var TWILIO_CONFIG = {
+  // Twilio SMS & Voice — configure in Settings → Branding & Email
+  accountSid:  '',   // Twilio Account SID (from twilio.com/console)
+  authToken:   '',   // Twilio Auth Token
+  fromNumber:  '',   // Your Twilio phone number (e.g. +441234567890)
+  fromWhatsApp:'',   // WhatsApp-enabled number (e.g. whatsapp:+14155238886)
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
@@ -11652,6 +11683,7 @@ function renderClientJobDetail(cj) {
     h += '<button class="btn btn-s btn-sm" onclick="spUploadFile(\''+cj.id+'\')">⬆ Upload File</button>';
     h += '<button class="btn btn-s btn-sm" onclick="spShareFolder(\''+cj.id+'\')">🔗 Share Folder</button>';
     h += '<button class="btn btn-s btn-sm" onclick="sendJobConfirmationEmail(\''+cj.id+'\',{resend:true})" title="Resend job confirmation email">📧 Resend Confirmation</button>';
+    h += '<button class="btn btn-s btn-sm" onclick="sendDocReminder(\''+cj.id+'\')" title="Request missing documents from move manager">📋 Request Docs</button>';
   }
   h += '</div></div>';
 
@@ -12555,6 +12587,36 @@ function bpApplyToBookingForm(parsed) {
   }, 800);
 }
 
+
+// ── TWILIO SMS / WHATSAPP / VOICE ────────────────────────────────────────
+async function sendSms(opts) {
+  // opts: { to, body, action ('sendSms'|'sendWhatsApp'|'makeCall'), twiml }
+  try {
+    var res = await fetch('/api/twilio', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: opts.action || 'sendSms',
+        to:     opts.to,
+        body:   opts.body || '',
+        twiml:  opts.twiml || ''
+      })
+    });
+    var data = await res.json();
+    return data.ok ? { ok: true, sid: data.sid } : { ok: false, error: data.error || 'SMS failed' };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+async function saveCommsSettings() {
+  var pc = el('sl-postcode');
+  if (pc) SL_CONFIG.companyPostcode = pc.value.trim();
+  toast('Settings saved');
+  saveData('settings');
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SHAREPOINT + APPENATE — FULL INTEGRATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -13314,6 +13376,51 @@ async function sendJobConfirmationEmail(cjId, opts) {
   } else {
     console.error('Job confirmation email failed:', res.error);
     if (opts && opts.resend) toast('❌ Email failed: ' + (res.error||'Unknown error'));
+  }
+}
+
+// ── MANUAL DOC REMINDER ──────────────────────────────────────────────────────
+async function sendDocReminder(cjId) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
+  if (!cj) return;
+
+  // Check there are actually missing docs
+  var REQUIRED_SLUGS = ['packing-list','insurance','survey-report','delivery-order'];
+  var checklist = cj.docChecklist || {};
+  var missingDocs = REQUIRED_SLUGS.filter(function(s){ return !checklist[s] || checklist[s] === 'missing'; });
+
+  if (!missingDocs.length) {
+    toast('No missing required documents for this job');
+    return;
+  }
+
+  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
+  if (!mm || !mm.email) {
+    toast('No email set for move manager — add one in Settings → Move Managers');
+    return;
+  }
+
+  if (!confirm('Send document request to ' + mm.name + ' (' + mm.email + ')?')) return;
+
+  toast('Sending document request…');
+  try {
+    var secret = 'onwards-reminder-2026'; // must match REMINDER_SECRET env var
+    var res = await fetch('/api/reminder', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret: secret, clientJobId: cjId })
+    });
+    var data = await res.json();
+    if (data.ok && data.processed > 0) {
+      toast('✅ Document request sent to ' + mm.email);
+    } else if (data.ok && data.processed === 0) {
+      toast('⚠ No reminder sent — check move manager email in Settings');
+    } else {
+      toast('❌ Failed: ' + (data.error || 'Unknown error'));
+    }
+  } catch(e) {
+    toast('❌ Error: ' + e.message);
   }
 }
 
