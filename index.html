@@ -1217,6 +1217,14 @@ textarea.fi{resize:vertical;min-height:60px}
 .sp-file-icon{font-size:16px;flex-shrink:0}
 .sp-file-name{flex:1;font-weight:500;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sp-file-meta{font-size:10.5px;color:var(--t3);flex-shrink:0}
+
+/* ══ CREW PORTAL SCREENS ══════════════════════════════════════════════ */
+.dv-screen { display: block; height: 100%; overflow-y: auto; }
+.dv-job-card { transition: transform .12s; }
+.dv-job-card:active { transform: scale(.98); }
+.dv-sig-pad { cursor: crosshair; }
+.dv-form-card { transition: box-shadow .1s; }
+.dv-form-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
 </style>
 <body>
 
@@ -4833,7 +4841,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v43 — 1 Mar 2026';
+var APP_VERSION = 'v45 — 1 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -11794,6 +11802,101 @@ function checkDriverLock() {
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════════════
+// CREW PORTAL v2 — Complete field operations system
+// ══════════════════════════════════════════════════════════════════════
+
+// ── STATE ─────────────────────────────────────────────────────────────
+var dvCurrentJobId   = null;
+var dvCurrentJrnId   = null;  // active journey id (multi-job run)
+var _dvSodDone       = {};    // { 'YYYY-MM-DD:NAME': true } — start-of-day completed
+
+// Status flow for jobs
+var DV_STATUS_FLOW = ['Provisional','Scheduled','En Route','On Site','Loading','Loaded','In Transit','Delivered','Completed'];
+
+function dvStatusColor(s) {
+  return {'Provisional':'#FF9F1A','Scheduled':'#7A849E','En Route':'#0073EA','On Site':'#A25DDC',
+          'Loading':'#E91E8C','Loaded':'#E91E8C','In Transit':'#FF5722',
+          'Delivered':'#00C875','Completed':'#00A86B','Cancelled':'#E44258'}[s] || '#7A849E';
+}
+function dvStatusIcon(s) {
+  return {'Provisional':'🕐','Scheduled':'📅','En Route':'🚐','On Site':'📍',
+          'Loading':'📦','Loaded':'✅','In Transit':'🛣','Delivered':'🏠',
+          'Completed':'🎉','Cancelled':'❌'}[s] || '📋';
+}
+function dvStatusNext(cur) {
+  var i = DV_STATUS_FLOW.indexOf(cur);
+  return (i >= 0 && i < DV_STATUS_FLOW.length - 1) ? DV_STATUS_FLOW[i + 1] : 'Completed';
+}
+
+// ── SMS TRIGGER MATRIX ────────────────────────────────────────────────
+// Maps status transitions to SMS messages sent to specific parties
+var DV_SMS_TRIGGERS = {
+  'En Route':  { who: 'origin',   tpl: function(j){ return 'Hi ' + dvClientFirst(j) + ', your ' + (j.brand||'') + ' removal crew are on their way to you now. They should arrive within approx 45 mins. Reply STOP to opt out.'; }},
+  'On Site':   { who: 'origin',   tpl: function(j){ return 'Hi ' + dvClientFirst(j) + ', your crew have arrived at the collection address. Please let them know if anything has changed. Reply STOP to opt out.'; }},
+  'Loaded':    { who: 'dest',     tpl: function(j){ return 'Hi ' + dvClientFirst(j) + ', your belongings are loaded and the crew are heading to ' + (j.dest||'your delivery address') + '. Estimated arrival to follow. Reply STOP to opt out.'; }},
+  'Delivered': { who: 'origin',   tpl: function(j){ return 'Hi ' + dvClientFirst(j) + ', your delivery has been completed successfully. Thank you for using ' + (j.brand||'us') + '. Reply STOP to opt out.'; }},
+};
+
+function dvClientFirst(j) {
+  var name = j.client || '';
+  return name.split(' ')[0] || name;
+}
+
+async function dvTriggerStatus(jobId, newStatus) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var oldStatus = j.status;
+  j.status = newStatus;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.statusLog) j.crewData.statusLog = [];
+  j.crewData.statusLog.push({ from: oldStatus, to: newStatus, at: new Date().toISOString(), by: window._driverName || 'Crew' });
+  saveData('job', j.id, j);
+  toast(dvStatusIcon(newStatus) + ' ' + newStatus);
+
+  // SMS trigger
+  var trigger = DV_SMS_TRIGGERS[newStatus];
+  if (trigger && TWILIO_CONFIG && TWILIO_CONFIG.fromNumber) {
+    var phone = j.clientPhone || '';
+    // Find client phone from CLIENT_JOBS if not on job
+    if (!phone && j.clientJobId) {
+      var cj = CLIENT_JOBS.filter(function(x){ return x.id === j.clientJobId; })[0];
+      if (cj) phone = cj.clientPhone || '';
+    }
+    if (phone) {
+      var msg = trigger.tpl(j);
+      try {
+        var res = await sendSms({ to: phone, body: msg });
+        if (res && res.ok) {
+          if (!j.crewData.smsLog) j.crewData.smsLog = [];
+          j.crewData.smsLog.push({ to: phone, body: msg, status: newStatus, at: new Date().toISOString(), sid: res.sid });
+          saveData('job', j.id, j);
+          toast('📱 SMS sent to client');
+        }
+      } catch(e) { console.warn('SMS failed', e); }
+    }
+  }
+
+  // Re-render the detail screen
+  if (dvCurrentJobId === jobId) dvRenderJobDetail(jobId);
+  renderDriverView();
+}
+
+// ── SCREEN NAVIGATION ─────────────────────────────────────────────────
+function dvShowScreen(id) {
+  document.querySelectorAll('.dv-screen').forEach(function(s){ s.style.display = 'none'; });
+  var s = el(id);
+  if (s) { s.style.display = ''; s.scrollTop = 0; }
+}
+
+function dvGoToday() {
+  dvCurrentJobId = null;
+  dvShowScreen('dv-screen-today');
+  renderDriverView();
+}
+
+// ── ENTRY POINT: activateDriverView gated by SOD ──────────────────────
 function activateDriverView() {
   var sb = document.querySelector('.sidebar');
   var mn = document.querySelector('.main');
@@ -11803,70 +11906,1535 @@ function activateDriverView() {
   document.addEventListener('keydown', function(e) {
     if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) e.preventDefault();
   });
+  // Check if SOD already done today
+  var key = d2s(new Date()) + ':' + (window._driverName || '');
+  if (_dvSodDone[key]) {
+    dvShowScreen('dv-screen-today');
+    renderDriverView();
+  } else {
+    dvShowScreen('dv-screen-startday');
+    dvRenderStartOfDay();
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 1. START OF DAY FORM
+// ══════════════════════════════════════════════════════════════════════
+function dvRenderStartOfDay() {
+  var name  = window._driverName || 'Crew';
+  var today = d2s(new Date());
+  var myJobs = jobs.filter(function(j) {
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    return crew.indexOf(name) >= 0 && jobDates(j).indexOf(today) >= 0;
+  });
+  var hasWarehouse = myJobs.some(function(j){ return j.storageDirection === 'out' || (j.containersToRemove && j.containersToRemove.length); });
+  var allMaterials = dvAggregateAllMaterials(myJobs);
+  var hasMaterials = allMaterials.length > 0;
+
+  var h = '';
+  h += '<div style="background:#151c2c;padding:20px 18px 24px">';
+  h += '<div style="max-width:520px;margin:0 auto">';
+  h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgba(255,255,255,.35);margin-bottom:6px">GOOD MORNING</div>';
+  h += '<div style="font-size:26px;font-weight:900;color:#fff;margin-bottom:2px">' + esc(name) + '</div>';
+  h += '<div style="font-size:13px;color:rgba(255,255,255,.5)">' + dvNiceDate(new Date()) + ' · ' + myJobs.length + ' job' + (myJobs.length!==1?'s':'') + ' today</div>';
+  h += '</div></div>';
+
+  h += '<div style="max-width:520px;margin:0 auto;padding:16px 16px 90px">';
+
+  // Today's job summary
+  if (myJobs.length) {
+    h += dvSectionLabel('Today\'s Schedule');
+    myJobs.forEach(function(j, idx) {
+      var col = dvStatusColor(j.status);
+      h += '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px">';
+      h += '<div style="width:32px;height:32px;border-radius:8px;background:' + col + '22;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">' + dvStatusIcon(j.status) + '</div>';
+      h += '<div style="flex:1">';
+      h += '<div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(j.client) + '</div>';
+      h += '<div style="font-size:11.5px;color:#7A849E">' + esc(j.jobType||'') + (j.origin ? ' · ' + esc(j.origin.split(',')[0]) : '') + '</div>';
+      h += '</div>';
+      h += '<div style="font-size:11px;font-weight:700;color:' + col + '">' + j.status + '</div>';
+      h += '</div>';
+    });
+  }
+
+  // SOD Checklist
+  h += dvSectionLabel('Start of Day Check');
+  var sodItems = [
+    { id:'sod-brief',    label:'I have read today\'s job briefs' },
+    { id:'sod-phone',    label:'Mobile phone charged & data on' },
+    { id:'sod-keys',     label:'Vehicle keys collected' },
+    { id:'sod-ppe',      label:'PPE loaded (gloves, boots, hi-vis)' },
+    { id:'sod-blankets', label:'Blankets and furniture pads loaded' },
+    { id:'sod-straps',   label:'Straps and trolley loaded' },
+    { id:'sod-tape',     label:'Tape, bubble wrap and cartons available' },
+    { id:'sod-fuel',     label:'Fuel checked — vehicle ready to go' },
+    { id:'sod-walkround',label:'Vehicle walk-round completed — no new damage' },
+  ];
+  if (hasWarehouse) sodItems.push({ id:'sod-wh', label:'Warehouse loading sheet reviewed' });
+  if (hasMaterials)  sodItems.push({ id:'sod-mat', label:'Materials picked and loaded for all jobs' });
+
+  h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:14px" id="sod-checklist">';
+  sodItems.forEach(function(item) {
+    h += '<div onclick="dvToggleSodItem(\'' + item.id + '\')" id="sod-row-' + item.id + '" style="display:flex;align-items:center;gap:14px;padding:13px 16px;border-bottom:1px solid #F0EFE9;cursor:pointer">';
+    h += '<div id="sod-chk-' + item.id + '" style="width:24px;height:24px;border-radius:6px;border:2px solid #C8C5BE;background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0"></div>';
+    h += '<div style="font-size:13.5px;font-weight:600;color:#4A5568">' + item.label + '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // Extra today notes
+  h += '<div style="margin-bottom:16px">';
+  h += '<div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Any issues to report before starting?</div>';
+  h += '<textarea id="sod-issues" rows="2" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" placeholder="Vehicle damage, missing equipment, personal welfare..."></textarea>';
+  h += '</div>';
+
+  // Action buttons row (materials / warehouse if needed)
+  if (hasMaterials || hasWarehouse) {
+    h += dvSectionLabel('Before You Go');
+    if (hasMaterials) {
+      h += dvActionButton('📦 Materials Picking Sheet', 'View what needs to be loaded for today\'s jobs', 'dvOpenMaterials()', '#0073EA');
+    }
+    if (hasWarehouse) {
+      h += dvActionButton('🏭 Warehouse Loading Sheet', 'Containers to collect — load in reverse delivery order', 'dvOpenWarehouseLoad()', '#9B59B6');
+    }
+    h += '<div style="height:12px"></div>';
+  }
+
+  h += '<button id="sod-start-btn" onclick="dvCompleteSod()" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:16px;font-size:16px;font-weight:800;cursor:pointer;opacity:.5" disabled>Start the Day →</button>';
+  h += '</div>';
+
+  el('dv-startday-body').innerHTML = h;
+  window._sodChecked = {};
+  window._sodItems = sodItems;
+}
+
+function dvToggleSodItem(id) {
+  if (!window._sodChecked) window._sodChecked = {};
+  window._sodChecked[id] = !window._sodChecked[id];
+  var chk = el('sod-chk-' + id);
+  var row = el('sod-row-' + id);
+  if (chk) {
+    var on = window._sodChecked[id];
+    chk.style.background = on ? '#00C875' : 'transparent';
+    chk.style.borderColor = on ? '#00C875' : '#C8C5BE';
+    chk.innerHTML = on ? '<span style="color:#fff;font-size:14px;font-weight:800">✓</span>' : '';
+    if (row) row.style.opacity = on ? '.6' : '1';
+  }
+  // Enable start button when all checked
+  var all = (window._sodItems||[]).every(function(i){ return window._sodChecked[i.id]; });
+  var btn = el('sod-start-btn');
+  if (btn) { btn.disabled = !all; btn.style.opacity = all ? '1' : '.5'; }
+}
+
+function dvCompleteSod() {
+  var name = window._driverName || 'Crew';
+  var key  = d2s(new Date()) + ':' + name;
+  _dvSodDone[key] = true;
+  var issues = (el('sod-issues')||{}).value || '';
+  // Store on all today's jobs
+  var today = d2s(new Date());
+  var myJobs = jobs.filter(function(j) {
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    return crew.indexOf(name) >= 0 && jobDates(j).indexOf(today) >= 0;
+  });
+  myJobs.forEach(function(j) {
+    if (!j.crewData) j.crewData = {};
+    j.crewData.sod = { completedAt: new Date().toISOString(), by: name, issues: issues };
+    saveData('job', j.id, j);
+  });
+  toast('✓ Day started — have a great one!');
+  dvShowScreen('dv-screen-today');
   renderDriverView();
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// 2. TODAY VIEW
+// ══════════════════════════════════════════════════════════════════════
 function renderDriverView() {
   var name  = window._driverName || 'Driver';
   var today = d2s(new Date());
-  var days  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  var months= ['January','February','March','April','May','June','July','August','September','October','November','December'];
   var now   = new Date();
   el('dv-name').textContent = name;
-  el('dv-date').textContent = days[now.getDay()] + ' ' + now.getDate() + ' ' + months[now.getMonth()] + ' ' + now.getFullYear();
+  el('dv-date').textContent = dvNiceDate(now);
 
   var myJobs = jobs.filter(function(j) {
     var crew = (j.drivers||[]).concat(j.porters||[]);
     return crew.indexOf(name) >= 0 && jobDates(j).indexOf(today) >= 0;
   });
-  el('dv-job-count').textContent = myJobs.length + ' job' + (myJobs.length !== 1 ? 's' : '') + ' today';
+  var upcoming = jobs.filter(function(j) {
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    if (crew.indexOf(name) < 0) return false;
+    var dates = jobDates(j);
+    var tomorrow = d2s(addDays(new Date(), 1));
+    var next7    = d2s(addDays(new Date(), 7));
+    return !dates.some(function(d){return d===today;}) && dates.some(function(d){return d>=tomorrow&&d<=next7;});
+  });
 
-  if (!myJobs.length) { el('dv-jobs').innerHTML = ''; el('dv-empty').style.display = 'block'; return; }
+  el('dv-job-count').textContent = myJobs.length + ' job' + (myJobs.length!==1?'s':'') + ' today';
+
+  if (!myJobs.length && !upcoming.length) {
+    el('dv-jobs').innerHTML = '';
+    el('dv-empty').style.display = 'block';
+    return;
+  }
   el('dv-empty').style.display = 'none';
 
   var h = '';
+
+  // Group by journey first
+  var journeyIds = [];
+  var jobsByJrn  = {};
+  var standaloneJobs = [];
   myJobs.forEach(function(j) {
-    var brandCol = BC[j.brand] || '#0073EA';
-    var isDone   = j.status === 'Completed' || j.status === 'Billed';
-    var vol      = j.vol ? j.vol + ' ft³' : (j.cbm ? j.cbm + ' cbm' : '');
-    h += '<div style="background:#fff;border-radius:12px;margin-bottom:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08)">';
-    h += '<div style="height:5px;background:'+brandCol+'"></div>';
-    h += '<div style="padding:14px 16px 10px;border-bottom:1px solid #EDE9E0">';
-    h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
-    h += '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:'+brandCol+'">'+esc(j.brand)+'</div>';
-    h += '<div style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:10px;background:'+(isDone?'#E6FFF5':'#EBF4FF')+';color:'+(isDone?'#00A86B':'#0073EA')+'">'+j.status+'</div>';
-    h += '</div>';
-    h += '<div style="font-size:18px;font-weight:800;color:#1C2333">'+esc(j.client)+'</div>';
-    if (j.ref) h += '<div style="font-size:11.5px;color:#7A849E;margin-top:3px">Ref: '+esc(j.ref)+'</div>';
-    h += '</div>';
-    h += '<div style="padding:12px 16px;border-bottom:1px solid #EDE9E0">';
-    if (j.origin) {
-      h += '<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#7A849E;margin-bottom:3px">FROM</div>';
-      h += '<div style="font-size:14px;font-weight:600;color:#1C2333">'+esc(j.origin)+'</div>';
-      h += '<a href="https://maps.google.com/?q='+encodeURIComponent(j.origin)+'" target="_blank" style="font-size:11.5px;color:#0073EA;font-weight:600;text-decoration:none">Open in Maps</a></div>';
-    }
-    if (j.dest) {
-      h += '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#7A849E;margin-bottom:3px">TO</div>';
-      h += '<div style="font-size:14px;font-weight:600;color:#1C2333">'+esc(j.dest)+'</div>';
-      h += '<a href="https://maps.google.com/?q='+encodeURIComponent(j.dest)+'" target="_blank" style="font-size:11.5px;color:#0073EA;font-weight:600;text-decoration:none">Open in Maps</a></div>';
-    }
-    h += '</div>';
-    h += '<div style="padding:10px 16px;border-bottom:1px solid #EDE9E0;display:flex;gap:16px">';
-    if (vol) h += '<div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Volume</div><div style="font-size:14px;font-weight:700;color:#1C2333;margin-top:2px">'+vol+'</div></div>';
-    var crew = (j.drivers||[]).concat(j.porters||[]);
-    if (crew.length) h += '<div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Crew</div><div style="font-size:13px;font-weight:600;color:#1C2333;margin-top:2px">'+crew.join(', ')+'</div></div>';
-    h += '</div>';
-    if (j.notes) h += '<div style="padding:10px 16px;background:#FFFBE6;border-bottom:1px solid #EDE9E0"><div style="font-size:10px;font-weight:700;color:#B07800;text-transform:uppercase;margin-bottom:3px">Notes</div><div style="font-size:13px;color:#7A5200;line-height:1.5">'+esc(j.notes)+'</div></div>';
-    h += '<div style="padding:12px 16px">';
-    if (!isDone) {
-      h += '<button data-jid="'+j.id+'" onclick="driverMarkComplete(this.dataset.jid)" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:8px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Mark as Complete</button>';
+    if (j.journeyId && j.journeyId !== '') {
+      if (journeyIds.indexOf(j.journeyId) < 0) journeyIds.push(j.journeyId);
+      if (!jobsByJrn[j.journeyId]) jobsByJrn[j.journeyId] = [];
+      jobsByJrn[j.journeyId].push(j);
     } else {
-      h += '<div style="text-align:center;font-size:13px;font-weight:700;color:#00A86B;padding:6px 0">Completed</div>';
+      standaloneJobs.push(j);
     }
-    h += '</div></div>';
   });
+
+  // Render journeys
+  journeyIds.forEach(function(jrnId) {
+    var jrn = JOURNEYS.filter(function(x){ return x.id === jrnId; })[0];
+    var jrnJobs = (jobsByJrn[jrnId]||[]).sort(function(a,b){ return (a.seqInDay||0)-(b.seqInDay||0); });
+    h += dvJourneyCard(jrn, jrnJobs);
+  });
+
+  // Standalone jobs
+  if (standaloneJobs.length) {
+    if (journeyIds.length) h += dvSectionLabel('Single Jobs');
+    standaloneJobs.forEach(function(j){ h += dvJobCard(j, true); });
+  }
+
+  // Upcoming
+  if (upcoming.length) {
+    h += dvSectionLabel('Upcoming — Next 7 Days');
+    upcoming.forEach(function(j){ h += dvJobCard(j, false); });
+  }
+
   el('dv-jobs').innerHTML = h;
 }
+
+function dvJourneyCard(jrn, jrnJobs) {
+  var label = jrn ? jrn.label : 'Multi-Stop Run';
+  var ref   = jrn ? jrn.ref   : '';
+  var h = '';
+  h += '<div style="background:#fff;border-radius:14px;margin-bottom:14px;overflow:hidden;border:2px solid #E8E4FF">';
+  h += '<div style="background:#F5EEFF;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="dvOpenJourney(\'' + (jrn?jrn.id:'') + '\')">';
+  h += '<div>';
+  h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#9B59B6">🚐 Journey Run</div>';
+  h += '<div style="font-size:15px;font-weight:800;color:#1C2333;margin-top:2px">' + esc(label) + '</div>';
+  if (ref) h += '<div style="font-size:11px;color:#7A849E">' + esc(ref) + '</div>';
+  h += '</div>';
+  h += '<div style="font-size:12px;font-weight:700;color:#9B59B6;background:#E8E4FF;padding:4px 12px;border-radius:20px">' + jrnJobs.length + ' stops</div>';
+  h += '</div>';
+  // Individual stops
+  jrnJobs.forEach(function(j, idx) {
+    var col = dvStatusColor(j.status);
+    h += '<div onclick="dvOpenJob(\'' + j.id + '\')" style="padding:11px 16px;border-bottom:1px solid #F0EFE9;cursor:pointer;display:flex;align-items:center;gap:12px">';
+    h += '<div style="width:24px;height:24px;border-radius:50%;background:' + col + ';color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + (idx+1) + '</div>';
+    h += '<div style="flex:1">';
+    h += '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(j.client) + '</div>';
+    h += '<div style="font-size:11px;color:#7A849E">' + esc(j.jobType||'') + (j.origin ? ' · ' + esc(j.origin.split(',')[0]) : '') + (j.dest ? ' → ' + esc(j.dest.split(',')[0]) : '') + '</div>';
+    h += '</div>';
+    h += '<div style="font-size:10px;font-weight:700;color:' + col + '">' + dvStatusIcon(j.status) + ' ' + j.status + '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+function dvJobCard(j, isToday) {
+  var col  = dvStatusColor(j.status);
+  var done = j.status === 'Completed' || j.status === 'Billed';
+  var cd   = j.crewData || {};
+  var hasCL  = !!(cd.checklist && cd.checklist.completedAt);
+  var hasInv = !!(cd.inventory && cd.inventory.completedAt);
+  var hasDel = !!(cd.delivery  && cd.delivery.completedAt);
+
+  var h = '<div onclick="dvOpenJob(\'' + j.id + '\')" style="background:#fff;border-radius:14px;margin-bottom:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.07);cursor:pointer">';
+  h += '<div style="height:4px;background:' + (BC[j.brand]||'#0073EA') + '"></div>';
+  h += '<div style="padding:14px 16px">';
+  h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+  h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:' + (BC[j.brand]||'#0073EA') + '">' + esc(j.brand||'') + '</div>';
+  h += '<div style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:' + col + '22;color:' + col + '">' + dvStatusIcon(j.status) + ' ' + j.status + '</div>';
+  h += '</div>';
+  h += '<div style="font-size:17px;font-weight:800;color:#1C2333">' + esc(j.client) + '</div>';
+  h += '<div style="font-size:12px;color:#7A849E;margin-top:2px">' + esc(j.jobType||'') + (j.ref ? ' · ' + esc(j.ref) : '') + '</div>';
+  if (!isToday && j.start) h += '<div style="margin-top:4px;font-size:12px;font-weight:700;color:var(--blue)">📅 ' + dvNiceDate(new Date(j.start)) + '</div>';
+  if (j.origin && j.dest) {
+    h += '<div style="margin-top:8px;font-size:12px;color:#7A849E">' + esc(j.origin.split(',')[0]) + ' → ' + esc(j.dest.split(',')[0]) + '</div>';
+  }
+  if (isToday && !done) {
+    h += '<div style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap">';
+    h += dvBadge('Pre-check', hasCL, '🔍');
+    if (j.origin) h += dvBadge('Inventory', hasInv, '📋');
+    if (j.dest && j.dest !== 'INT STORE') h += dvBadge('Sign-off', hasDel, '✍');
+    h += '</div>';
+  }
+  h += '</div></div>';
+  return h;
+}
+
+function dvBadge(label, done, icon) {
+  return '<div style="font-size:10px;font-weight:700;padding:3px 9px;border-radius:10px;background:' + (done?'#E6FFF5':'#F0F0F0') + ';color:' + (done?'#00A86B':'#7A849E') + '">' + icon + ' ' + (done?'✓ ':'') + label + '</div>';
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 3. JOURNEY VIEW (multi-job run overview)
+// ══════════════════════════════════════════════════════════════════════
+function dvOpenJourney(jrnId) {
+  dvCurrentJrnId = jrnId;
+  dvShowScreen('dv-screen-journey');
+  dvRenderJourney(jrnId);
+}
+
+function dvRenderJourney(jrnId) {
+  var jrn = JOURNEYS.filter(function(x){ return x.id === jrnId; })[0];
+  if (!jrn) { dvGoToday(); return; }
+  var jrnJobs = jobs.filter(function(j){ return j.journeyId === jrnId; })
+                    .sort(function(a,b){ return (a.seqInDay||0)-(b.seqInDay||0); });
+
+  var h = '';
+  h += dvDarkHeader(jrn.label, jrn.ref || '', 'dvGoToday()');
+  h += '<div style="padding:14px 16px">';
+
+  if (jrn.notes) {
+    h += '<div style="background:#FFFBE6;border:1px solid #FFE082;border-radius:10px;padding:12px 14px;margin-bottom:14px">';
+    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#B07800;margin-bottom:4px">⚠ Journey Notes</div>';
+    h += '<div style="font-size:13px;color:#7A5200;line-height:1.4">' + esc(jrn.notes) + '</div>';
+    h += '</div>';
+  }
+
+  // Stop-by-stop list
+  h += dvSectionLabel('Stops in order');
+  jrnJobs.forEach(function(j, idx) {
+    var col  = dvStatusColor(j.status);
+    var done = j.status === 'Completed' || j.status === 'Delivered';
+    h += '<div style="display:flex;gap:12px;margin-bottom:2px">';
+    // Timeline line
+    h += '<div style="display:flex;flex-direction:column;align-items:center;width:24px;flex-shrink:0">';
+    h += '<div style="width:24px;height:24px;border-radius:50%;background:' + (done?'#00C875':col) + ';color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center">' + (idx+1) + '</div>';
+    if (idx < jrnJobs.length-1) h += '<div style="width:2px;background:#E3E7F0;flex:1;min-height:16px;margin:4px 0"></div>';
+    h += '</div>';
+    h += '<div onclick="dvOpenJob(\'' + j.id + '\')" style="flex:1;background:#fff;border-radius:12px;padding:12px 14px;margin-bottom:12px;cursor:pointer;border:1.5px solid ' + (done?'#D1FAE5':'#F0EFE9') + '">';
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">';
+    h += '<div style="font-size:14px;font-weight:800;color:#1C2333">' + esc(j.client) + '</div>';
+    h += '<div style="font-size:11px;font-weight:700;color:' + col + '">' + dvStatusIcon(j.status) + ' ' + j.status + '</div>';
+    h += '</div>';
+    h += '<div style="font-size:12px;color:#7A849E">' + esc(j.jobType||'') + '</div>';
+    if (j.origin) h += '<div style="font-size:12px;color:#7A849E;margin-top:3px">📍 ' + esc(j.origin) + '</div>';
+    if (j.dest && j.dest !== 'INT STORE') h += '<div style="font-size:12px;color:#7A849E;margin-top:2px">🏠 ' + esc(j.dest) + '</div>';
+    h += '</div>';
+    h += '</div>';
+  });
+
+  h += '</div>';
+  el('dv-journey-body').innerHTML = h;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 4. JOB DETAIL SCREEN
+// ══════════════════════════════════════════════════════════════════════
+function dvOpenJob(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+function dvRenderJobDetail(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) { dvGoToday(); return; }
+  var done = j.status === 'Completed' || j.status === 'Billed';
+  var cd   = j.crewData || {};
+  var crew = (j.drivers||[]).concat(j.porters||[]);
+  var next = dvStatusNext(j.status);
+  var isOrigin = !!(j.origin);
+  var hasDest  = !!(j.dest && j.dest !== 'INT STORE');
+  var isWh     = j.storageDirection === 'out';
+
+  var backFn = j.journeyId ? 'dvOpenJourney(\'' + j.journeyId + '\')' : 'dvGoToday()';
+
+  var h = '';
+  h += dvDarkHeader(j.client, (j.jobType||'') + (j.ref?' · '+j.ref:''), backFn, dvStatusIcon(j.status) + ' ' + j.status, dvStatusColor(j.status));
+  h += '<div style="padding:14px 16px">';
+
+  // Status advance
+  if (!done && j.status !== 'Cancelled') {
+    h += '<button onclick="dvTriggerStatus(\'' + j.id + '\',\'' + next + '\')" style="width:100%;background:' + dvStatusColor(next) + ';color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px">';
+    h += dvStatusIcon(next) + ' Advance to: ' + next;
+    if (DV_SMS_TRIGGERS[next]) h += ' <span style="font-size:11px;opacity:.8">· SMS client</span>';
+    h += '</button>';
+  }
+
+  // Job Info card
+  h += dvInfoCard('Job Info', [
+    ['Client',     j.client],
+    ['Job Type',   j.jobType],
+    ['Date',       j.start ? dvNiceDate(new Date(j.start + 'T12:00:00')) : '—'],
+    j.end && j.end !== j.start ? ['End Date', dvNiceDate(new Date(j.end + 'T12:00:00'))] : null,
+    ['Volume',     j.vol ? j.vol + ' ft³' : (j.cbm ? j.cbm + ' cbm' : '—')],
+    ['Vehicle(s)', (j.veh||[]).join(', ') || '—'],
+    ['Crew',       crew.join(', ') || '—'],
+    j.moveManager ? ['Move Manager', j.moveManager] : null,
+    j.ref ? ['Reference', j.ref] : null,
+  ]);
+
+  // Addresses
+  if (isOrigin) h += dvAddressCard('Collection Address', j.origin, '#0073EA', '📦');
+  if (hasDest)  h += dvAddressCard('Delivery Address',   j.dest,   '#00A86B', '🏠');
+  if (isWh)     h += dvAddressCard('Collect From Warehouse', APP_SETTINGS.warehouseAddress || 'Warehouse', '#9B59B6', '🏭');
+
+  // Notes / special instructions
+  if (j.notes) {
+    h += '<div style="background:#FFFBE6;border:1px solid #FFE082;border-radius:12px;padding:13px 14px;margin-bottom:12px">';
+    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#B07800;margin-bottom:5px">⚠ Special Instructions</div>';
+    h += '<div style="font-size:13px;color:#7A5200;line-height:1.5;white-space:pre-wrap">' + esc(j.notes) + '</div>';
+    h += '</div>';
+  }
+
+  // FORMS ──────────────────────────────────────────────────────────────
+  h += dvSectionLabel('Forms & Actions');
+
+  var formDefs = [];
+
+  // 1. Job Sheet (always)
+  formDefs.push({
+    label: 'Job Sheet', sub: 'Full briefing — all job details', icon: '📄',
+    status: (cd.jobSheetViewed ? 'Viewed' : 'Tap to open'),
+    done: !!cd.jobSheetViewed,
+    fn: 'dvOpenJobSheet(\'' + j.id + '\')'
+  });
+
+  // 2. Pre-job checklist (always)
+  var cl = cd.checklist || {};
+  formDefs.push({
+    label: 'Pre-Job Checklist', sub: 'Vehicle walk-round, PPE, load', icon: '🔍',
+    status: cl.completedAt ? ('Done · ' + (cl.completedBy||'')) : 'Not started',
+    done: !!cl.completedAt,
+    fn: 'dvOpenPrecheck(\'' + j.id + '\')'
+  });
+
+  // 3. Warehouse loading (if out-of-store)
+  if (isWh || (j.containersToRemove && j.containersToRemove.length)) {
+    formDefs.push({
+      label: 'Warehouse Loading Sheet', sub: 'Items to collect — reverse load order', icon: '🏭',
+      status: (cd.warehouseLoaded ? 'Confirmed loaded' : 'Required before departure'),
+      done: !!cd.warehouseLoaded,
+      fn: 'dvOpenWarehouseLoad(\'' + j.id + '\')'
+    });
+  }
+
+  // 4. Mileage
+  var ml = cd.mileage || {};
+  formDefs.push({
+    label: 'Mileage Record', sub: 'Start & end odometer', icon: '🛣',
+    status: (ml.endOdo ? ml.startOdo + '→' + ml.endOdo + ' = ' + (ml.endOdo-ml.startOdo) + ' mi' : (ml.startOdo ? 'Started: ' + ml.startOdo : 'Not started')),
+    done: !!(ml.startOdo && ml.endOdo),
+    fn: 'dvOpenMileage(\'' + j.id + '\')'
+  });
+
+  // 5. Inventory / condition report (origin jobs)
+  if (isOrigin) {
+    var inv = cd.inventory || {};
+    var itemCount = (inv.items || []).length;
+    formDefs.push({
+      label: 'Inventory / Condition Report', sub: 'Record items with condition at collection', icon: '📋',
+      status: inv.completedAt ? (itemCount + ' items · Signed') : (itemCount ? itemCount + ' items added — not complete' : 'Not started'),
+      done: !!inv.completedAt,
+      fn: 'dvOpenInventory(\'' + j.id + '\')'
+    });
+  }
+
+  // 6. Delivery + sign-off
+  if (hasDest) {
+    var del = cd.delivery || {};
+    formDefs.push({
+      label: 'Delivery Sign-Off', sub: 'Confirm delivery, client signature', icon: '✍',
+      status: del.completedAt ? ('Signed — ' + (del.signedBy||'client')) : 'Not started',
+      done: !!del.completedAt,
+      fn: 'dvOpenDelivery(\'' + j.id + '\')'
+    });
+  }
+
+  // 7. Job sign-off (always, last)
+  var so = cd.signoff || {};
+  formDefs.push({
+    label: 'Job Sign-Off', sub: 'Final crew + client sign-off to close job', icon: '✅',
+    status: so.completedAt ? ('Completed · ' + (so.signedBy||'')) : 'Not started',
+    done: !!so.completedAt,
+    fn: 'dvOpenSignoff(\'' + j.id + '\')'
+  });
+
+  formDefs.forEach(function(f) { h += dvFormCard(f.label, f.sub, f.icon, f.status, f.done, f.fn); });
+
+  h += '</div>';
+  el('dv-job-detail-body').innerHTML = h;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 5. JOB SHEET (full briefing)
+// ══════════════════════════════════════════════════════════════════════
+function dvOpenJobSheet(jobId) {
+  dvCurrentJobId = jobId;
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  j.crewData.jobSheetViewed = new Date().toISOString();
+  saveData('job', j.id, j);
+  dvShowScreen('dv-screen-jobsheet');
+  dvRenderJobSheet(jobId);
+}
+
+function dvRenderJobSheet(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var crew = (j.drivers||[]).concat(j.porters||[]);
+  var isOrigin = !!j.origin;
+  var hasDest  = !!(j.dest && j.dest !== 'INT STORE');
+  var cj = j.clientJobId ? CLIENT_JOBS.filter(function(x){return x.id===j.clientJobId;})[0] : null;
+  var brand = BC[j.brand] || '#0073EA';
+
+  var h = dvDarkHeader('Job Sheet', j.ref||'', 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="padding:14px 16px">';
+
+  // Brand header strip
+  h += '<div style="background:#fff;border-radius:14px;overflow:hidden;margin-bottom:12px">';
+  h += '<div style="height:5px;background:' + brand + '"></div>';
+  h += '<div style="padding:16px">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:' + brand + ';margin-bottom:4px">' + esc(j.brand||'') + '</div>';
+  h += '<div style="font-size:20px;font-weight:900;color:#1C2333;margin-bottom:2px">' + esc(j.client) + '</div>';
+  h += '<div style="font-size:13px;color:#7A849E">' + esc(j.jobType||'') + (j.ref?' · Ref: '+esc(j.ref):'') + '</div>';
+  h += '<div style="font-size:13px;color:#7A849E;margin-top:2px">📅 ' + (j.start ? dvNiceDate(new Date(j.start+'T12:00:00')) : '—') + (j.end&&j.end!==j.start?' → '+dvNiceDate(new Date(j.end+'T12:00:00')):'') + '</div>';
+  h += '</div></div>';
+
+  // Contact info
+  if (cj && (cj.clientPhone || cj.clientEmail)) {
+    h += '<div style="background:#fff;border-radius:12px;padding:13px 16px;margin-bottom:12px">';
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:8px">Client Contact</div>';
+    if (cj.clientPhone) {
+      h += '<a href="tel:' + esc(cj.clientPhone) + '" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-bottom:8px">';
+      h += '<div style="width:34px;height:34px;background:#E6FFF5;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">📞</div>';
+      h += '<div><div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(cj.clientPhone) + '</div><div style="font-size:11px;color:#7A849E">Tap to call</div></div>';
+      h += '</a>';
+    }
+    if (cj.clientEmail) {
+      h += '<div style="display:flex;align-items:center;gap:10px">';
+      h += '<div style="width:34px;height:34px;background:#EBF4FF;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px">✉</div>';
+      h += '<div style="font-size:13px;color:#1C2333">' + esc(cj.clientEmail) + '</div>';
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+
+  // Partner ref
+  if (cj && (cj.partnerRef || cj.clientRef)) {
+    h += dvInfoCard('References', [
+      cj.partnerRef ? ['Partner Ref', cj.partnerRef] : null,
+      cj.clientRef  ? ['Client Ref',  cj.clientRef]  : null,
+      j.ref         ? ['Our Ref',     j.ref]          : null,
+    ]);
+  }
+
+  // Addresses
+  if (isOrigin) {
+    h += '<div style="background:#EBF4FF;border-radius:12px;padding:14px 16px;margin-bottom:12px">';
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#0073EA;margin-bottom:8px">📦 COLLECTION ADDRESS</div>';
+    h += '<div style="font-size:15px;font-weight:700;color:#1C2333;line-height:1.4;margin-bottom:10px">' + esc(j.origin) + '</div>';
+    h += '<div style="display:flex;gap:8px">';
+    h += '<a href="https://maps.google.com/?q=' + encodeURIComponent(j.origin) + '" target="_blank" style="flex:1;background:#fff;color:#0073EA;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🗺 Maps</a>';
+    h += '<a href="https://waze.com/ul?q=' + encodeURIComponent(j.origin) + '" target="_blank" style="flex:1;background:#fff;color:#00A86B;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🔵 Waze</a>';
+    h += '</div></div>';
+  }
+  if (hasDest) {
+    h += '<div style="background:#E6FFF5;border-radius:12px;padding:14px 16px;margin-bottom:12px">';
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#00A86B;margin-bottom:8px">🏠 DELIVERY ADDRESS</div>';
+    h += '<div style="font-size:15px;font-weight:700;color:#1C2333;line-height:1.4;margin-bottom:10px">' + esc(j.dest) + '</div>';
+    h += '<div style="display:flex;gap:8px">';
+    h += '<a href="https://maps.google.com/?q=' + encodeURIComponent(j.dest) + '" target="_blank" style="flex:1;background:#fff;color:#0073EA;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🗺 Maps</a>';
+    h += '<a href="https://waze.com/ul?q=' + encodeURIComponent(j.dest) + '" target="_blank" style="flex:1;background:#fff;color:#00A86B;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🔵 Waze</a>';
+    h += '</div></div>';
+  }
+
+  // Volume & services
+  var svcsOn = j.notes ? [j.notes] : [];
+  var volStr = j.vol ? j.vol + ' ft³' : (j.cbm ? j.cbm + ' cbm' : '—');
+  h += dvInfoCard('Job Details', [
+    ['Volume',      volStr],
+    ['Vehicle(s)',  (j.veh||[]).join(', ')||'—'],
+    ['Crew',        crew.join(', ')||'—'],
+    j.moveManager ? ['Move Manager', j.moveManager] : null,
+  ]);
+
+  if (j.notes) {
+    h += '<div style="background:#FFFBE6;border:1px solid #FFE082;border-radius:12px;padding:13px 14px;margin-bottom:12px">';
+    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#B07800;margin-bottom:5px">⚠ Special Instructions & Access Notes</div>';
+    h += '<div style="font-size:13px;color:#7A5200;line-height:1.5;white-space:pre-wrap">' + esc(j.notes) + '</div>';
+    h += '</div>';
+  }
+
+  // Materials for this job
+  var jobMats = dvGetJobMaterials(j);
+  if (jobMats.length) {
+    h += dvSectionLabel('Packing Materials for this Job');
+    h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:12px">';
+    jobMats.forEach(function(m) {
+      h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;display:flex;align-items:center;justify-content:space-between">';
+      h += '<div style="font-size:13px;font-weight:600;color:#1C2333">' + esc(m.name) + '</div>';
+      h += '<div style="font-size:13px;font-weight:700;color:#0073EA">× ' + m.qty + '</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+
+  h += '</div>';
+  el('dv-jobsheet-body').innerHTML = h;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 6. MATERIALS PICKING SHEET
+// ══════════════════════════════════════════════════════════════════════
+function dvGetJobMaterials(j) {
+  if (!j.materials || !j.materials.length) return [];
+  return j.materials.map(function(bm) {
+    var m = MATERIALS.filter(function(x){ return x.id === bm.id; })[0];
+    return m ? { id: bm.id, name: m.name, qty: bm.qty||0 } : null;
+  }).filter(Boolean);
+}
+
+function dvAggregateAllMaterials(myJobs) {
+  var agg = {};
+  myJobs.forEach(function(j) {
+    dvGetJobMaterials(j).forEach(function(m) {
+      if (!agg[m.id]) agg[m.id] = { id: m.id, name: m.name, qty: 0, jobs: [] };
+      agg[m.id].qty += m.qty;
+      agg[m.id].jobs.push(j.client);
+    });
+  });
+  return Object.values(agg);
+}
+
+function dvOpenMaterials(jobIdOrNull) {
+  dvShowScreen('dv-screen-materials');
+  dvRenderMaterials(jobIdOrNull);
+}
+
+function dvRenderMaterials(jobIdOrNull) {
+  var name  = window._driverName || 'Crew';
+  var today = d2s(new Date());
+  var myJobs = jobs.filter(function(j) {
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    return crew.indexOf(name) >= 0 && jobDates(j).indexOf(today) >= 0;
+  });
+  var backFn = jobIdOrNull ? 'dvOpenJob(\'' + jobIdOrNull + '\')' : 'dvGoToday()';
+  var agg = dvAggregateAllMaterials(myJobs);
+
+  var h = dvDarkHeader('Materials Picking Sheet', today, backFn);
+  h += '<div style="padding:14px 16px">';
+
+  if (!agg.length) {
+    h += '<div style="background:#fff;border-radius:12px;padding:20px;text-align:center;color:#7A849E">No materials required for today\'s jobs</div>';
+    h += '</div>';
+    el('dv-materials-body').innerHTML = h;
+    return;
+  }
+
+  h += '<div style="background:#EBF4FF;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;color:#0073EA">';
+  h += '<strong>Tick each item as you load it onto the vehicle.</strong> All quantities are totals across all jobs today.';
+  h += '</div>';
+
+  // By material type
+  h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:14px" id="mat-pick-list">';
+  agg.forEach(function(m, idx) {
+    h += '<div id="matr-' + m.id + '" onclick="dvToggleMatPick(\'' + m.id + '\')" style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-bottom:1px solid #F0EFE9;cursor:pointer">';
+    h += '<div id="mat-chk-' + m.id + '" style="width:26px;height:26px;border-radius:7px;border:2px solid #C8C5BE;background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0"></div>';
+    h += '<div style="flex:1">';
+    h += '<div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(m.name) + '</div>';
+    h += '<div style="font-size:11.5px;color:#7A849E">For: ' + esc(m.jobs.join(', ')) + '</div>';
+    h += '</div>';
+    h += '<div style="font-size:18px;font-weight:800;color:#0073EA;min-width:40px;text-align:right">×' + m.qty + '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // Per-job breakdown
+  h += dvSectionLabel('Breakdown by Job');
+  myJobs.forEach(function(j) {
+    var mats = dvGetJobMaterials(j);
+    if (!mats.length) return;
+    h += '<div style="background:#fff;border-radius:10px;padding:12px 14px;margin-bottom:10px">';
+    h += '<div style="font-size:13px;font-weight:800;color:#1C2333;margin-bottom:8px">' + esc(j.client) + '</div>';
+    mats.forEach(function(m) {
+      h += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #F0EFE9">';
+      h += '<div style="font-size:12px;color:#7A849E">' + esc(m.name) + '</div>';
+      h += '<div style="font-size:12px;font-weight:700;color:#1C2333">×' + m.qty + '</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+  });
+
+  h += '<button onclick="dvConfirmMaterialsPicked()" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;margin-top:8px">✓ All Materials Loaded</button>';
+  h += '</div>';
+  el('dv-materials-body').innerHTML = h;
+  window._matPicked = {};
+}
+
+function dvToggleMatPick(matId) {
+  if (!window._matPicked) window._matPicked = {};
+  window._matPicked[matId] = !window._matPicked[matId];
+  var on  = window._matPicked[matId];
+  var chk = el('mat-chk-' + matId);
+  var row = el('matr-' + matId);
+  if (chk) {
+    chk.style.background   = on ? '#00C875' : 'transparent';
+    chk.style.borderColor  = on ? '#00C875' : '#C8C5BE';
+    chk.innerHTML          = on ? '<span style="color:#fff;font-size:15px;font-weight:800">✓</span>' : '';
+    if (row) row.style.opacity = on ? '.55' : '1';
+  }
+}
+
+function dvConfirmMaterialsPicked() {
+  var name  = window._driverName || 'Crew';
+  var today = d2s(new Date());
+  var myJobs = jobs.filter(function(j) {
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    return crew.indexOf(name) >= 0 && jobDates(j).indexOf(today) >= 0;
+  });
+  myJobs.forEach(function(j) {
+    if (!j.crewData) j.crewData = {};
+    j.crewData.materialsPicked = { at: new Date().toISOString(), by: name };
+    saveData('job', j.id, j);
+  });
+  toast('✓ Materials confirmed as loaded');
+  dvGoToday();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 7. WAREHOUSE LOADING SHEET
+// ══════════════════════════════════════════════════════════════════════
+function dvOpenWarehouseLoad(jobIdOrNull) {
+  dvCurrentJobId = jobIdOrNull || dvCurrentJobId;
+  dvShowScreen('dv-screen-warehouse-load');
+  dvRenderWarehouseLoad(jobIdOrNull);
+}
+
+function dvRenderWarehouseLoad(jobIdOrNull) {
+  // Gather all warehouse-out jobs for today
+  var name  = window._driverName || 'Crew';
+  var today = d2s(new Date());
+  var myJobs = jobs.filter(function(j) {
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    return crew.indexOf(name) >= 0 && jobDates(j).indexOf(today) >= 0;
+  }).filter(function(j){ return j.storageDirection === 'out' || (j.containersToRemove && j.containersToRemove.length); });
+
+  var backFn = jobIdOrNull ? 'dvOpenJob(\'' + jobIdOrNull + '\')' : 'dvGoToday()';
+
+  var h = dvDarkHeader('Warehouse Loading Sheet', 'Load in REVERSE delivery order', backFn);
+  h += '<div style="padding:14px 16px">';
+
+  if (!myJobs.length) {
+    h += '<div style="background:#fff;border-radius:12px;padding:20px;text-align:center;color:#7A849E">No warehouse collections today</div>';
+    h += '</div>';
+    el('dv-warehouse-body').innerHTML = h;
+    return;
+  }
+
+  // Critical instruction banner
+  h += '<div style="background:#FFF0F5;border:2px solid #E91E8C;border-radius:12px;padding:14px 16px;margin-bottom:16px">';
+  h += '<div style="font-size:14px;font-weight:900;color:#C01578;margin-bottom:6px">⚠ LOADING ORDER IS CRITICAL</div>';
+  h += '<div style="font-size:13px;color:#7A2060;line-height:1.5">';
+  h += 'Items must be loaded in <strong>REVERSE delivery order</strong>. ';
+  h += 'The <strong>last job</strong> to be delivered must be loaded <strong>first</strong> (goes to the front of the vehicle). ';
+  h += 'The <strong>first job</strong> to be delivered loads <strong>last</strong> (sits at the back, unloads first).';
+  h += '</div></div>';
+
+  // Sort jobs by seqInDay (delivery order) and reverse for loading order
+  var sortedByDelivery = myJobs.slice().sort(function(a,b){ return (a.seqInDay||0)-(b.seqInDay||0); });
+  var loadOrder = sortedByDelivery.slice().reverse();
+
+  h += dvSectionLabel('Load in this order (1 = first into vehicle)');
+
+  loadOrder.forEach(function(j, loadIdx) {
+    var deliverIdx = sortedByDelivery.indexOf(j);
+    var stoRec = STORAGE_RECORDS.filter(function(x){ return x.id === j.storageId; })[0];
+    var containers = j.containersToRemove || [];
+
+    h += '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:12px">';
+
+    // Load order badge
+    h += '<div style="flex-shrink:0;text-align:center">';
+    h += '<div style="width:36px;height:36px;border-radius:50%;background:#E91E8C;color:#fff;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center">' + (loadIdx+1) + '</div>';
+    h += '<div style="font-size:9px;color:#7A849E;margin-top:4px;text-align:center">LOAD</div>';
+    h += '</div>';
+
+    h += '<div style="flex:1;background:#fff;border-radius:12px;padding:13px 14px;border:1.5px solid #F0EFE9">';
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">';
+    h += '<div style="font-size:14px;font-weight:800;color:#1C2333">' + esc(j.client) + '</div>';
+    h += '<div style="font-size:11px;color:#7A849E;background:#F0EFE9;padding:2px 8px;border-radius:8px">Delivers ' + dvOrdinal(deliverIdx+1) + '</div>';
+    h += '</div>';
+    if (j.dest && j.dest !== 'INT STORE') {
+      h += '<div style="font-size:12px;color:#7A849E;margin-bottom:8px">🏠 Deliver to: ' + esc(j.dest) + '</div>';
+    }
+
+    // Containers/items
+    if (containers.length) {
+      h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:6px">Containers to load</div>';
+      h += '<div id="wh-containers-' + j.id + '">';
+      containers.forEach(function(c, ci) {
+        h += '<div id="whc-' + j.id + '-' + ci + '" onclick="dvToggleWhContainer(\'' + j.id + '\',' + ci + ')" style="display:flex;align-items:center;gap:10px;padding:7px 0;cursor:pointer">';
+        h += '<div id="whchk-' + j.id + '-' + ci + '" style="width:20px;height:20px;border-radius:5px;border:2px solid #C8C5BE;background:transparent;flex-shrink:0;display:flex;align-items:center;justify-content:center"></div>';
+        h += '<div style="font-size:13px;font-weight:600;color:#1C2333">' + esc(String(c)) + '</div>';
+        h += '</div>';
+      });
+      h += '</div>';
+    } else if (stoRec) {
+      h += '<div style="font-size:12px;color:#7A849E">Storage record: ' + esc(stoRec.id) + ' · ' + (stoRec.vol||'—') + ' ft³</div>';
+    }
+
+    // Volume
+    if (j.vol) h += '<div style="font-size:12px;font-weight:700;color:#0073EA;margin-top:6px">Volume: ' + j.vol + ' ft³</div>';
+
+    h += '</div></div>';
+  });
+
+  h += '<button onclick="dvConfirmWarehouseLoaded()" style="width:100%;background:#E91E8C;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;margin-top:4px">✓ Vehicle Loaded — Ready to Depart</button>';
+  h += '</div>';
+  el('dv-warehouse-body').innerHTML = h;
+  window._whContainerChecks = {};
+}
+
+function dvToggleWhContainer(jobId, ci) {
+  if (!window._whContainerChecks) window._whContainerChecks = {};
+  var key = jobId + '-' + ci;
+  window._whContainerChecks[key] = !window._whContainerChecks[key];
+  var on  = window._whContainerChecks[key];
+  var chk = el('whchk-' + jobId + '-' + ci);
+  if (chk) {
+    chk.style.background  = on ? '#00C875' : 'transparent';
+    chk.style.borderColor = on ? '#00C875' : '#C8C5BE';
+    chk.innerHTML         = on ? '<span style="color:#fff;font-size:11px">✓</span>' : '';
+  }
+}
+
+function dvConfirmWarehouseLoaded() {
+  var name  = window._driverName || 'Crew';
+  var today = d2s(new Date());
+  var myJobs = jobs.filter(function(j) {
+    var crew = (j.drivers||[]).concat(j.porters||[]);
+    return crew.indexOf(name) >= 0 && jobDates(j).indexOf(today) >= 0 &&
+           (j.storageDirection === 'out' || (j.containersToRemove && j.containersToRemove.length));
+  });
+  myJobs.forEach(function(j) {
+    if (!j.crewData) j.crewData = {};
+    j.crewData.warehouseLoaded = { at: new Date().toISOString(), by: name };
+    saveData('job', j.id, j);
+  });
+  toast('✓ Vehicle loaded — have a safe journey');
+  dvGoToday();
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 8. PRE-JOB CHECKLIST (reimplemented cleanly)
+// ══════════════════════════════════════════════════════════════════════
+var DV_PRECHECK_ITEMS = [
+  { id:'ppe',         label:'PPE available (gloves, boots, hi-vis)' },
+  { id:'vehicle',     label:'Vehicle walk-round — no new damage' },
+  { id:'fuel',        label:'Fuel level checked' },
+  { id:'blankets',    label:'Blankets & pads loaded' },
+  { id:'straps',      label:'Straps and trolley loaded' },
+  { id:'address',     label:'Collection address confirmed in Maps' },
+  { id:'client',      label:'Client contacted — confirmed ready' },
+  { id:'special',     label:'Special items noted (piano, art, fragile)' },
+  { id:'parking',     label:'Parking / access plan confirmed' },
+  { id:'paperwork',   label:'Paperwork & job sheet reviewed' },
+];
+
+function dvOpenPrecheck(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-precheck');
+  dvRenderPrecheck(jobId);
+}
+
+function dvRenderPrecheck(jobId) {
+  var j  = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var cl    = (j.crewData && j.crewData.checklist) || {};
+  var checks = cl.items || {};
+  var done   = !!cl.completedAt;
+  var doneCount = DV_PRECHECK_ITEMS.filter(function(i){ return !!checks[i.id]; }).length;
+  var pct   = Math.round(doneCount / DV_PRECHECK_ITEMS.length * 100);
+
+  var h = dvDarkHeader('Pre-Job Checklist', j.client, 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="padding:14px 16px">';
+
+  if (done) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Completed ' + fmtNice(cl.completedAt.slice(0,10)) + ' by ' + esc(cl.completedBy||'') + '</div>';
+  }
+
+  // Progress bar
+  h += '<div style="background:#F7F6F2;border-radius:8px;padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px">';
+  h += '<div style="flex:1;background:#E3E7F0;border-radius:20px;height:8px"><div style="background:' + (pct===100?'#00C875':'#0073EA') + ';border-radius:20px;height:8px;width:' + pct + '%"></div></div>';
+  h += '<div style="font-size:13px;font-weight:800;color:#1C2333;min-width:40px;text-align:right">' + doneCount + '/' + DV_PRECHECK_ITEMS.length + '</div>';
+  h += '</div>';
+
+  h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:14px">';
+  DV_PRECHECK_ITEMS.forEach(function(item) {
+    var checked = !!checks[item.id];
+    h += '<div onclick="dvToggleCheck(\'' + jobId + '\',\'' + item.id + '\')" style="display:flex;align-items:center;gap:14px;padding:13px 16px;border-bottom:1px solid #F0EFE9;cursor:pointer;opacity:' + (checked?.6:1) + '">';
+    h += '<div id="pchk-' + item.id + '" style="width:24px;height:24px;border-radius:6px;border:2px solid ' + (checked?'#00C875':'#C8C5BE') + ';background:' + (checked?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">';
+    if (checked) h += '<span style="color:#fff;font-size:14px">✓</span>';
+    h += '</div>';
+    h += '<div style="font-size:13.5px;font-weight:600;color:#1C2333">' + item.label + '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Notes</div>';
+  h += '<textarea id="dv-precheck-notes" rows="3" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" placeholder="Any issues...">' + esc(cl.notes||'') + '</textarea></div>';
+
+  if (!done) {
+    h += '<button onclick="dvCompleteChecklist(\'' + jobId + '\')" ' + (pct===100?'':'disabled ') + 'style="width:100%;background:' + (pct===100?'#00C875':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:' + (pct===100?'pointer':'not-allowed') + '">✓ Complete Pre-Job Check</button>';
+  }
+  h += '</div>';
+  el('dv-precheck-body').innerHTML = h;
+}
+
+function dvToggleCheck(jobId, itemId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.checklist) j.crewData.checklist = { items: {} };
+  if (!j.crewData.checklist.items) j.crewData.checklist.items = {};
+  j.crewData.checklist.items[itemId] = !j.crewData.checklist.items[itemId];
+  saveData('job', j.id, j);
+  dvRenderPrecheck(jobId);
+}
+
+function dvCompleteChecklist(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.checklist) j.crewData.checklist = { items: {} };
+  j.crewData.checklist.notes = (el('dv-precheck-notes')||{}).value || '';
+  j.crewData.checklist.completedAt = new Date().toISOString();
+  j.crewData.checklist.completedBy = window._driverName || 'Crew';
+  saveData('job', j.id, j);
+  // Trigger status → En Route
+  dvTriggerStatus(jobId, 'En Route');
+  toast('✓ Pre-job checklist complete — status → En Route');
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 9. MILEAGE
+// ══════════════════════════════════════════════════════════════════════
+function dvOpenMileage(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-mileage');
+  dvRenderMileage(jobId);
+}
+
+function dvRenderMileage(jobId) {
+  var j  = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var ml = (j.crewData && j.crewData.mileage) || {};
+  var total = (ml.startOdo && ml.endOdo && ml.endOdo > ml.startOdo) ? (ml.endOdo - ml.startOdo) : null;
+
+  var h = dvDarkHeader('Mileage Record', j.client, 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="padding:14px 16px">';
+  h += '<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:14px">';
+
+  h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#7A849E;margin-bottom:6px">Start Odometer</div>';
+  h += '<input id="dv-odo-start" type="number" value="' + esc(String(ml.startOdo||'')) + '" placeholder="e.g. 45231" style="width:100%;border:2px solid #E3E7F0;border-radius:10px;padding:13px 14px;font-size:20px;font-weight:700;font-family:monospace;box-sizing:border-box" oninput="dvUpdateMileageCalc()">';
+  h += '</div>';
+  h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#7A849E;margin-bottom:6px">End Odometer</div>';
+  h += '<input id="dv-odo-end" type="number" value="' + esc(String(ml.endOdo||'')) + '" placeholder="e.g. 45318" style="width:100%;border:2px solid #E3E7F0;border-radius:10px;padding:13px 14px;font-size:20px;font-weight:700;font-family:monospace;box-sizing:border-box" oninput="dvUpdateMileageCalc()">';
+  h += '</div>';
+  h += '<div id="dv-mileage-calc" style="text-align:center;padding:14px;background:#F7F6F2;border-radius:10px;font-size:24px;font-weight:800;color:#1C2333">' + (total ? total + ' miles' : '—') + '</div>';
+  h += '</div>';
+
+  h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Notes</div>';
+  h += '<textarea id="dv-mileage-notes" rows="2" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" placeholder="Route notes, tolls...">' + esc(ml.notes||'') + '</textarea></div>';
+
+  h += '<button onclick="dvSaveMileage(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">Save Mileage</button>';
+  h += '</div>';
+  el('dv-mileage-body').innerHTML = h;
+}
+
+function dvUpdateMileageCalc() {
+  var s = parseInt((el('dv-odo-start')||{}).value)||0;
+  var e = parseInt((el('dv-odo-end')||{}).value)||0;
+  var c = el('dv-mileage-calc');
+  if (c) c.textContent = (s && e && e > s) ? (e - s) + ' miles' : '—';
+}
+
+function dvSaveMileage(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var s = parseInt((el('dv-odo-start')||{}).value)||0;
+  var e = parseInt((el('dv-odo-end')||{}).value)||0;
+  if (!s) { toast('Enter start odometer'); return; }
+  if (!j.crewData) j.crewData = {};
+  j.crewData.mileage = { startOdo:s, endOdo:e||null, total:(s&&e&&e>s?e-s:null), notes:(el('dv-mileage-notes')||{}).value||'', savedAt:new Date().toISOString(), savedBy:window._driverName||'Crew' };
+  if (e > s) j.mileage = e - s;
+  saveData('job', j.id, j);
+  toast('✓ Mileage saved');
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 10. INVENTORY / CONDITION REPORT
+// ══════════════════════════════════════════════════════════════════════
+var DV_PACK_TYPES = [
+  'Loose','Carton — Small','Carton — Medium','Carton — Large','Carton — Wardrobe',
+  'Crated','Bubble Wrapped','Blanket Wrapped','Shrink Wrapped','Pallet',
+  'Mattress Bag','Picture Box','TV Box','Lamp Box','Fragile Pack','Own Packing'
+];
+var _dvInvSeq = 0;  // sequential piece counter per inventory session
+
+function dvOpenInventory(jobId) {
+  dvCurrentJobId = jobId;
+  _dvInvSeq = 0;
+  dvShowScreen('dv-screen-inventory');
+  dvRenderInventory(jobId);
+}
+
+function dvRenderInventory(jobId) {
+  var j   = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var inv  = (j.crewData && j.crewData.inventory) || {};
+  var items = inv.items || [];
+  var done  = !!inv.completedAt;
+  _dvInvSeq = items.length;
+
+  var h = dvDarkHeader('Inventory / Condition Report', j.client + ' · ' + items.length + ' items', 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="padding:14px 16px">';
+
+  if (done) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:13px;font-weight:700;color:#00A86B">✓ ' + items.length + ' items · Completed ' + fmtNice(inv.completedAt.slice(0,10)) + '</div>';
+    // Show signatures if present
+    if (inv.crewSignature || inv.clientSignature) {
+      h += '<div style="display:flex;gap:10px;margin-bottom:12px">';
+      if (inv.crewSignature) {
+        h += '<div style="flex:1;background:#fff;border-radius:10px;padding:10px;text-align:center">';
+        h += '<div style="font-size:10px;font-weight:700;color:#7A849E;margin-bottom:6px">CREW SIGNATURE</div>';
+        h += '<img src="' + inv.crewSignature + '" style="max-width:100%;border-radius:4px;border:1px solid #E3E7F0">';
+        h += '</div>';
+      }
+      if (inv.clientSignature) {
+        h += '<div style="flex:1;background:#fff;border-radius:10px;padding:10px;text-align:center">';
+        h += '<div style="font-size:10px;font-weight:700;color:#7A849E;margin-bottom:6px">CLIENT SIGNATURE</div>';
+        h += '<img src="' + inv.clientSignature + '" style="max-width:100%;border-radius:4px;border:1px solid #E3E7F0">';
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+  }
+
+  // Item list
+  if (items.length) {
+    h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:12px">';
+    h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;display:flex;align-items:center;justify-content:space-between">';
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E">Items (' + items.length + ')</div>';
+    if (!done) h += '<div style="font-size:11px;color:#0073EA;font-weight:700">Tap item to remove</div>';
+    h += '</div>';
+    items.forEach(function(item, idx) {
+      var condCol = item.condition==='Good'?'#00A86B':item.condition==='Damaged'?'#E44258':'#FF9F1A';
+      h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;display:flex;gap:10px;align-items:center">';
+      h += '<div style="width:28px;height:28px;border-radius:6px;background:#F7F6F2;font-size:11px;font-weight:800;color:#7A849E;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + item.pieceNo + '</div>';
+      h += '<div style="flex:1">';
+      h += '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(item.pieceName) + '</div>';
+      h += '<div style="font-size:11px;color:#7A849E;margin-top:1px">' + esc(item.packType||'Loose') + ' · <span style="color:' + condCol + ';font-weight:700">' + (item.condition||'Good') + '</span></div>';
+      if (item.damageNote) h += '<div style="font-size:11px;color:#E44258;margin-top:1px">⚠ ' + esc(item.damageNote) + '</div>';
+      h += '</div>';
+      if (item.photo) h += '<img src="' + item.photo + '" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0">';
+      if (!done) h += '<button onclick="dvRemoveItem(\'' + jobId + '\',' + idx + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
+      h += '</div>';
+    });
+    h += '</div>';
+  } else if (!done) {
+    h += '<div style="background:#fff;border-radius:12px;padding:18px;text-align:center;color:#7A849E;font-size:13px;margin-bottom:12px">No items yet — add your first item below</div>';
+  }
+
+  // Add item form
+  if (!done) {
+    h += '<div style="background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px" id="inv-add-form">';
+    h += '<div style="font-size:12px;font-weight:800;color:#1C2333;margin-bottom:10px">Add Item · Piece #' + (items.length + 1) + '</div>';
+
+    // Piece name
+    h += '<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Piece Name</div>';
+    h += '<input id="inv-piece-name" placeholder="e.g. 3-Seater Sofa" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:11px 12px;font-size:14px;font-family:inherit;box-sizing:border-box"></div>';
+
+    // Pack type
+    h += '<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Pack Type</div>';
+    h += '<select id="inv-pack-type" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:11px 12px;font-size:13px;font-family:inherit">';
+    DV_PACK_TYPES.forEach(function(pt){ h += '<option>' + esc(pt) + '</option>'; });
+    h += '</select></div>';
+
+    // Condition
+    h += '<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Condition</div>';
+    h += '<div style="display:flex;gap:6px" id="inv-cond-group">';
+    ['Good','Damaged','Pre-existing Damage'].forEach(function(c) {
+      var col = c==='Good'?'#00A86B':c==='Damaged'?'#E44258':'#FF9F1A';
+      h += '<div onclick="dvSelectCond(this,\'' + esc(c) + '\')" data-cond="' + esc(c) + '" style="flex:1;padding:9px 6px;border-radius:8px;border:2px solid ' + (c==='Good'?col:'#E3E7F0') + ';background:' + (c==='Good'?col+'22':'transparent') + ';text-align:center;cursor:pointer;font-size:11px;font-weight:700;color:' + (c==='Good'?col:'#7A849E') + '">' + c + '</div>';
+    });
+    h += '</div>';
+    h += '<input type="hidden" id="inv-cond-val" value="Good">';
+    h += '</div>';
+
+    // Damage note (shows when not Good)
+    h += '<div id="inv-damage-wrap" style="margin-bottom:10px;display:none"><div style="font-size:10px;font-weight:700;color:#E44258;text-transform:uppercase;margin-bottom:5px">Damage Description</div>';
+    h += '<input id="inv-damage-note" placeholder="Describe the damage..." style="width:100%;border:1.5px solid #FFD0D0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;box-sizing:border-box"></div>';
+
+    // Photo capture
+    h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Damage Photo (optional)</div>';
+    h += '<div style="display:flex;gap:8px;align-items:center">';
+    h += '<input id="inv-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="dvInvPhotoSelected(this)">';
+    h += '<div id="inv-photo-preview" style="width:60px;height:60px;border-radius:8px;border:2px dashed #C8C5BE;display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer" onclick="el(\'inv-photo-input\').click()">📷</div>';
+    h += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#F7F6F2;border:1.5px dashed #C8C5BE;border-radius:8px;padding:11px;font-size:13px;font-weight:600;color:#7A849E;cursor:pointer">Take / Choose Photo</button>';
+    h += '</div></div>';
+
+    h += '<button onclick="dvAddInvItem(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">+ Add to Inventory</button>';
+    h += '</div>';
+
+    // Sign & complete
+    if (items.length > 0) {
+      h += '<div style="background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px">';
+      h += '<div style="font-size:12px;font-weight:800;color:#1C2333;margin-bottom:12px">Sign Inventory (' + items.length + ' items)</div>';
+
+      // Crew signature
+      h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Crew Signature</div>';
+      h += '<canvas id="inv-crew-sig" width="488" height="120" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
+      h += '<button onclick="dvClearCanvas(\'inv-crew-sig\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
+
+      // Client signature
+      h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Client Signature</div>';
+      h += '<canvas id="inv-client-sig" width="488" height="120" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
+      h += '<button onclick="dvClearCanvas(\'inv-client-sig\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
+
+      h += '<button onclick="dvCompleteInventory(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">✓ Sign & Complete Inventory</button>';
+      h += '</div>';
+    }
+  }
+
+  h += '</div>';
+  el('dv-inventory-body').innerHTML = h;
+
+  // Init signature pads
+  if (!done) {
+    setTimeout(function() {
+      dvInitSigPad('inv-crew-sig');
+      dvInitSigPad('inv-client-sig');
+    }, 80);
+  }
+}
+
+function dvSelectCond(el_ref, cond) {
+  var group = document.getElementById('inv-cond-group');
+  if (!group) return;
+  group.querySelectorAll('[data-cond]').forEach(function(btn) {
+    var c = btn.getAttribute('data-cond');
+    var col = c==='Good'?'#00A86B':c==='Damaged'?'#E44258':'#FF9F1A';
+    var active = c === cond;
+    btn.style.borderColor = active ? col : '#E3E7F0';
+    btn.style.background  = active ? col + '22' : 'transparent';
+    btn.style.color       = active ? col : '#7A849E';
+  });
+  var hid = document.getElementById('inv-cond-val');
+  if (hid) hid.value = cond;
+  var wrap = document.getElementById('inv-damage-wrap');
+  if (wrap) wrap.style.display = (cond !== 'Good') ? '' : 'none';
+}
+
+var _dvInvPhoto = null;
+function dvInvPhotoSelected(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    _dvInvPhoto = e.target.result;
+    var prev = document.getElementById('inv-photo-preview');
+    if (prev) prev.innerHTML = '<img src="' + _dvInvPhoto + '" style="width:100%;height:100%;object-fit:cover;border-radius:6px">';
+  };
+  reader.readAsDataURL(file);
+}
+
+function dvAddInvItem(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var name  = (el('inv-piece-name')||{}).value || '';
+  var pack  = (el('inv-pack-type')||{}).value  || 'Loose';
+  var cond  = (el('inv-cond-val')||{}).value   || 'Good';
+  var dmg   = (el('inv-damage-note')||{}).value|| '';
+  if (!name.trim()) { toast('Enter piece name'); return; }
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.inventory) j.crewData.inventory = { items: [] };
+  if (!j.crewData.inventory.items) j.crewData.inventory.items = [];
+  _dvInvSeq++;
+  j.crewData.inventory.items.push({
+    pieceNo:    _dvInvSeq,
+    pieceName:  name.trim(),
+    packType:   pack,
+    condition:  cond,
+    damageNote: dmg,
+    photo:      _dvInvPhoto || null,
+    addedAt:    new Date().toISOString(),
+    addedBy:    window._driverName || 'Crew'
+  });
+  _dvInvPhoto = null;
+  saveData('job', j.id, j);
+  // Trigger On Site if first item added
+  if (j.crewData.inventory.items.length === 1 && j.status !== 'On Site' && j.status !== 'Loading' && j.status !== 'Loaded') {
+    dvTriggerStatus(jobId, 'On Site');
+  }
+  dvRenderInventory(jobId);
+}
+
+function dvRemoveItem(jobId, idx) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j || !j.crewData || !j.crewData.inventory) return;
+  j.crewData.inventory.items.splice(idx, 1);
+  // Re-sequence piece numbers
+  j.crewData.inventory.items.forEach(function(item, i){ item.pieceNo = i + 1; });
+  _dvInvSeq = j.crewData.inventory.items.length;
+  saveData('job', j.id, j);
+  dvRenderInventory(jobId);
+}
+
+function dvCompleteInventory(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j || !j.crewData || !j.crewData.inventory) return;
+  var crewCanvas   = el('inv-crew-sig');
+  var clientCanvas = el('inv-client-sig');
+  if (!dvCanvasHasMark(crewCanvas))   { toast('Crew signature required'); return; }
+  if (!dvCanvasHasMark(clientCanvas)) { toast('Client signature required'); return; }
+  j.crewData.inventory.completedAt     = new Date().toISOString();
+  j.crewData.inventory.completedBy     = window._driverName || 'Crew';
+  j.crewData.inventory.crewSignature   = crewCanvas.toDataURL('image/png');
+  j.crewData.inventory.clientSignature = clientCanvas.toDataURL('image/png');
+  saveData('job', j.id, j);
+  // Status → Loading
+  dvTriggerStatus(jobId, 'Loading');
+  toast('✓ Inventory signed and saved');
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 11. DELIVERY SIGN-OFF
+// ══════════════════════════════════════════════════════════════════════
+function dvOpenDelivery(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-delivery');
+  dvRenderDelivery(jobId);
+}
+
+function dvRenderDelivery(jobId) {
+  var j   = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var del  = (j.crewData && j.crewData.delivery) || {};
+  var inv  = (j.crewData && j.crewData.inventory && j.crewData.inventory.items) || [];
+  var done = !!del.completedAt;
+
+  var h = dvDarkHeader('Delivery Sign-Off', j.client, 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="padding:14px 16px">';
+
+  if (done) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Signed off ' + fmtNice(del.completedAt.slice(0,10)) + ' by ' + esc(del.signedBy||'client') + '</div>';
+    if (del.signature) {
+      h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;text-align:center">';
+      h += '<div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:6px">SIGNATURE ON FILE</div>';
+      h += '<img src="' + del.signature + '" style="max-width:100%;border-radius:6px;border:1px solid #E3E7F0">';
+      h += '</div>';
+    }
+  } else {
+    // Items checklist
+    if (inv.length) {
+      h += dvSectionLabel('Items to deliver (' + inv.length + ')');
+      h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:12px">';
+      inv.forEach(function(item, idx) {
+        var checked = del.itemsDelivered && del.itemsDelivered[idx];
+        h += '<div onclick="dvToggleDelivered(\'' + jobId + '\',' + idx + ')" style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-bottom:1px solid #F0EFE9;cursor:pointer">';
+        h += '<div style="width:22px;height:22px;border-radius:5px;border:2px solid ' + (checked?'#00C875':'#C8C5BE') + ';background:' + (checked?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">';
+        if (checked) h += '<span style="color:#fff;font-size:12px">✓</span>';
+        h += '</div>';
+        h += '<div style="flex:1"><span style="font-size:12px;font-weight:700;color:#7A849E">#' + item.pieceNo + ' </span><span style="font-size:13px;font-weight:600;color:#1C2333">' + esc(item.pieceName) + '</span></div>';
+        h += '</div>';
+      });
+      h += '</div>';
+    }
+
+    h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Delivery Notes</div>';
+    h += '<textarea id="dv-delivery-notes" rows="3" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" placeholder="Any issues, missing items, access problems...">' + esc(del.notes||'') + '</textarea></div>';
+
+    h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Client Name (print)</div>';
+    h += '<input id="dv-sig-name" value="' + esc(del.signedBy||j.client||'') + '" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:11px 12px;font-size:14px;font-family:inherit;box-sizing:border-box" placeholder="Client full name"></div>';
+
+    h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Client Signature</div>';
+    h += '<canvas id="dv-sig-pad" width="488" height="160" style="width:100%;border:2px solid #E3E7F0;border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>';
+    h += '<button onclick="dvClearCanvas(\'dv-sig-pad\')" style="margin-top:6px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:5px 12px;font-size:12px;color:#7A849E;cursor:pointer">Clear</button></div>';
+
+    h += '<button onclick="dvCompleteDelivery(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">✓ Confirm Delivery & Sign</button>';
+  }
+  h += '</div>';
+  el('dv-delivery-body').innerHTML = h;
+  if (!done) setTimeout(function(){ dvInitSigPad('dv-sig-pad'); }, 80);
+}
+
+function dvToggleDelivered(jobId, idx) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.delivery) j.crewData.delivery = {};
+  if (!j.crewData.delivery.itemsDelivered) j.crewData.delivery.itemsDelivered = {};
+  j.crewData.delivery.itemsDelivered[idx] = !j.crewData.delivery.itemsDelivered[idx];
+  saveData('job', j.id, j);
+  dvRenderDelivery(jobId);
+}
+
+function dvCompleteDelivery(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var canvas  = el('dv-sig-pad');
+  var nameEl  = el('dv-sig-name');
+  var notesEl = el('dv-delivery-notes');
+  if (!dvCanvasHasMark(canvas)) { toast('Client signature required'); return; }
+  if (!nameEl || !nameEl.value.trim()) { toast('Enter client name'); return; }
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.delivery) j.crewData.delivery = {};
+  j.crewData.delivery.completedAt = new Date().toISOString();
+  j.crewData.delivery.completedBy = window._driverName || 'Crew';
+  j.crewData.delivery.signedBy    = nameEl.value.trim();
+  j.crewData.delivery.notes       = notesEl ? notesEl.value : '';
+  j.crewData.delivery.signature   = canvas.toDataURL('image/png');
+  saveData('job', j.id, j);
+  dvTriggerStatus(jobId, 'Delivered');
+  toast('✓ Delivery confirmed');
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// 12. JOB SIGN-OFF (final)
+// ══════════════════════════════════════════════════════════════════════
+function dvOpenSignoff(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-signoff');
+  dvRenderSignoff(jobId);
+}
+
+function dvRenderSignoff(jobId) {
+  var j  = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var so = (j.crewData && j.crewData.signoff) || {};
+  var done = !!so.completedAt;
+  var cd   = j.crewData || {};
+  var crew = (j.drivers||[]).concat(j.porters||[]);
+
+  var h = dvDarkHeader('Job Sign-Off', j.client, 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="padding:14px 16px">';
+
+  if (done) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Job signed off ' + fmtNice(so.completedAt.slice(0,10)) + '</div>';
+    if (so.crewSignature) {
+      h += '<div style="background:#fff;border-radius:12px;padding:14px;text-align:center">';
+      h += '<div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:6px">CREW SIGNATURE ON FILE</div>';
+      h += '<img src="' + so.crewSignature + '" style="max-width:100%;border-radius:6px;border:1px solid #E3E7F0">';
+      h += '</div>';
+    }
+  } else {
+    // Summary of what's been done
+    h += dvSectionLabel('Job Summary');
+    var steps = [
+      ['Pre-job checklist',    !!(cd.checklist && cd.checklist.completedAt)],
+      ['Mileage recorded',     !!(cd.mileage && cd.mileage.startOdo)],
+      ['Inventory completed',  !!(cd.inventory && cd.inventory.completedAt)],
+      ['Delivery signed',      !!(cd.delivery && cd.delivery.completedAt)],
+    ];
+    h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:14px">';
+    steps.forEach(function(s) {
+      h += '<div style="padding:11px 14px;border-bottom:1px solid #F0EFE9;display:flex;align-items:center;gap:12px">';
+      h += '<div style="font-size:16px">' + (s[1]?'✅':'⬜') + '</div>';
+      h += '<div style="font-size:13px;font-weight:600;color:' + (s[1]?'#1C2333':'#B0BEC5') + '">' + s[0] + '</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+
+    // Final notes
+    h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Final Notes / Issues to Report</div>';
+    h += '<textarea id="so-notes" rows="3" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" placeholder="Anything the office needs to know..."></textarea></div>';
+
+    // End mileage prompt if not done
+    if (!cd.mileage || !cd.mileage.endOdo) {
+      h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#9A5600">⚠ End odometer not recorded — <a onclick="dvOpenMileage(\'' + jobId + '\')" style="color:#0073EA;font-weight:700;cursor:pointer">Enter it now</a></div>';
+    }
+
+    // Crew signatures
+    h += dvSectionLabel('Crew Sign-Off');
+    crew.forEach(function(name, i) {
+      h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">' + esc(name) + ' — Signature</div>';
+      h += '<canvas id="so-crew-sig-' + i + '" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
+      h += '<button onclick="dvClearCanvas(\'so-crew-sig-' + i + '\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
+    });
+
+    h += '<button onclick="dvCompleteSignoff(\'' + jobId + '\',' + JSON.stringify(crew) + ')" style="width:100%;background:#151c2c;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">✅ Sign Off & Close Job</button>';
+  }
+  h += '</div>';
+  el('dv-signoff-body').innerHTML = h;
+  if (!done) {
+    setTimeout(function() {
+      var crew2 = (j.drivers||[]).concat(j.porters||[]);
+      crew2.forEach(function(_, i){ dvInitSigPad('so-crew-sig-' + i); });
+    }, 80);
+  }
+}
+
+function dvCompleteSignoff(jobId, crew) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  // Check at least first crew has signed
+  var canvas0 = el('so-crew-sig-0');
+  if (!dvCanvasHasMark(canvas0)) { toast('Please sign to complete job'); return; }
+  var sigs = {};
+  crew.forEach(function(name, i) {
+    var c = el('so-crew-sig-' + i);
+    if (c && dvCanvasHasMark(c)) sigs[name] = c.toDataURL('image/png');
+  });
+  if (!j.crewData) j.crewData = {};
+  j.crewData.signoff = {
+    completedAt:    new Date().toISOString(),
+    completedBy:    window._driverName || 'Crew',
+    notes:          (el('so-notes')||{}).value || '',
+    crewSignatures: sigs,
+    crewSignature:  sigs[crew[0]] || null,
+    signedBy:       crew[0] || window._driverName || 'Crew'
+  };
+  saveData('job', j.id, j);
+  dvTriggerStatus(jobId, 'Completed');
+  toast('🎉 Job complete — great work!');
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// SHARED HELPERS
+// ══════════════════════════════════════════════════════════════════════
+
+// Signature pad init & helpers
+var _dvSigPads = {};
+function dvInitSigPad(canvasId) {
+  var canvas = el(canvasId);
+  if (!canvas) return;
+  _dvSigPads[canvasId] = { drawing: false, hasMark: false };
+  var ctx = canvas.getContext('2d');
+  ctx.strokeStyle = '#1C2333'; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+  function pos(e) {
+    var r = canvas.getBoundingClientRect();
+    var sx = canvas.width / r.width, sy = canvas.height / r.height;
+    var src = e.touches ? e.touches[0] : e;
+    return { x: (src.clientX - r.left) * sx, y: (src.clientY - r.top) * sy };
+  }
+  function start(e) { var p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); _dvSigPads[canvasId].drawing=true; e.preventDefault(); }
+  function move(e)  { if(!_dvSigPads[canvasId].drawing) return; var p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); _dvSigPads[canvasId].hasMark=true; e.preventDefault(); }
+  function stop()   { _dvSigPads[canvasId].drawing=false; }
+
+  canvas.addEventListener('mousedown', start); canvas.addEventListener('mousemove', move); canvas.addEventListener('mouseup', stop);
+  canvas.addEventListener('touchstart', start, {passive:false}); canvas.addEventListener('touchmove', move, {passive:false}); canvas.addEventListener('touchend', stop);
+}
+
+function dvClearCanvas(canvasId) {
+  var canvas = el(canvasId);
+  if (!canvas) return;
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+  if (_dvSigPads[canvasId]) _dvSigPads[canvasId].hasMark = false;
+}
+
+function dvCanvasHasMark(canvas) {
+  if (!canvas) return false;
+  var id = canvas.id;
+  return _dvSigPads[id] ? _dvSigPads[id].hasMark : false;
+}
+
+function dvDarkHeader(title, sub, backFn, badge, badgeCol) {
+  var h = '<div style="background:#151c2c;padding:14px 16px;position:sticky;top:0;z-index:10">';
+  h += '<div style="max-width:520px;margin:0 auto;display:flex;align-items:center;gap:12px">';
+  h += '<button onclick="' + backFn + '" style="background:rgba(255,255,255,.1);border:none;border-radius:8px;width:36px;height:36px;color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0">‹</button>';
+  h += '<div style="flex:1">';
+  h += '<div style="font-size:16px;font-weight:800;color:#fff">' + esc(title) + '</div>';
+  if (sub) h += '<div style="font-size:11px;color:rgba(255,255,255,.45)">' + esc(sub) + '</div>';
+  h += '</div>';
+  if (badge) h += '<div style="padding:4px 11px;border-radius:20px;font-size:11px;font-weight:700;color:#fff;background:' + (badgeCol||'#7A849E') + '">' + badge + '</div>';
+  h += '</div></div>';
+  return h;
+}
+
+function dvInfoCard(title, rows) {
+  var h = '<div style="background:#fff;border-radius:12px;margin-bottom:12px;overflow:hidden">';
+  if (title) h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#7A849E">' + title + '</div>';
+  rows.filter(Boolean).forEach(function(row) {
+    h += '<div style="display:flex;align-items:center;padding:9px 14px;border-bottom:1px solid #F0EFE9;gap:12px">';
+    h += '<div style="font-size:12px;color:#7A849E;min-width:90px">' + esc(row[0]) + '</div>';
+    h += '<div style="font-size:13px;font-weight:600;color:#1C2333;flex:1">' + esc(String(row[1]||'—')) + '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+function dvAddressCard(label, address, col, icon) {
+  var h = '<div style="background:#fff;border-radius:12px;margin-bottom:12px;overflow:hidden">';
+  h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;font-size:11px;font-weight:800;text-transform:uppercase;color:' + col + '">' + icon + ' ' + label + '</div>';
+  h += '<div style="padding:12px 14px">';
+  h += '<div style="font-size:14px;font-weight:600;color:#1C2333;line-height:1.4;margin-bottom:10px">' + esc(address) + '</div>';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<a href="https://maps.google.com/?q=' + encodeURIComponent(address) + '" target="_blank" style="flex:1;background:#EBF4FF;color:#0073EA;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🗺 Maps</a>';
+  h += '<a href="https://waze.com/ul?q=' + encodeURIComponent(address) + '" target="_blank" style="flex:1;background:#E8FFEE;color:#00A86B;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🔵 Waze</a>';
+  h += '</div></div></div>';
+  return h;
+}
+
+function dvFormCard(title, sub, icon, status, done, onclick) {
+  return '<div onclick="' + onclick + '" style="background:#fff;border-radius:12px;margin-bottom:10px;padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:14px;border:2px solid ' + (done?'#D1FAE5':'#F0EFE9') + '">' +
+    '<div style="width:42px;height:42px;border-radius:10px;background:' + (done?'#E6FFF5':'#F7F6F2') + ';display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">' + icon + '</div>' +
+    '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1C2333">' + title + '</div>' +
+    '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + sub + '</div>' +
+    '<div style="font-size:11px;font-weight:700;color:' + (done?'#00A86B':'#FF9F1A') + ';margin-top:4px">' + (done?'✓ ':'→ ') + status + '</div>' +
+    '</div><div style="font-size:18px;color:#C8C5BE">›</div></div>';
+}
+
+function dvActionButton(label, sub, onclick, col) {
+  return '<div onclick="' + onclick + '" style="background:#fff;border-radius:12px;margin-bottom:10px;padding:13px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;border-left:4px solid ' + col + '">' +
+    '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1C2333">' + label + '</div>' +
+    '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + sub + '</div></div>' +
+    '<div style="font-size:18px;color:#C8C5BE">›</div></div>';
+}
+
+function dvSectionLabel(text) {
+  return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#7A849E;margin:14px 0 8px">' + text + '</div>';
+}
+
+function dvNiceDate(d) {
+  var days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return days[d.getDay()] + ' ' + d.getDate() + ' ' + months[d.getMonth()];
+}
+
+function dvOrdinal(n) {
+  var s = ['th','st','nd','rd'];
+  var v = n % 100;
+  return n + (s[(v-20)%10] || s[v] || s[0]);
+}
+
+// Legacy compat
+function driverMarkComplete(jobId) { dvTriggerStatus(jobId, 'Completed'); }
+// ══════════════════════════════════════════════════════════════════════
+// CREW PORTAL — multi-screen job management for crew/drivers
+// ══════════════════════════════════════════════════════════════════════
 
 function driverMarkComplete(jobId) {
   var j = jobs.filter(function(x){ return x.id === jobId; })[0];
@@ -12618,26 +14186,112 @@ function whSelectOptions(selectedId) {
   </div>
 
   <!-- ══ DRIVER VIEW (full-screen, locked) ══════════════════════════ -->
-  <div id="driver-view" style="display:none;position:fixed;inset:0;background:#F4F3EE;z-index:9000;overflow-y:auto;font-family:'DM Sans',sans-serif">
-    <div style="max-width:480px;margin:0 auto;padding:16px">
-      <!-- Header -->
-      <div style="background:#151c2c;border-radius:12px;padding:16px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between">
-        <div>
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:rgba(255,255,255,.4)">OPS MANAGER</div>
-          <div style="font-size:17px;font-weight:800;color:#fff;margin-top:2px" id="dv-name">Driver</div>
-          <div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:1px" id="dv-date"></div>
+  <div id="driver-view" style="display:none;position:fixed;inset:0;background:#F0EFE9;z-index:9000;overflow:hidden;font-family:'DM Sans',sans-serif">
+
+    <!-- SCREEN: TODAY'S JOBS -->
+    <div id="dv-screen-today" class="dv-screen" style="height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:16px 16px 90px">
+        <!-- Header -->
+        <div style="background:#151c2c;border-radius:14px;padding:16px 18px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:rgba(255,255,255,.35)">OPS MANAGER</div>
+              <div style="font-size:20px;font-weight:800;color:#fff;margin-top:2px" id="dv-name">Driver</div>
+            </div>
+            <div style="text-align:right">
+              <div id="dv-date" style="font-size:12px;color:rgba(255,255,255,.5)"></div>
+              <div id="dv-job-count" style="margin-top:4px;background:var(--blue);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#fff;display:inline-block">0 jobs</div>
+            </div>
+          </div>
+          <!-- Weather/status bar could go here -->
         </div>
-        <div style="background:var(--blue);border-radius:8px;padding:8px 14px;font-size:12px;font-weight:700;color:#fff" id="dv-job-count">0 jobs</div>
-      </div>
-      <!-- Jobs list -->
-      <div id="dv-jobs"></div>
-      <!-- Empty state -->
-      <div id="dv-empty" style="display:none;text-align:center;padding:48px 20px;color:#7A849E">
-        <div style="font-size:40px;margin-bottom:12px">✅</div>
-        <div style="font-size:16px;font-weight:700;color:#1C2333">No jobs today</div>
-        <div style="font-size:13px;margin-top:6px">Check back tomorrow</div>
+        <!-- Jobs -->
+        <div id="dv-jobs"></div>
+        <div id="dv-empty" style="display:none;text-align:center;padding:60px 20px">
+          <div style="font-size:50px;margin-bottom:14px">✅</div>
+          <div style="font-size:18px;font-weight:800;color:#1C2333">No jobs today</div>
+          <div style="font-size:13px;color:#7A849E;margin-top:6px">Enjoy your day off</div>
+        </div>
       </div>
     </div>
+
+    <!-- SCREEN: JOB DETAIL -->
+    <div id="dv-screen-job" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-job-detail-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: PRE-JOB CHECKLIST -->
+    <div id="dv-screen-precheck" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-precheck-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: INVENTORY / CONDITION REPORT -->
+    <div id="dv-screen-inventory" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-inventory-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: MILEAGE -->
+    <div id="dv-screen-mileage" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-mileage-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: DELIVERY CONFIRMATION + SIGNATURE -->
+    <div id="dv-screen-delivery" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-delivery-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: START OF DAY -->
+    <div id="dv-screen-startday" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-startday-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: JOURNEY VIEW (multi-job run) -->
+    <div id="dv-screen-journey" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-journey-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: MATERIALS PICKING SHEET -->
+    <div id="dv-screen-materials" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-materials-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: WAREHOUSE LOADING SHEET -->
+    <div id="dv-screen-warehouse-load" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-warehouse-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: JOB SHEET (printable detail) -->
+    <div id="dv-screen-jobsheet" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-jobsheet-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: JOB SIGN-OFF -->
+    <div id="dv-screen-signoff" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-signoff-body"></div>
+      </div>
+    </div>
+
   </div>
 
   <!-- Mobile bottom navigation -->
