@@ -1,7 +1,12 @@
 {
   "name": "ops-manager-api",
   "version": "1.0.0",
-  "dependencies": {
-    "@azure/data-tables": "^13.0.0"
+  "description": "Onwards Ops Manager API Functions",
+  "scripts": {
+    "start": "func start",
+    "test": "echo No tests"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

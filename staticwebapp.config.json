@@ -1,16 +1,4 @@
 {
-  "auth": {
-    "identityProviders": {
-      "azureActiveDirectory": {
-        "userDetailsClaim": "claims",
-        "registration": {
-          "openIdIssuer": "https://login.microsoftonline.com/movesquadgroup.onmicrosoft.com/v2.0",
-          "clientIdSettingName": "AAD_CLIENT_ID",
-          "clientSecretSettingName": "AAD_CLIENT_SECRET"
-        }
-      }
-    }
-  },
   "routes": [
     {
       "route": "/api/*",
@@ -25,6 +13,17 @@
     "401": {
       "redirect": "/.auth/login/aad",
       "statusCode": 302
+    }
+  },
+  "auth": {
+    "identityProviders": {
+      "azureActiveDirectory": {
+        "registration": {
+          "openIdIssuer": "https://login.microsoftonline.com/52c88d8a-2382-40ad-afef-c6cb5d98820e/v2.0",
+          "clientIdSettingName": "AAD_CLIENT_ID",
+          "clientSecretSettingName": "AAD_CLIENT_SECRET"
+        }
+      }
     }
   }
 }
