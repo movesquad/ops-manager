@@ -4825,7 +4825,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v39 — 1 Mar 2026';
+var APP_VERSION = 'v40 — 1 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -5917,21 +5917,31 @@ var BILLING_TEMPLATES = {
 function cfgEmpty() {
   return {
     id: null,
-    // Client number — set on first save, shared across linked jobs
     clientNum: null,
-    // Array of job objects — one per job type in this booking session
     jobDefs: [ cfgEmptyJobDef() ],
     // Client details
     clientName: '', clientEmail: '', clientPhone: '',
     partnerRef: '', brand: BRANDS[0] || '', channel: 'Partner',
     moveManager: '', workCountry: 'UK',
-    // Status — no Draft
+    // Status
     status: 'Provisional',
+    // Schedule
+    startDate: '', endDate: '',
+    selectedDates: [],
+    isMultiDay: false, numDays: 1,
+    hasOvernight: false, numNights: 0, overnightAllowance: 65,
+    weekendWorking: false,
+    linkJourney: false, journeyId: null, journeyRef: '',
+    // Resources (shared across all jobDefs in booking)
+    crewAssigned: [],
+    vehAssigned: [],
     // Notes
     opsNotes: '', clientNotes: '',
-    // AI parse cache
+    // AI parse
     sourceEmail: '', aiParsed: null,
-    // Change log
+    // SharePoint
+    spFolderUrl: '', spFolderId: '', spFolderPath: '', spSiteId: '', spDriveId: '',
+    docChecklist: {},
     changeLog: [],
     createdAt: new Date().toISOString(),
   };
@@ -6071,27 +6081,35 @@ function cfgRenderStage() {
 }
 
 function cfgPostRender() {
-  // Build availability matrix if on movements stage
+  // Build availability matrix on movements stage
   if (cfgStage === 1) {
     setTimeout(cfgBuildMatrix, 50);
-    // Auto-activate first movement if none active
-    if (!CFG.jobDefs[cfgActiveMv.jdi] || !CFG.jobDefs[cfgActiveMv.jdi].movements[cfgActiveMv.mi]) {
-      cfgActiveMv = { jdi: 0, mi: 0 };
-    }
   }
-  // Re-bind address autocomplete on any new address fields
-  document.querySelectorAll('.cfg-addr:not([data-bound])').forEach(function(inp) {
-    inp.setAttribute('data-bound', '1');
-    if (typeof google !== 'undefined' && google.maps && google.maps.places) {
-      try {
-        var ac = new google.maps.places.Autocomplete(inp, { componentRestrictions: { country: 'gb' }, types: ['geocode'] });
-        ac.addListener('place_changed', function() {
-          var p = ac.getPlace();
-          if (p && p.formatted_address) inp.value = p.formatted_address;
-        });
-      } catch(e) {}
+  // Bind address autocomplete to all unbound address fields
+  setTimeout(function() {
+    document.querySelectorAll('.cfg-addr:not([data-bound])').forEach(function(inp) {
+      bindAddressField(inp);
+    });
+    // Also bind jcfg-origin/dest fields if on brief stage
+    if (cfgStage === 1) {
+      for (var ji = 0; ji < CFG.jobDefs.length; ji++) {
+        for (var mi = 0; mi < CFG.jobDefs[ji].movements.length; mi++) {
+          var origEl = document.getElementById('mv-origin-' + ji + '-' + mi);
+          var destEl = document.getElementById('mv-dest-' + ji + '-' + mi);
+          if (origEl && !origEl._addrBound) bindAddressField(origEl);
+          if (destEl && !destEl._addrBound) {
+            bindAddressField(destEl, {
+              showDist: true,
+              fromFn: function() {
+                var o = document.getElementById('mv-origin-' + ji + '-' + mi);
+                return o ? o.value.trim() : (APP_SETTINGS.warehouseAddress || '');
+              }
+            });
+          }
+        }
+      }
     }
-  });
+  }, 100);
 }
 
 function cfgUpdateStageIndicator() {
@@ -6304,40 +6322,337 @@ function cfgUpdateRefPreview() {
 
 // ── STAGE 1: MOVEMENTS ─────────────────────────────────────────────────────
 
+
+// ── RESTORED SCHEDULE/RESOURCE HELPERS ─────────────────────────────────
+
+function cfgToggleDateOption(val) {
+  var sec = el('cfg-date-section');
+  if (sec) sec.style.display = val === 'fix' ? '' : 'none';
+}
+
+function cfgToggleMultiday(inp) {
+  cfgCollectSchedule();
+  CFG.isMultiDay = inp.checked;
+  // Reset selected dates when toggling
+  CFG.selectedDates = [];
+  CFG.startDate = '';
+  CFG.endDate = '';
+  cfgRenderStage();
+}
+
+function cfgNumDaysChange(inp) {
+  var n = parseInt(inp.value) || 2;
+  CFG.numDays = n;
+  // Trim selectedDates if fewer days entered
+  if (CFG.selectedDates && CFG.selectedDates.length > n) CFG.selectedDates = CFG.selectedDates.slice(0, n);
+  cfgRenderStage();
+}
+
+function cfgToggleOvernight(inp) {
+  CFG.hasOvernight = inp.checked;
+  cfgRenderStage();
+}
+
+function cfgToggleLinkJourney(inp) {
+  CFG.linkJourney = inp.checked;
+  cfgRenderStage();
+}
+
+function cfgManualDateChange() {
+  var inp = el('cfg-startdate');
+  if (!inp || !inp.value) return;
+  var ds = inp.value;
+  if (!CFG.selectedDates) CFG.selectedDates = [];
+  CFG.selectedDates[0] = ds;
+  CFG.startDate = ds;
+  // Re-highlight matrix without full re-render
+  cfgHighlightMatrix();
+  // Show date section
+  var fixRadio = document.querySelector('input[name="cfg-dateoption"][value="fix"]');
+  if (fixRadio) fixRadio.checked = true;
+  var sec = el('cfg-date-section');
+  if (sec) sec.style.display = '';
+}
+
+function cfgClearSlot(slotIdx) {
+  if (!CFG.selectedDates) CFG.selectedDates = [];
+  CFG.selectedDates[slotIdx] = '';
+  // Compact: remove empty trailing slots
+  while (CFG.selectedDates.length > 0 && !CFG.selectedDates[CFG.selectedDates.length - 1]) {
+    CFG.selectedDates.pop();
+  }
+  CFG.startDate = CFG.selectedDates[0] || '';
+  CFG.endDate   = CFG.selectedDates[CFG.selectedDates.length - 1] || '';
+  cfgRenderStage();
+}
+
+
+function cfgHighlightMatrix() {
+  // Update row highlighting without full re-render
+  var rows = document.querySelectorAll('#cfg-avail-body .avail-row');
+  var selectedSet = {};
+  (CFG.selectedDates || []).forEach(function(d, i){ if (d) selectedSet[d] = i + 1; });
+
+  rows.forEach(function(row) {
+    var m = (row.getAttribute('onclick') || '').match(/'(\d{4}-\d{2}-\d{2})'/);
+    if (!m) return;
+    var ds = m[1];
+    row.classList.remove('chosen', 'chosen-multi');
+    if (!CFG.isMultiDay && CFG.startDate === ds) row.classList.add('chosen');
+    if (CFG.isMultiDay && selectedSet[ds]) row.classList.add('chosen-multi');
+  });
+}
+
+function cfgSelectDate(ds) {
+  // Show the date section and activate "fix" radio
+  var fixRadio = document.querySelector('input[name="cfg-dateoption"][value="fix"]');
+  if (fixRadio) fixRadio.checked = true;
+  var sec = el('cfg-date-section');
+  if (sec) sec.style.display = '';
+
+  if (!CFG.isMultiDay) {
+    // Single-day: just set startDate
+    CFG.startDate = ds;
+    if (!CFG.selectedDates) CFG.selectedDates = [];
+    CFG.selectedDates[0] = ds;
+    var inp = el('cfg-startdate');
+    if (inp) inp.value = ds;
+    cfgHighlightMatrix();
+    // Update the slot row without full re-render
+    toast('Date set: ' + fmtNice(ds));
+    return;
+  }
+
+  // Multi-day: fill next empty slot
+  if (!CFG.selectedDates) CFG.selectedDates = [];
+  var n = CFG.numDays || 2;
+
+  // If already selected, deselect
+  var existIdx = CFG.selectedDates.indexOf(ds);
+  if (existIdx >= 0) {
+    CFG.selectedDates[existIdx] = '';
+    // Compact
+    while (CFG.selectedDates.length > 0 && !CFG.selectedDates[CFG.selectedDates.length - 1]) CFG.selectedDates.pop();
+    CFG.startDate = CFG.selectedDates[0] || '';
+    CFG.endDate   = CFG.selectedDates[CFG.selectedDates.length - 1] || '';
+    cfgRenderStage();
+    return;
+  }
+
+  // Count filled
+  var filled = CFG.selectedDates.filter(function(d){return !!d;}).length;
+  if (filled >= n) {
+    toast('All ' + n + ' days already selected. Clear one first.');
+    return;
+  }
+
+  // Fill next empty slot
+  // Ensure array is long enough
+  while (CFG.selectedDates.length < n) CFG.selectedDates.push('');
+  for (var si = 0; si < n; si++) {
+    if (!CFG.selectedDates[si]) {
+      CFG.selectedDates[si] = ds;
+      break;
+    }
+  }
+
+  CFG.startDate = CFG.selectedDates[0] || '';
+  var lastFilled = '';
+  for (var si2 = CFG.selectedDates.length - 1; si2 >= 0; si2--) { if (CFG.selectedDates[si2]) { lastFilled = CFG.selectedDates[si2]; break; } }
+  CFG.endDate = lastFilled;
+
+  var newFilled = CFG.selectedDates.filter(function(d){return !!d;}).length;
+  if (newFilled >= n) {
+    toast('All ' + n + ' days selected!');
+  } else {
+    toast('Day ' + newFilled + ' of ' + n + ' selected: ' + fmtNice(ds));
+  }
+
+  // Re-render slots area and progress without full re-render
+  cfgRenderStage();
+}
+
+function cfgCrewAvailStatus(name, ds) {
+  if (!ds) return {cls:'rps-free', lbl:'No date'};
+  if (HOL[name] && HOL[name].indexOf(ds) >= 0) return {cls:'rps-busy', lbl:'Holiday'};
+  for (var ji = 0; ji < jobs.length; ji++) {
+    var jb = jobs[ji];
+    if (ds < jb.start || ds > jb.end) continue;
+    if ((jb.drivers||[]).indexOf(name) >= 0 || (jb.porters||[]).indexOf(name) >= 0) return {cls:'rps-busy', lbl:'Booked'};
+  }
+  return {cls:'rps-free', lbl:'Free'};
+}
+
+function cfgVehAvailStatus(vid, ds) {
+  if (!ds) return {cls:'rps-free', lbl:'No date'};
+  var veh = VEHICLES.filter(function(v){return v.id===vid;})[0];
+  if (!veh) return {cls:'rps-free', lbl:'?'};
+  for (var ji = 0; ji < jobs.length; ji++) {
+    var jb = jobs[ji];
+    if (ds < jb.start || ds > jb.end) continue;
+    if ((jb.veh||[]).indexOf(veh.reg) >= 0) return {cls:'rps-busy', lbl:'Booked'};
+  }
+  return {cls:'rps-free', lbl:'Free'};
+}
+
+function cfgToggleCrew(elRef, name) {
+  var idx = CFG.crewAssigned.indexOf(name);
+  if (idx >= 0) CFG.crewAssigned.splice(idx, 1);
+  else CFG.crewAssigned.push(name);
+  elRef.classList.toggle('sel', CFG.crewAssigned.indexOf(name) >= 0);
+}
+
+function cfgToggleVeh(elRef, vid) {
+  var idx = CFG.vehAssigned.indexOf(vid);
+  if (idx >= 0) CFG.vehAssigned.splice(idx, 1);
+  else CFG.vehAssigned.push(vid);
+  elRef.classList.toggle('sel', CFG.vehAssigned.indexOf(vid) >= 0);
+}
+
+function cfgBindJobAddressFields(ji) {
+  var origEl = document.getElementById('jcfg-origin-' + ji);
+  var destEl = document.getElementById('jcfg-dest-' + ji);
+  if (origEl && !origEl.readOnly && !origEl._addrBound) {
+    bindAddressField(origEl);
+  }
+  if (destEl && !destEl.readOnly && !destEl._addrBound) {
+    bindAddressField(destEl, {
+      showDist: true,
+      fromFn: function() { return (origEl ? origEl.value.trim() : '') || APP_SETTINGS.warehouseAddress || ''; }
+    });
+  }
+}
+
+
 function cfgRenderMovements() {
   var h = '';
 
-  // ── Availability Matrix ─────────────────────────────────────────────
-  h += '<div class="cs-card" style="margin-bottom:14px">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">📊</div>';
-  h += '<div style="flex:1"><div class="cs-card-title">Availability — 4 Weeks</div>';
-  h += '<div class="cs-card-sub">Click any date to assign it to the active movement below. Green = free, red = busy.</div></div>';
-  h += '</div>';
-  h += '<div class="cs-body" id="cfg-avail-body"><div style="text-align:center;color:#7A849E;padding:20px;font-size:12px">Loading matrix...</div></div>';
-  h += '</div>';
-
-  // Active movement selector hint
-  h += '<div style="padding:7px 12px;background:var(--blt);border:1px solid var(--blue);border-radius:6px;margin-bottom:12px;font-size:11.5px;color:var(--blue);font-weight:600" id="cfg-active-mv-hint">';
-  h += '📅 Select a movement below, then click a date in the matrix above to assign it';
-  h += '</div>';
-
-  // ── Job movement cards ──────────────────────────────────────────────
+  // ── 1. VOLUME per job ───────────────────────────────────────────────
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">📐</div>';
+  h += '<div class="cs-card-title">Volume</div></div>';
+  h += '<div class="cs-body">';
   for (var di = 0; di < CFG.jobDefs.length; di++) {
     var jd = CFG.jobDefs[di];
     var jt = JOB_TYPES_V2.filter(function(x){ return x.code === jd.jobTypeCode; })[0] || {};
-    h += '<div class="cs-card" style="border-left:3px solid ' + (jt.accent || 'var(--b1)') + ';margin-bottom:10px">';
-    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:' + (jt.color || '#f0f0f0') + '">' + (jt.icon || '📋') + '</div>';
-    h += '<div style="flex:1"><div class="cs-card-title">' + esc(jt.label || jd.jobTypeCode) + '</div>';
-    h += '<div class="cs-card-sub">' + jd.movements.length + ' movement' + (jd.movements.length !== 1 ? 's' : '') + '</div></div></div>';
-    h += '<div class="cs-body" style="padding-top:6px">';
+    var mv0 = jd.movements[0];
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
+    h += '<span style="font-size:12px;font-weight:700;min-width:80px">' + esc(jt.icon||'') + ' ' + esc(jt.label||jd.jobTypeCode) + '</span>';
+    h += '<input type="number" class="cfg-input" id="jvol-' + di + '" value="' + esc(mv0.volUnit==='cbm'?(mv0.volCbm||''):(mv0.volFt||'')) + '" min="0" placeholder="0" style="width:100px">';
+    h += '<button class="vol-unit-btn' + (mv0.volUnit!=='cbm'?' sel':'') + '" onclick="cfgMvSetVolUnit(' + di + ',0,\'ft\',this)">ft³</button>';
+    h += '<button class="vol-unit-btn' + (mv0.volUnit==='cbm'?' sel':'') + '" onclick="cfgMvSetVolUnit(' + di + ',0,\'cbm\',this)">CBM</button>';
+    h += '</div>';
+  }
+  h += '</div></div>';
 
-    for (var mi = 0; mi < jd.movements.length; mi++) {
-      h += cfgRenderMovementCard(di, mi, jd.movements[mi], jd.jobTypeCode);
+  // ── 2. DURATION OPTIONS ─────────────────────────────────────────────
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📅</div>';
+  h += '<div class="cs-card-title">Duration &amp; Options</div></div>';
+  h += '<div class="cs-body">';
+
+  // Single/multi-day
+  h += '<div class="mday-row"><label class="mday-toggle"><input type="checkbox" id="cfg-multiday"' + (CFG.isMultiDay?' checked':'') + ' onchange="cfgToggleMultiday(this)"><span class="mday-slider"></span></label>';
+  h += '<div style="flex:1"><div class="mday-lbl">Multi-day job</div><div class="mday-sub">Spans more than one calendar day — select each day individually in the matrix below</div></div>';
+  if (CFG.isMultiDay) {
+    h += '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0"><span style="font-size:12px;color:var(--t3)">Days:</span>';
+    h += '<input class="cfg-input" id="cfg-numdays" type="number" min="2" max="30" value="' + (CFG.numDays||2) + '" style="width:64px" onchange="cfgNumDaysChange(this)"></div>';
+  }
+  h += '</div>';
+
+  // Multi-day slot display
+  if (CFG.isMultiDay) {
+    var n = CFG.numDays || 2;
+    var chosen = CFG.selectedDates ? CFG.selectedDates.slice() : [];
+    var filled = chosen.filter(function(d){ return !!d; }).length;
+    h += '<div class="dayslot-progress" style="margin:10px 0 8px">';
+    h += '<div class="dp-label' + (filled>=n?' done':'') + '">' + (filled>=n ? '✓ All '+n+' days selected' : filled+' of '+n+' days selected — click dates in matrix below') + '</div>';
+    h += '<div class="dp-bar-wrap"><div class="dp-bar" style="width:' + Math.round((filled/n)*100) + '%"></div></div></div>';
+    h += '<div style="margin-bottom:8px">';
+    for (var si = 0; si < n; si++) {
+      var slotDate = chosen[si] || '';
+      h += '<div class="dayslot-row"><div class="dayslot-num' + (slotDate?' filled':'') + '">Day ' + (si+1) + '</div>';
+      h += '<div class="dayslot-val' + (slotDate?' filled':'') + '" id="ds-val-' + si + '">';
+      if (slotDate) {
+        h += '<span>📅 ' + fmtNice(slotDate) + ' (' + ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(slotDate+'T00:00:00').getDay()] + ')</span>';
+        h += '<span class="ds-clear" onclick="cfgClearSlot(' + si + ')">✕</span>';
+      } else {
+        h += '<span style="color:var(--t4)">Click a date in the matrix below</span>';
+      }
+      h += '</div></div>';
     }
+    h += '</div>';
+  } else {
+    // Single day display
+    var singleVal = (CFG.selectedDates && CFG.selectedDates[0]) ? CFG.selectedDates[0] : (CFG.startDate||'');
+    h += '<div style="margin:10px 0 4px">';
+    if (singleVal) {
+      h += '<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--blt);border-radius:6px;border:1px solid var(--blue)">';
+      h += '<span style="font-size:18px">📅</span>';
+      h += '<span style="font-weight:700;color:var(--blue)">' + fmtNice(singleVal) + ' (' + ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(singleVal+'T00:00:00').getDay()] + ')</span>';
+      h += '<button onclick="cfgClearSlot(0)" style="margin-left:auto;background:none;border:none;color:var(--red);cursor:pointer;font-size:12px">✕ Clear</button>';
+      h += '</div>';
+    } else {
+      h += '<div style="padding:8px 12px;background:var(--s1);border-radius:6px;border:1px dashed var(--b2);color:var(--t3);font-size:12px">Click any date in the matrix below to select it</div>';
+    }
+    h += '</div>';
+    // Also offer a manual date field
+    h += '<div class="cfg-field" style="margin-top:8px"><label class="cfg-label">Or type date manually</label>';
+    h += '<input class="cfg-input" id="cfg-startdate" type="date" value="' + esc(singleVal) + '" onchange="cfgManualDateChange()" style="max-width:180px"></div>';
+  }
 
-    h += '<button class="btn btn-s btn-sm" style="width:100%;margin-top:6px" onclick="cfgAddMovement(' + di + ')">+ Add Movement Leg</button>';
+  // Overnight
+  h += '<div class="mday-row" style="margin-top:10px"><label class="mday-toggle"><input type="checkbox" id="cfg-overnight"' + (CFG.hasOvernight?' checked':'') + ' onchange="cfgToggleOvernight(this)"><span class="mday-slider"></span></label>';
+  h += '<div style="flex:1"><div class="mday-lbl">Overnight stays</div><div class="mday-sub">Crew needs accommodation</div></div>';
+  if (CFG.hasOvernight) {
+    h += '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">';
+    h += '<input class="cfg-input" id="cfg-numnights" type="number" min="1" max="14" value="' + (CFG.numNights||1) + '" style="width:56px">';
+    h += '<span style="font-size:12px;color:var(--t3)">nights @ £</span>';
+    h += '<input class="cfg-input" id="cfg-nightallow" type="number" min="0" value="' + (CFG.overnightAllowance||65) + '" style="width:68px">';
+    h += '<span style="font-size:12px;color:var(--t3)">/person</span></div>';
+  }
+  h += '</div>';
+
+  // Weekend + Journey
+  h += '<div class="mday-row"><label class="mday-toggle"><input type="checkbox" id="cfg-weekend"' + (CFG.weekendWorking?' checked':'') + '><span class="mday-slider"></span></label>';
+  h += '<div><div class="mday-lbl">Weekend working</div><div class="mday-sub">Saturday or Sunday required</div></div></div>';
+
+  h += '<div class="mday-row" style="margin-bottom:0"><label class="mday-toggle"><input type="checkbox" id="cfg-linkjourney"' + (CFG.linkJourney?' checked':'') + ' onchange="cfgToggleLinkJourney(this)"><span class="mday-slider"></span></label>';
+  h += '<div style="flex:1"><div class="mday-lbl">Part of a Journey / Run</div><div class="mday-sub">Link to existing journey or create new</div></div>';
+  if (CFG.linkJourney) {
+    h += '<select class="cfg-input cfg-select" id="cfg-journeysel" style="width:200px;flex-shrink:0"><option value="_new">+ Create new journey</option>';
+    for (var jni = 0; jni < JOURNEYS.length; jni++) {
+      h += '<option value="' + JOURNEYS[jni].id + '"' + (CFG.journeyId===JOURNEYS[jni].id?' selected':'') + '>' + esc(JOURNEYS[jni].label) + '</option>';
+    }
+    h += '</select>';
+  }
+  h += '</div>';
+  h += '</div></div>';
+
+  // ── 3. AVAILABILITY MATRIX ──────────────────────────────────────────
+  h += '<div class="cs-card">';
+  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">📊</div>';
+  h += '<div style="flex:1"><div class="cs-card-title">4-Week Availability</div>';
+  h += '<div class="cs-card-sub">' + (CFG.isMultiDay ? 'Click dates to fill day slots in order — can be non-consecutive' : 'Click any date to select it') + '</div></div></div>';
+  h += '<div class="cs-body" id="cfg-avail-body"><div style="text-align:center;color:var(--t3);padding:20px;font-size:12px">Building matrix...</div></div>';
+  h += '</div>';
+
+  // ── 4. MOVEMENT LEGS ────────────────────────────────────────────────
+  for (var di2 = 0; di2 < CFG.jobDefs.length; di2++) {
+    var jd2 = CFG.jobDefs[di2];
+    var jt2 = JOB_TYPES_V2.filter(function(x){ return x.code === jd2.jobTypeCode; })[0] || {};
+    h += '<div class="cs-card" style="border-left:3px solid ' + (jt2.accent||'var(--b1)') + '">';
+    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:' + (jt2.color||'#f0f0f0') + '">' + (jt2.icon||'📋') + '</div>';
+    h += '<div style="flex:1"><div class="cs-card-title">' + esc(jt2.label||jd2.jobTypeCode) + ' — Movements</div>';
+    h += '<div class="cs-card-sub">Origin, destination and mode for each leg</div></div></div>';
+    h += '<div class="cs-body" style="padding-top:6px">';
+    for (var mi2 = 0; mi2 < jd2.movements.length; mi2++) {
+      h += cfgRenderMovementCard(di2, mi2, jd2.movements[mi2], jd2.jobTypeCode);
+    }
+    h += '<button class="btn btn-s btn-sm" style="width:100%;margin-top:6px" onclick="cfgAddMovement(' + di2 + ')">+ Add Movement Leg</button>';
     h += '</div></div>';
   }
+
   return h;
 }
 
@@ -6434,7 +6749,7 @@ function cfgBuildMatrix() {
 
     var rowCls = 'avail-row' + (isActive ? ' chosen' : '');
 
-    h += '<div class="' + rowCls + '" id="avrow-' + ds + '" onclick="cfgMatrixSelectDate(\'' + ds + '\')">';
+    h += '<div class="' + rowCls + '" id="avrow-' + ds + '" onclick="cfgSelectDate(\'' + ds + '\')">';
     h += '<div class="avail-date-cell">';
     h += '<span>' + d.getDate() + ' ' + MONTHS[d.getMonth()];
     // Show assignment badges
@@ -6723,24 +7038,39 @@ function cfgAvailSummary(date) {
 }
 
 function cfgCollectMovements() {
+  // Collect duration/scheduling options (also on this stage)
+  var mdEl = el('cfg-multiday');   if (mdEl) CFG.isMultiDay = mdEl.checked;
+  var ndEl = el('cfg-numdays');    if (ndEl) CFG.numDays = parseInt(ndEl.value) || 2;
+  var onEl = el('cfg-overnight');  if (onEl) CFG.hasOvernight = onEl.checked;
+  var nnEl = el('cfg-numnights');  if (nnEl) CFG.numNights = parseInt(nnEl.value) || 1;
+  var naEl = el('cfg-nightallow'); if (naEl) CFG.overnightAllowance = parseFloat(naEl.value) || 65;
+  var wkEl = el('cfg-weekend');    if (wkEl) CFG.weekendWorking = wkEl.checked;
+  var ljEl = el('cfg-linkjourney'); if (ljEl) CFG.linkJourney = ljEl.checked;
+  var jsEl = el('cfg-journeysel'); if (jsEl && jsEl.value) CFG.journeyId = jsEl.value === '_new' ? null : jsEl.value;
+  // Manual date input (single day)
+  if (!CFG.isMultiDay) {
+    var sdEl = el('cfg-startdate');
+    if (sdEl && sdEl.value) { CFG.startDate = sdEl.value; if (!CFG.selectedDates) CFG.selectedDates = []; CFG.selectedDates[0] = sdEl.value; }
+  }
+
+  // Collect volume from per-job inputs (jvol-N)
   for (var di = 0; di < CFG.jobDefs.length; di++) {
     var jd = CFG.jobDefs[di];
+    var volEl0 = el('jvol-' + di);
+    if (volEl0 && jd.movements.length > 0) {
+      var mv0 = jd.movements[0];
+      if (mv0.volUnit === 'cbm') mv0.volCbm = volEl0.value;
+      else mv0.volFt = volEl0.value;
+    }
+    // Collect movement-level fields
     for (var mi = 0; mi < jd.movements.length; mi++) {
       var mv = jd.movements[mi];
-      mv.date        = (el('mv-date-'   + di + '-' + mi) || {}).value || mv.date;
       mv.origin      = (el('mv-origin-' + di + '-' + mi) || {}).value || mv.origin;
       mv.destination = (el('mv-dest-'   + di + '-' + mi) || {}).value || mv.destination;
-      var volEl = el('mv-vol-' + di + '-' + mi);
-      if (volEl) {
-        if (mv.volUnit === 'cbm') mv.volCbm = volEl.value;
-        else mv.volFt = volEl.value;
-      }
       var notesEl = el('mv-notes-' + di + '-' + mi);
       if (notesEl) mv.notes = notesEl.value;
-      // warehouse-in auto-fill destination
-      if (mv.mode === 'warehouse-in') {
-        mv.destination = APP_SETTINGS.warehouseAddress || 'Our Warehouse';
-      }
+      if (mv.mode === 'warehouse-in')  mv.destination = APP_SETTINGS.warehouseAddress || 'Our Warehouse';
+      if (mv.mode === 'warehouse-out') mv.origin      = APP_SETTINGS.warehouseAddress || 'Our Warehouse';
     }
   }
 }
