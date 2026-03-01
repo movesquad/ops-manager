@@ -1396,6 +1396,7 @@ textarea.fi{resize:vertical;min-height:60px}
           <button class="stab" id="stab-mm" onclick="setStab('mm',this)">Move Managers</button>
           <button class="stab" id="stab-comms" onclick="setStab('comms',this)">Company / Comms</button>
           <button class="stab" id="stab-costing" onclick="setStab('costing',this)">Cost of Sale &amp; Maps</button>
+          <button class="stab" id="stab-company" onclick="setStab('company',this)">🏢 Branding &amp; Email</button>
         </div>
         <div class="settings-body" id="settings-body"></div>
       </div>
@@ -2950,6 +2951,74 @@ function renderSettings() {
   else if (curStab === 'mm')        renderSettingsMM();
   else if (curStab === 'comms')     renderSettingsComms();
   else if (curStab === 'costing')   renderSettingsCosting();
+  else if (curStab === 'company')   renderSettingsCompany();
+}
+
+function renderSettingsCompany() {
+  var s = APP_SETTINGS;
+  var h = '<div style="max-width:680px">';
+  h += '<div class="settings-card">';
+  h += '<div class="sc-head"><div><div class="sc-title">🏢 Company Branding &amp; Email</div>';
+  h += '<div class="sc-sub">Used in all outgoing emails, documents and share messages. Update here when you rebrand — changes apply everywhere instantly.</div></div>';
+  h += '<button class="btn btn-p btn-sm" onclick="saveCompanySettings()">Save changes</button></div>';
+
+  var fields = [
+    { key:'companyName',      label:'Company Name',         placeholder:'e.g. Onwards',                    hint:'Appears in email headers and signatures' },
+    { key:'companyTagline',   label:'Tagline',              placeholder:'e.g. Professional Moving Services',hint:'Shown under company name in emails' },
+    { key:'companyEmail',     label:'From Email Address',   placeholder:'updates@onwards.network',          hint:'Must be a verified sender mailbox in Microsoft 365' },
+    { key:'emailReplyTo',     label:'Reply-To Address',     placeholder:'updates@onwards.network',          hint:'Where replies land — can be a group or shared mailbox' },
+    { key:'companyPhone',     label:'Phone Number',         placeholder:'e.g. 01234 567890',               hint:'Shown in email footer' },
+    { key:'companyWebsite',   label:'Website',              placeholder:'onwards.network',                  hint:'Shown in email footer' },
+    { key:'companyAddress',   label:'Registered Address',   placeholder:'e.g. 1 The Street, Wigan, WN1 1AA',hint:'Shown in email footer' },
+    { key:'emailFooter',      label:'Email Footer Text',    placeholder:'e.g. Registered in England & Wales',hint:'Legal / company registration line' },
+    { key:'emailAccentColor', label:'Email Accent Colour',  placeholder:'#0073EA',                         hint:'Header bar colour in HTML emails', type:'color' },
+  ];
+
+  fields.forEach(function(f) {
+    h += '<div style="display:grid;grid-template-columns:180px 1fr;gap:12px;align-items:start;padding:12px 0;border-bottom:1px solid var(--s2)">';
+    h += '<div><div style="font-size:12.5px;font-weight:700;color:var(--t1)">' + f.label + '</div>';
+    h += '<div style="font-size:11px;color:var(--t3);margin-top:2px">' + f.hint + '</div></div>';
+    if (f.type === 'color') {
+      h += '<div style="display:flex;align-items:center;gap:8px"><input type="color" id="cs-'+f.key+'" value="'+(s[f.key]||'#0073EA')+'" style="width:40px;height:32px;border:1px solid var(--b1);border-radius:6px;cursor:pointer;padding:2px">';
+      h += '<input class="sc-input" id="cs-'+f.key+'-txt" value="'+esc(s[f.key]||'')+'" placeholder="'+f.placeholder+'" style="max-width:120px" oninput="document.getElementById(\'cs-'+f.key+'\').value=this.value"></div>';
+    } else {
+      h += '<input class="sc-input" id="cs-'+f.key+'" value="'+esc(s[f.key]||'')+'" placeholder="'+f.placeholder+'">';
+    }
+    h += '</div>';
+  });
+
+  h += '<div style="padding-top:16px">';
+  h += '<button class="btn btn-s btn-sm" onclick="sendTestEmail()">📧 Send test email to myself</button>';
+  h += '<span style="font-size:11px;color:var(--t3);margin-left:10px">Sends a sample branded email to your logged-in account</span>';
+  h += '</div>';
+  h += '</div></div>';
+  setH('settings-body', h);
+}
+
+function saveCompanySettings() {
+  var keys = ['companyName','companyTagline','companyEmail','emailReplyTo','companyPhone','companyWebsite','companyAddress','emailFooter','emailAccentColor'];
+  keys.forEach(function(k) {
+    var el2 = el('cs-'+k);
+    if (el2) APP_SETTINGS[k] = el2.value.trim();
+  });
+  toast('Branding & email settings saved');
+  saveData('settings');
+}
+
+async function sendTestEmail() {
+  var userEmail = window._authEmail || '';
+  if (!userEmail) { toast('No logged-in user email found — sign in with Microsoft first'); return; }
+  toast('Sending test email…');
+  var html = buildEmailHtml({
+    subject: 'Test Email — ' + (APP_SETTINGS.companyName||'Onwards'),
+    preheader: 'This is a test of your branded email template.',
+    bodyHtml: '<p>Hi,</p><p>This is a test email from the Ops Manager application confirming your email settings are working correctly.</p><p>From address: <strong>' + esc(APP_SETTINGS.companyEmail||'updates@onwards.network') + '</strong></p><p>If you received this, everything is configured correctly! 🎉</p>',
+    ctaUrl: '',
+    ctaLabel: ''
+  });
+  var res = await sendEmail({ to: userEmail, subject: 'Test Email — ' + (APP_SETTINGS.companyName||'Onwards'), html });
+  if (res.ok) toast('✅ Test email sent to ' + userEmail);
+  else toast('❌ Failed: ' + (res.error||'Unknown error'));
 }
 
 function renderSettingsCrew() {
@@ -4678,6 +4747,16 @@ var APP_SETTINGS = {
   cosPerCrewPerDay: 125,           // £ generic COS per crew member per day
   returnMileage:    true,          // Auto-add return-to-warehouse leg
   fuelPricePerLitre:1.49,         // Pence per litre (for reference / display)
+  // ── Company / Branding (rebrand-ready) ──────────────────────────────
+  companyName:      'MoveSquad',
+  companyTagline:   'Professional Moving Services',
+  companyEmail:     'updates@onwards.network',
+  companyPhone:     '',
+  companyWebsite:   'onwards.network',
+  companyAddress:   '',
+  emailReplyTo:     'updates@onwards.network',
+  emailFooter:      'MoveSquad Group, Registered in England & Wales',
+  emailAccentColor: '#0073EA',
 };
 var WAREHOUSES = [
   { id: 'WH1', name: 'Main Warehouse', address: 'WN7 3EQ', isDefault: true }
@@ -12006,6 +12085,125 @@ function whSelectOptions(selectedId) {
 </div>
 
 <script>
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EMAIL — GRAPH API SEND + BRANDED HTML TEMPLATE
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function sendEmail(opts) {
+  // opts: { to, cc, subject, html, text, replyTo }
+  try {
+    var res = await fetch('/api/email', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to:      opts.to,
+        cc:      opts.cc || null,
+        subject: opts.subject,
+        html:    opts.html || null,
+        text:    opts.text || null,
+        replyTo: opts.replyTo || APP_SETTINGS.emailReplyTo || null
+      })
+    });
+    var data = await res.json();
+    return data.ok ? { ok: true } : { ok: false, error: data.error || 'Send failed' };
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+function buildEmailHtml(opts) {
+  // opts: { subject, preheader, bodyHtml, ctaUrl, ctaLabel, footerExtra }
+  var s        = APP_SETTINGS;
+  var company  = s.companyName      || 'Onwards';
+  var tagline  = s.companyTagline   || 'Professional Moving Services';
+  var phone    = s.companyPhone     || '';
+  var website  = s.companyWebsite   || 'onwards.network';
+  var address  = s.companyAddress   || '';
+  var footer   = s.emailFooter      || '';
+  var accent   = s.emailAccentColor || '#0073EA';
+  var preheader = opts.preheader    || '';
+  var ctaBlock  = '';
+  if (opts.ctaUrl && opts.ctaLabel) {
+    ctaBlock = '<div style="text-align:center;margin:32px 0"><a href="' + opts.ctaUrl + '" style="display:inline-block;background:' + accent + ';color:#fff;font-family:DM Sans,Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;padding:14px 32px;border-radius:8px;text-decoration:none;letter-spacing:0.2px">' + opts.ctaLabel + '</a></div>';
+  }
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(opts.subject) + '</title></head>'
+  + '<body style="margin:0;padding:0;background:#f4f6f9;font-family:DM Sans,Helvetica,Arial,sans-serif">'
+  + (preheader ? '<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f4f6f9">' + esc(preheader) + '</div>' : '')
+  + '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:32px 16px">'
+  + '<tr><td align="center">'
+  + '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px">'
+  // Header
+  + '<tr><td style="background:' + accent + ';border-radius:12px 12px 0 0;padding:28px 40px">'
+  + '<div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.3px">' + esc(company) + '</div>'
+  + '<div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:3px">' + esc(tagline) + '</div>'
+  + '</td></tr>'
+  // Body
+  + '<tr><td style="background:#ffffff;padding:40px;border-left:1px solid #e8eaed;border-right:1px solid #e8eaed">'
+  + '<div style="color:#1a1a2e;font-size:15px;line-height:1.7">'
+  + opts.bodyHtml
+  + '</div>'
+  + ctaBlock
+  + '</td></tr>'
+  // Footer
+  + '<tr><td style="background:#f8f9fb;border:1px solid #e8eaed;border-top:none;border-radius:0 0 12px 12px;padding:24px 40px">'
+  + '<div style="color:#6b7280;font-size:12px;line-height:1.6">'
+  + (phone ? '<span>' + esc(phone) + '</span> &nbsp;|&nbsp; ' : '')
+  + (website ? '<a href="https://' + esc(website) + '" style="color:' + accent + ';text-decoration:none">' + esc(website) + '</a>' : '')
+  + (address ? '<br>' + esc(address) : '')
+  + (footer ? '<br><span style="color:#9ca3af">' + esc(footer) + '</span>' : '')
+  + (opts.footerExtra ? '<br>' + opts.footerExtra : '')
+  + '</div></td></tr>'
+  + '</table></td></tr></table></html>';
+}
+
+// ── SHARE FOLDER EMAIL ────────────────────────────────────────────────────
+async function spSendShareEmail(cjId, linkUrl, expiryStr, overrideTo, overrideSubject) {
+  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
+  if (!cj) return;
+  var mm      = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
+  var mmEmail = mm ? (mm.email||'') : '';
+  var toEmail = overrideTo || mmEmail;
+  if (!toEmail) { toast('No email address for move manager — add one in Settings → Move Managers'); return; }
+
+  var clientName  = cj.clientName   || '—';
+  var partnerRef  = cj.partnerRef   || cj.clientRef || '—';
+  var ourRef      = cj.masterJobId  || '—';
+  var brand       = cj.brand        || '—';
+  var mmName      = mm ? mm.name : (cj.moveManager||'Move Manager');
+  var subject = overrideSubject || ('Documents: ' + partnerRef + ' / ' + ourRef + ' — ' + clientName);
+
+  var bodyHtml = '<p>Dear ' + esc(mmName) + ',</p>'
+    + '<p>Please find the documentation folder for the following move below. You can access all job documents, upload files and track progress using the link provided.</p>'
+    + '<table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px">'
+    + '<tr style="background:#f8f9fb"><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;width:160px;color:#374151">Client</td><td style="padding:10px 14px;border:1px solid #e8eaed;color:#1a1a2e">' + esc(clientName) + '</td></tr>'
+    + '<tr><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;color:#374151">Your Reference</td><td style="padding:10px 14px;border:1px solid #e8eaed;color:#1a1a2e">' + esc(partnerRef) + '</td></tr>'
+    + '<tr style="background:#f8f9fb"><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;color:#374151">Our Reference</td><td style="padding:10px 14px;border:1px solid #e8eaed;color:#1a1a2e">' + esc(ourRef) + '</td></tr>'
+    + '<tr><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;color:#374151">Brand</td><td style="padding:10px 14px;border:1px solid #e8eaed;color:#1a1a2e">' + esc(brand) + '</td></tr>'
+    + '<tr style="background:#f8f9fb"><td style="padding:10px 14px;border:1px solid #e8eaed;font-weight:600;color:#374151">Move Manager</td><td style="padding:10px 14px;border:1px solid #e8eaed;color:#1a1a2e">' + esc(mmName) + '</td></tr>'
+    + '</table>'
+    + '<p style="color:#6b7280;font-size:13px">The folder link expires on <strong>' + esc(expiryStr) + '</strong> and is view-only. Please contact us if you need to upload documents directly.</p>'
+    + '<p>If you have any questions please reply to this email.</p>'
+    + '<p>Kind regards,<br><strong>' + esc(APP_SETTINGS.companyName||'Onwards') + ' Operations</strong></p>';
+
+  var html = buildEmailHtml({
+    subject,
+    preheader: 'Documents available for ' + clientName + ' (' + partnerRef + ')',
+    bodyHtml,
+    ctaUrl:   linkUrl,
+    ctaLabel: '📁 View Document Folder'
+  });
+
+  toast('Sending email…');
+  var res = await sendEmail({ to: toEmail, subject, html, replyTo: APP_SETTINGS.emailReplyTo });
+  if (res.ok) {
+    toast('✅ Email sent to ' + toEmail);
+  } else {
+    toast('❌ Email failed: ' + (res.error||'Unknown error'));
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // SHAREPOINT + APPENATE — FULL INTEGRATION
 // ═══════════════════════════════════════════════════════════════════════════
@@ -12236,12 +12434,19 @@ async function spCreateFolder(cjId) {
   // Create all 8 sub-folders using parent folder ID (avoids encoding issues with special chars)
   var subFolders = SP_CHECKLIST.map(function(item){ return item.folder; });
   var parentFolderId = topRes.id;
+  console.log('Creating sub-folders, parentFolderId:', parentFolderId, 'siteId:', sd.siteId, 'driveId:', sd.driveId);
+  var failedFolders = [];
   for (var i = 0; i < subFolders.length; i++) {
-    await spCall('createFolderById', {
+    var sfRes = await spCall('createFolderById', {
       siteId: sd.siteId, driveId: sd.driveId,
       parentId: parentFolderId,
       folderName: subFolders[i]
     });
+    console.log('Sub-folder', subFolders[i], ':', sfRes.id ? 'OK' : 'FAILED', sfRes.error || '');
+    if (!sfRes.id) failedFolders.push(subFolders[i]);
+  }
+  if (failedFolders.length) {
+    toast('⚠ Top folder created but ' + failedFolders.length + ' sub-folders failed: ' + failedFolders[0] + '... — check browser console');
   }
 
   // Store folder details on client record
@@ -12394,8 +12599,13 @@ async function spShareFolder(cjId) {
     itemId:  cj.spFolderId
   });
 
+  console.log('Share link response:', res);
   var linkUrl = res.link && res.link.webUrl ? res.link.webUrl : '';
-  if (!linkUrl) { toast('Could not generate share link'); return; }
+  if (!linkUrl) {
+    var errDetail = res.error || JSON.stringify(res);
+    toast('Could not generate share link: ' + errDetail);
+    return;
+  }
 
   // Calculate expiry
   var expiry = new Date();
@@ -12420,10 +12630,10 @@ async function spShareFolder(cjId) {
     + 'If you have any questions please reply to this email.\n\n'
     + 'Kind regards\nMoveSquad Operations';
 
-  spShowShareModal(subject, body, linkUrl, mmEmail, expiryStr);
+  spShowShareModal(cjId, subject, body, linkUrl, mmEmail, expiryStr);
 }
 
-function spShowShareModal(subject, body, linkUrl, toEmail, expiryStr) {
+function spShowShareModal(cjId, subject, body, linkUrl, toEmail, expiryStr) {
   var existing = document.getElementById('sp-share-modal');
   if (existing) existing.remove();
 
@@ -12435,16 +12645,25 @@ function spShowShareModal(subject, body, linkUrl, toEmail, expiryStr) {
     + '<div style="font-size:15px;font-weight:700;color:#1A2035">🔗 Share Document Folder</div>'
     + '<button onclick="document.getElementById(\'sp-share-modal\').remove()" style="width:28px;height:28px;border-radius:6px;border:1px solid #E3E7F0;background:#f5f5f5;cursor:pointer;font-size:16px">✕</button>'
     + '</div>'
+    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">To</div>'
+    + '<input id="sp-sh-to" value="'+esc(toEmail||'')+'" placeholder="recipient@email.com" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:12px;box-sizing:border-box;font-family:inherit">'
     + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">Subject</div>'
     + '<input id="sp-sh-subj" value="'+esc(subject)+'" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:12px;box-sizing:border-box;font-family:inherit">'
-    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">Message</div>'
-    + '<textarea id="sp-sh-body" rows="12" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:12px;resize:vertical;box-sizing:border-box;font-family:monospace;line-height:1.5">'+esc(body)+'</textarea>'
+    + '<div style="font-size:10.5px;color:#7A849E;margin-bottom:12px">📧 A fully branded HTML email will be sent from <strong>' + esc(APP_SETTINGS.companyEmail||'updates@onwards.network') + '</strong></div>'
     + '<div style="font-size:10.5px;color:#7A849E;margin-top:6px">⏰ Link expires '+esc(expiryStr)+' — view only, no sign-in required</div>'
     + '<div style="display:flex;gap:8px;margin-top:16px">'
-    + '<button onclick="navigator.clipboard.writeText(document.getElementById(\'sp-sh-body\').value);toast(\'Copied to clipboard\')" style="flex:1;padding:10px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;font-weight:600;cursor:pointer">📋 Copy Message</button>'
-    + (toEmail ? '<a href="mailto:'+esc(toEmail)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body)+'" style="flex:2;padding:10px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center">✉️ Open in Email</a>' : '')
+    + '<button onclick="navigator.clipboard.writeText(\''+linkUrl.replace(/'/g,"\\'")+'\'  );toast(\'Link copied to clipboard\')" style="flex:1;padding:10px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;font-weight:600;cursor:pointer">📋 Copy Link</button>'
+    + '<button onclick="spSendShareEmailFromModal(\''+cjId+'\',\''+linkUrl.replace(/'/g,"\\'")+'\'  ,\''+expiryStr.replace(/'/g,"\\'")+'\'  )" style="flex:2;padding:10px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer">📧 Send Branded Email</button>'
     + '</div></div>';
   document.body.appendChild(modal);
+}
+
+async function spSendShareEmailFromModal(cjId, linkUrl, expiryStr) {
+  var toEmail   = (document.getElementById('sp-sh-to')   || {}).value || '';
+  var subject   = (document.getElementById('sp-sh-subj') || {}).value || '';
+  if (!toEmail) { toast('Please enter a recipient email address'); return; }
+  document.getElementById('sp-share-modal').remove();
+  await spSendShareEmail(cjId, linkUrl, expiryStr, toEmail, subject);
 }
 
 // ── SEND TO CREW (Appenate) ───────────────────────────────────────────────
