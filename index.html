@@ -4848,7 +4848,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v46 — 1 Mar 2026';
+var APP_VERSION = 'v47 — 2 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -11809,18 +11809,43 @@ function dvShowCrewPicker() {
     h += '<div style="font-size:11px;color:#7A849E">' + esc(c.role) + ' &middot; ' + esc(emailStr) + '</div></div>';
     h += '</div>';
   }
-  h += '<button onclick="closeModal()" style="width:100%;margin-top:8px;background:none;border:1px solid #E3E7F0;border-radius:8px;padding:10px;font-size:13px;color:#7A849E;cursor:pointer">Cancel</button>';
+  h += '<button onclick="dvCloseCrewPicker()" style="width:100%;margin-top:8px;background:none;border:1px solid #E3E7F0;border-radius:8px;padding:10px;font-size:13px;color:#7A849E;cursor:pointer">Cancel</button>';
   h += '</div>';
-  showGenericModal(h, '');
+  // Show as inline modal
+  var existing = document.getElementById('dv-crew-picker-modal');
+  if (existing) existing.parentNode.removeChild(existing);
+  var backdrop = document.createElement('div');
+  backdrop.id = 'dv-crew-picker-modal';
+  backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;display:flex;align-items:center;justify-content:center';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:14px;width:380px;max-width:95vw;max-height:85vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.25)';
+  box.innerHTML = h;
+  backdrop.appendChild(box);
+  backdrop.addEventListener('click', function(e){ if(e.target===backdrop) backdrop.parentNode.removeChild(backdrop); });
+  document.body.appendChild(backdrop);
+}
+
+function dvCloseCrewPicker() {
+  var m = document.getElementById('dv-crew-picker-modal');
+  if (m) m.parentNode.removeChild(m);
 }
 
 function dvPreviewAs(idx) {
-  closeModal();
+  dvCloseCrewPicker();
   var c = _dvPickerCrew[idx];
   if (!c) return;
   window._driverName = c.name;
   window._isDriverView = true;
-  activateDriverView();
+  // Skip SOD for preview mode - go straight to today view
+  var key = 'sod:' + d2s(new Date()) + ':' + c.name;
+  _dvSodDone[key] = true;
+  var sb = document.querySelector('.sidebar');
+  var mn = document.querySelector('.main');
+  if (sb) sb.style.display = 'none';
+  if (mn) mn.style.display = 'none';
+  el('driver-view').style.display = 'block';
+  dvShowScreen('dv-screen-today');
+  renderDriverView();
 }
 
 function dvExitCrewView() {
@@ -11831,6 +11856,7 @@ function dvExitCrewView() {
   var mn = document.querySelector('.main');
   if (sb) sb.style.display = '';
   if (mn) mn.style.display = '';
+  renderActiveMod();
 }
 
 function checkDriverLock() {
@@ -11953,9 +11979,12 @@ function activateDriverView() {
   document.addEventListener('keydown', function(e) {
     if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I')) e.preventDefault();
   });
-  // Check if SOD already done today
-  var key = d2s(new Date()) + ':' + (window._driverName || '');
-  if (_dvSodDone[key]) {
+  // Check SOD - persist in localStorage so it survives page reloads
+  var key = 'sod:' + d2s(new Date()) + ':' + (window._driverName || '');
+  var sodDone = _dvSodDone[key] || localStorage.getItem(key) === '1';
+  if (sodDone) {
+    _dvSodDone[key] = true;
+    try { localStorage.setItem(key, '1'); } catch(e) {}
     dvShowScreen('dv-screen-today');
     renderDriverView();
   } else {
