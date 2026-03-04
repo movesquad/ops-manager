@@ -4860,7 +4860,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v51 — 4 Mar 2026';
+var APP_VERSION = 'v52 — 4 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -13202,23 +13202,23 @@ var INV_ROOMS = [
 ];
 
 var INV_PACK_TYPES = [
-  {id:'EW',  label:'Export Wrapped'},
-  {id:'C2',  label:'Carton 2 cu.ft'},
-  {id:'C4',  label:'Carton 4 cu.ft'},
-  {id:'C6',  label:'Carton 6 cu.ft'},
-  {id:'WC',  label:'Wardrobe Carton'},
-  {id:'BC',  label:'Book Carton'},
-  {id:'LF',  label:'Layflat Carton'},
-  {id:'OP',  label:'Original Packaging'},
-  {id:'CR',  label:'Crated'},
-  {id:'OC',  label:'Over-Carded'},
-  {id:'MB',  label:'Mattress Bag'},
-  {id:'BW',  label:'Blanket Wrapped'},
-  {id:'AW',  label:'Artwork Carton'},
-  {id:'GC',  label:'Golf Carton'},
-  {id:'TV',  label:'TV Carton'},
-  {id:'BB',  label:'Bits Box'},
-  {id:'BKB', label:'Bike Box'},
+  {id:'BW',  label:'Blanket Wrapped',   icon:'🛋'},
+  {id:'EW',  label:'Export Wrapped',    icon:'📦'},
+  {id:'C2',  label:'Carton 2 cu.ft',   icon:'📫'},
+  {id:'C4',  label:'Carton 4 cu.ft',   icon:'📦'},
+  {id:'C6',  label:'Carton 6 cu.ft',   icon:'🗳'},
+  {id:'WC',  label:'Wardrobe Carton',   icon:'👔'},
+  {id:'BC',  label:'Book Carton',       icon:'📚'},
+  {id:'LF',  label:'Layflat Carton',    icon:'🗂'},
+  {id:'MB',  label:'Mattress Bag',      icon:'🛏'},
+  {id:'TV',  label:'TV Carton',         icon:'📺'},
+  {id:'AW',  label:'Artwork Carton',    icon:'🖼'},
+  {id:'CR',  label:'Crated',            icon:'🪵'},
+  {id:'OP',  label:'Original Packaging',icon:'🏷'},
+  {id:'OC',  label:'Over-Carded',       icon:'📋'},
+  {id:'GC',  label:'Golf Carton',       icon:'⛳'},
+  {id:'BB',  label:'Bits Box',          icon:'🔧'},
+  {id:'BKB', label:'Bike Box',          icon:'🚲'},
 ];
 
 var INV_PACK_AI_HINTS = [
@@ -13329,121 +13329,151 @@ var INV_DAMAGE_CODES = [
 ];
 
 var ISO_ITEMS = [
-  {code:'BED001',category:'Bedroom',     name:'Bed, single/twin frame',          cuft:35, cbm:0.99},
-  {code:'BED002',category:'Bedroom',     name:'Bed, double frame',               cuft:45, cbm:1.27},
-  {code:'BED003',category:'Bedroom',     name:'Bed, queen frame',                cuft:55, cbm:1.56},
-  {code:'BED004',category:'Bedroom',     name:'Bed, king frame',                 cuft:65, cbm:1.84},
-  {code:'BED005',category:'Bedroom',     name:'Mattress, single',                cuft:25, cbm:0.71},
-  {code:'BED006',category:'Bedroom',     name:'Mattress, double',                cuft:35, cbm:0.99},
-  {code:'BED007',category:'Bedroom',     name:'Mattress, queen',                 cuft:40, cbm:1.13},
-  {code:'BED008',category:'Bedroom',     name:'Mattress, king',                  cuft:50, cbm:1.42},
-  {code:'BED009',category:'Bedroom',     name:'Wardrobe, single',                cuft:35, cbm:0.99},
-  {code:'BED010',category:'Bedroom',     name:'Wardrobe, double',                cuft:52, cbm:1.47},
-  {code:'BED011',category:'Bedroom',     name:'Wardrobe, triple',                cuft:75, cbm:2.12},
-  {code:'BED012',category:'Bedroom',     name:'Chest of drawers, small',         cuft:15, cbm:0.42},
-  {code:'BED013',category:'Bedroom',     name:'Chest of drawers, medium',        cuft:20, cbm:0.57},
-  {code:'BED014',category:'Bedroom',     name:'Chest of drawers, large',         cuft:28, cbm:0.79},
-  {code:'BED015',category:'Bedroom',     name:'Dressing table',                  cuft:20, cbm:0.57},
-  {code:'BED016',category:'Bedroom',     name:'Dressing table stool',            cuft:5,  cbm:0.14},
-  {code:'BED017',category:'Bedroom',     name:'Bedside table / cabinet',         cuft:5,  cbm:0.14},
-  {code:'BED018',category:'Bedroom',     name:'Tallboy / highboy',               cuft:30, cbm:0.85},
-  {code:'BED019',category:'Bedroom',     name:'Ottoman / blanket box',           cuft:10, cbm:0.28},
-  {code:'BED020',category:'Bedroom',     name:'Cot / baby crib',                 cuft:20, cbm:0.57},
-  {code:'BED021',category:'Bedroom',     name:'Bunk bed',                        cuft:60, cbm:1.70},
-  {code:'LVG001',category:'Living Room', name:'Sofa, 2-seater',                  cuft:40, cbm:1.13},
-  {code:'LVG002',category:'Living Room', name:'Sofa, 3-seater',                  cuft:55, cbm:1.56},
-  {code:'LVG003',category:'Living Room', name:'Sofa, corner/L-shape',            cuft:90, cbm:2.55},
-  {code:'LVG004',category:'Living Room', name:'Sofa bed, 2-seater',              cuft:55, cbm:1.56},
-  {code:'LVG005',category:'Living Room', name:'Sofa bed, 3-seater',              cuft:70, cbm:1.98},
-  {code:'LVG006',category:'Living Room', name:'Armchair',                        cuft:15, cbm:0.42},
-  {code:'LVG007',category:'Living Room', name:'Armchair, recliner',              cuft:20, cbm:0.57},
-  {code:'LVG008',category:'Living Room', name:'Footstool / pouffe',              cuft:5,  cbm:0.14},
-  {code:'LVG009',category:'Living Room', name:'Coffee table, small',             cuft:8,  cbm:0.23},
-  {code:'LVG010',category:'Living Room', name:'Coffee table, medium',            cuft:12, cbm:0.34},
-  {code:'LVG011',category:'Living Room', name:'Coffee table, large/glass',       cuft:18, cbm:0.51},
-  {code:'LVG012',category:'Living Room', name:'TV unit / media stand',           cuft:15, cbm:0.42},
-  {code:'LVG013',category:'Living Room', name:'Bookcase, small',                 cuft:15, cbm:0.42},
-  {code:'LVG014',category:'Living Room', name:'Bookcase, medium',                cuft:25, cbm:0.71},
-  {code:'LVG015',category:'Living Room', name:'Bookcase, large',                 cuft:40, cbm:1.13},
-  {code:'LVG016',category:'Living Room', name:'Display cabinet / unit',          cuft:30, cbm:0.85},
-  {code:'LVG017',category:'Living Room', name:'Sideboard / buffet, small',       cuft:20, cbm:0.57},
-  {code:'LVG018',category:'Living Room', name:'Sideboard / buffet, large',       cuft:35, cbm:0.99},
-  {code:'LVG019',category:'Living Room', name:'TV, up to 42 inch',               cuft:8,  cbm:0.23},
-  {code:'LVG020',category:'Living Room', name:'TV, 43-65 inch',                  cuft:15, cbm:0.42},
-  {code:'LVG021',category:'Living Room', name:'TV, 66 inch and above',           cuft:25, cbm:0.71},
-  {code:'LVG022',category:'Living Room', name:'Floor lamp',                      cuft:5,  cbm:0.14},
-  {code:'LVG023',category:'Living Room', name:'Table lamp',                      cuft:3,  cbm:0.08},
-  {code:'LVG024',category:'Living Room', name:'Fireplace surround',              cuft:25, cbm:0.71},
-  {code:'LVG025',category:'Living Room', name:'Piano, upright',                  cuft:90, cbm:2.55},
-  {code:'LVG026',category:'Living Room', name:'Piano, grand',                    cuft:180,cbm:5.10},
-  {code:'DIN001',category:'Dining Room', name:'Dining table, small (4-seat)',    cuft:15, cbm:0.42},
-  {code:'DIN002',category:'Dining Room', name:'Dining table, medium (6-seat)',   cuft:20, cbm:0.57},
-  {code:'DIN003',category:'Dining Room', name:'Dining table, large (8+ seat)',   cuft:30, cbm:0.85},
-  {code:'DIN004',category:'Dining Room', name:'Dining table, extending',         cuft:25, cbm:0.71},
-  {code:'DIN005',category:'Dining Room', name:'Dining chair',                    cuft:5,  cbm:0.14},
-  {code:'DIN006',category:'Dining Room', name:'Carver / armchair dining',        cuft:7,  cbm:0.20},
-  {code:'DIN007',category:'Dining Room', name:'Dresser / hutch, small',          cuft:35, cbm:0.99},
-  {code:'DIN008',category:'Dining Room', name:'Dresser / hutch, large',          cuft:55, cbm:1.56},
-  {code:'DIN009',category:'Dining Room', name:'Bar stool',                       cuft:5,  cbm:0.14},
-  {code:'DIN010',category:'Dining Room', name:'Bar / drinks cabinet',            cuft:20, cbm:0.57},
-  {code:'DIN011',category:'Dining Room', name:'China cabinet / vitrine',         cuft:30, cbm:0.85},
-  {code:'KIT001',category:'Kitchen',     name:'Fridge, under-counter',           cuft:15, cbm:0.42},
-  {code:'KIT002',category:'Kitchen',     name:'Fridge, tall single door',        cuft:25, cbm:0.71},
-  {code:'KIT003',category:'Kitchen',     name:'Fridge freezer, double door',     cuft:35, cbm:0.99},
-  {code:'KIT004',category:'Kitchen',     name:'American fridge freezer',         cuft:50, cbm:1.42},
-  {code:'KIT005',category:'Kitchen',     name:'Freezer, chest',                  cuft:25, cbm:0.71},
-  {code:'KIT006',category:'Kitchen',     name:'Freezer, upright',                cuft:25, cbm:0.71},
-  {code:'KIT007',category:'Kitchen',     name:'Washing machine',                 cuft:20, cbm:0.57},
-  {code:'KIT008',category:'Kitchen',     name:'Tumble dryer',                    cuft:20, cbm:0.57},
-  {code:'KIT009',category:'Kitchen',     name:'Washer-dryer combined',           cuft:20, cbm:0.57},
-  {code:'KIT010',category:'Kitchen',     name:'Dishwasher',                      cuft:20, cbm:0.57},
-  {code:'KIT011',category:'Kitchen',     name:'Cooker / range, standard',        cuft:20, cbm:0.57},
-  {code:'KIT012',category:'Kitchen',     name:'Range cooker, large',             cuft:35, cbm:0.99},
-  {code:'KIT013',category:'Kitchen',     name:'Microwave',                       cuft:5,  cbm:0.14},
-  {code:'KIT014',category:'Kitchen',     name:'Kitchen table, small',            cuft:12, cbm:0.34},
-  {code:'KIT015',category:'Kitchen',     name:'Kitchen chair',                   cuft:4,  cbm:0.11},
-  {code:'KIT016',category:'Kitchen',     name:'Kitchen island / breakfast bar',  cuft:30, cbm:0.85},
-  {code:'OFF001',category:'Study',       name:'Desk, small',                     cuft:20, cbm:0.57},
-  {code:'OFF002',category:'Study',       name:'Desk, large / corner',            cuft:40, cbm:1.13},
-  {code:'OFF003',category:'Study',       name:'Office chair',                    cuft:10, cbm:0.28},
-  {code:'OFF004',category:'Study',       name:'Filing cabinet, 2-drawer',        cuft:12, cbm:0.34},
-  {code:'OFF005',category:'Study',       name:'Filing cabinet, 4-drawer',        cuft:22, cbm:0.62},
-  {code:'OFF006',category:'Study',       name:'Printer / copier, desktop',       cuft:5,  cbm:0.14},
-  {code:'OFF007',category:'Study',       name:'Computer tower / desktop',        cuft:5,  cbm:0.14},
-  {code:'OFF008',category:'Study',       name:'Monitor, desktop',                cuft:5,  cbm:0.14},
-  {code:'OFF009',category:'Study',       name:'Laptop',                          cuft:2,  cbm:0.06},
-  {code:'HAL001',category:'Hallway',     name:'Hall table / console table',      cuft:10, cbm:0.28},
-  {code:'HAL002',category:'Hallway',     name:'Hat stand / coat rack',           cuft:5,  cbm:0.14},
-  {code:'HAL003',category:'Hallway',     name:'Shoe cabinet / rack',             cuft:8,  cbm:0.23},
-  {code:'HAL004',category:'Hallway',     name:'Mirror, large',                   cuft:10, cbm:0.28},
-  {code:'HAL005',category:'Hallway',     name:'Storage bench',                   cuft:10, cbm:0.28},
-  {code:'GAR001',category:'Garage/Shed', name:'Bicycle',                         cuft:15, cbm:0.42},
-  {code:'GAR002',category:'Garage/Shed', name:'Bicycle, electric / heavy',       cuft:20, cbm:0.57},
-  {code:'GAR003',category:'Garage/Shed', name:'Lawnmower, push',                 cuft:12, cbm:0.34},
-  {code:'GAR004',category:'Garage/Shed', name:'Lawnmower, ride-on',              cuft:40, cbm:1.13},
-  {code:'GAR005',category:'Garage/Shed', name:'Workbench',                       cuft:30, cbm:0.85},
-  {code:'GAR006',category:'Garage/Shed', name:'Tool chest / cabinet',            cuft:20, cbm:0.57},
-  {code:'GAR007',category:'Garage/Shed', name:'Shelving unit, metal',            cuft:20, cbm:0.57},
-  {code:'GAR008',category:'Garage/Shed', name:'Trampoline',                      cuft:25, cbm:0.71},
-  {code:'GAR009',category:'Garage/Shed', name:'Barbecue / grill',                cuft:15, cbm:0.42},
-  {code:'GAR010',category:'Garage/Shed', name:'Garden bench',                    cuft:15, cbm:0.42},
-  {code:'GAR011',category:'Garage/Shed', name:'Garden table',                    cuft:15, cbm:0.42},
-  {code:'GAR012',category:'Garage/Shed', name:'Garden chair',                    cuft:5,  cbm:0.14},
-  {code:'GEN001',category:'General',     name:'Carton, general (4 cuft)',        cuft:4,  cbm:0.11},
-  {code:'GEN002',category:'General',     name:'Carton, small (2 cuft)',          cuft:2,  cbm:0.06},
-  {code:'GEN003',category:'General',     name:'Carton, large (6 cuft)',          cuft:6,  cbm:0.17},
-  {code:'GEN004',category:'General',     name:'Carton, wardrobe',                cuft:12, cbm:0.34},
-  {code:'GEN005',category:'General',     name:'Carton, artwork / picture',       cuft:5,  cbm:0.14},
-  {code:'GEN006',category:'General',     name:'Suitcase, small',                 cuft:3,  cbm:0.08},
-  {code:'GEN007',category:'General',     name:'Suitcase, large',                 cuft:6,  cbm:0.17},
-  {code:'GEN008',category:'General',     name:'Safe, small',                     cuft:5,  cbm:0.14},
-  {code:'GEN009',category:'General',     name:'Safe, large floor',               cuft:20, cbm:0.57},
-  {code:'GEN010',category:'General',     name:'Exercise equipment, large',       cuft:40, cbm:1.13},
-  {code:'GEN011',category:'General',     name:'Golf bag and clubs',              cuft:10, cbm:0.28},
-  {code:'GEN012',category:'General',     name:'Musical instrument, guitar',      cuft:8,  cbm:0.23},
-  {code:'GEN013',category:'General',     name:'Artwork / painting, large framed',cuft:8,  cbm:0.23},
-  {code:'GEN014',category:'General',     name:'Rug, large',                      cuft:8,  cbm:0.23},
-  {code:'GEN015',category:'General',     name:'Plant, large potted',             cuft:5,  cbm:0.14},
+  {code:'MX001',category:'Mirror/picture',name:'Mirror / Picture',room:'Living Room',cuft:8,cbm:0.23},
+  {code:'IF001',category:'Indoor Furniture',name:'Bed Parts',room:'Living Room',cuft:10,cbm:0.28},
+  {code:'IF002',category:'Indoor Furniture',name:'Bedding / Linens',room:'Living Room',cuft:5,cbm:0.14},
+  {code:'CI001',category:'Clothing Items',name:"Women's Clothes",room:'Bedroom 1',cuft:3,cbm:0.08},
+  {code:'BK001',category:'Books',name:'Books (carton)',room:'Study/Office',cuft:4,cbm:0.11},
+  {code:'GN001',category:'General',name:'Box (general)',room:'General',cuft:4,cbm:0.11},
+  {code:'IF003',category:'Indoor Furniture',name:'Dining Chair',room:'Living Room',cuft:5,cbm:0.14},
+  {code:'SC001',category:'Storage & Carriage',name:'Case / Crate / Bin',room:'Hallway',cuft:4,cbm:0.11},
+  {code:'CI002',category:'Clothing Items',name:"Men's Clothes",room:'Bedroom 1',cuft:3,cbm:0.08},
+  {code:'KI001',category:'Kitchen',name:'Glassware',room:'Kitchen',cuft:3,cbm:0.08},
+  {code:'GN002',category:'General',name:'Bag (general)',room:'Hallway',cuft:3,cbm:0.08},
+  {code:'GN003',category:'General',name:'Crate',room:'General',cuft:6,cbm:0.17},
+  {code:'CH001',category:"Children's",name:'Baby Toys',room:'Bedroom 1',cuft:4,cbm:0.11},
+  {code:'IF004',category:'Indoor Furniture',name:'Chest of Drawers',room:'Bedroom 1',cuft:20,cbm:0.57},
+  {code:'BK002',category:'Books',name:'Books',room:'Study/Office',cuft:4,cbm:0.11},
+  {code:'IF005',category:'Indoor Furniture',name:'Bedside / Night Table',room:'Bedroom 1',cuft:5,cbm:0.14},
+  {code:'CI003',category:'Clothing Items',name:'Shoes',room:'Bedroom 1',cuft:2,cbm:0.06},
+  {code:'BE001',category:'Bedding',name:'Pillow',room:'Bedroom 1',cuft:2,cbm:0.06},
+  {code:'IF006',category:'Indoor Furniture',name:'Stool',room:'Living Room',cuft:5,cbm:0.14},
+  {code:'SC002',category:'Storage & Carriage',name:'Luggage',room:'Hallway',cuft:4,cbm:0.11},
+  {code:'KI002',category:'Kitchen',name:'Pots and Pans',room:'Kitchen',cuft:4,cbm:0.11},
+  {code:'IF007',category:'Indoor Furniture',name:'Table (other)',room:'Living Room',cuft:15,cbm:0.42},
+  {code:'EE001',category:'Electronics',name:'Computer Monitor',room:'Study/Office',cuft:5,cbm:0.14},
+  {code:'SP001',category:'Sports & Fitness',name:'Exercise Weights',room:'Garage',cuft:8,cbm:0.23},
+  {code:'IF008',category:'Indoor Furniture',name:'Sofa, 2-seater',room:'Living Room',cuft:40,cbm:1.13},
+  {code:'CI004',category:'Clothing Items',name:'Professional Clothes',room:'Bedroom 1',cuft:3,cbm:0.08},
+  {code:'FL001',category:'Floor Covering',name:'Rug',room:'Living Room',cuft:8,cbm:0.23},
+  {code:'CT001',category:'Cartons',name:'Mirror / Picture Carton',room:'General',cuft:5,cbm:0.14},
+  {code:'DC001',category:'Decoration',name:'Decoration (general)',room:'Living Room',cuft:3,cbm:0.08},
+  {code:'IF009',category:'Indoor Furniture',name:'Stand (general)',room:'Living Room',cuft:5,cbm:0.14},
+  {code:'IF010',category:'Indoor Furniture',name:'Bookcase',room:'Living Room',cuft:25,cbm:0.71},
+  {code:'KI003',category:'Kitchen',name:'Dishes / Plates',room:'Kitchen',cuft:3,cbm:0.08},
+  {code:'EE002',category:'Electronics',name:'Television (flat screen)',room:'Living Room',cuft:12,cbm:0.34},
+  {code:'IF011',category:'Indoor Furniture',name:'Clothes Drying Rack',room:'Living Room',cuft:8,cbm:0.23},
+  {code:'IF012',category:'Indoor Furniture',name:'Armchair',room:'Living Room',cuft:15,cbm:0.42},
+  {code:'GN004',category:'General',name:'Parts / Bits Box',room:'General',cuft:3,cbm:0.08},
+  {code:'DC002',category:'Decoration',name:'Christmas Decorations',room:'Living Room',cuft:3,cbm:0.08},
+  {code:'GA001',category:'Garage & Garden',name:'Bicycle',room:'Garage',cuft:15,cbm:0.42},
+  {code:'BE002',category:'Bedding',name:'Mattress, single',room:'Bedroom 1',cuft:25,cbm:0.71},
+  {code:'IF013',category:'Indoor Furniture',name:'Cabinet',room:'Living Room',cuft:20,cbm:0.57},
+  {code:'IF014',category:'Indoor Furniture',name:"Director's Chair",room:'Living Room',cuft:5,cbm:0.14},
+  {code:'IF015',category:'Indoor Furniture',name:'Headboard, double',room:'Bedroom 1',cuft:12,cbm:0.34},
+  {code:'CI005',category:'Clothing Items',name:'Clothes Hangers',room:'Bedroom 1',cuft:2,cbm:0.06},
+  {code:'KI004',category:'Kitchen',name:'Plates / Dishes',room:'Kitchen',cuft:3,cbm:0.08},
+  {code:'EE003',category:'Electronics',name:'Television',room:'Living Room',cuft:12,cbm:0.34},
+  {code:'HA001',category:'Appliances',name:'Vacuum Cleaner',room:'Hallway',cuft:8,cbm:0.23},
+  {code:'GN005',category:'General',name:'Files / Documents',room:'General',cuft:3,cbm:0.08},
+  {code:'KI005',category:'Kitchen',name:'Cups / Mugs',room:'Kitchen',cuft:2,cbm:0.06},
+  {code:'IF016',category:'Indoor Furniture',name:'Wardrobe',room:'Bedroom 1',cuft:52,cbm:1.47},
+  {code:'BA001',category:'Bathroom',name:'Toiletries / Cosmetics',room:'Bathroom',cuft:3,cbm:0.08},
+  {code:'IF017',category:'Indoor Furniture',name:'Chest of Drawers, 3-drawer',room:'Bedroom 1',cuft:20,cbm:0.57},
+  {code:'IF018',category:'Indoor Furniture',name:'Sofa, corner / L-shape',room:'Living Room',cuft:90,cbm:2.55},
+  {code:'IF019',category:'Indoor Furniture',name:'Chest of Drawers, 4-drawer',room:'Bedroom 1',cuft:25,cbm:0.71},
+  {code:'IF020',category:'Indoor Furniture',name:'Bar Stool',room:'Kitchen',cuft:5,cbm:0.14},
+  {code:'IF021',category:'Indoor Furniture',name:'Bed Frame, double',room:'Bedroom 1',cuft:45,cbm:1.27},
+  {code:'EE004',category:'Electronics',name:'Cables and Wires',room:'General',cuft:2,cbm:0.06},
+  {code:'IF022',category:'Indoor Furniture',name:'Shoe Rack',room:'Hallway',cuft:8,cbm:0.23},
+  {code:'CI006',category:'Clothing Items',name:"Children's Clothes",room:'Bedroom 1',cuft:3,cbm:0.08},
+  {code:'HA002',category:'Appliances',name:'Floor Lamp',room:'Living Room',cuft:5,cbm:0.14},
+  {code:'HA003',category:'Appliances',name:'Ironing Board',room:'Utility',cuft:8,cbm:0.23},
+  {code:'BE003',category:'Bedding',name:'Mattress, double',room:'Bedroom 1',cuft:35,cbm:0.99},
+  {code:'IF023',category:'Indoor Furniture',name:'Sofa, 3-seater',room:'Living Room',cuft:55,cbm:1.56},
+  {code:'EE005',category:'Electronics',name:'Speaker / Loudspeaker',room:'Living Room',cuft:8,cbm:0.23},
+  {code:'IF024',category:'Indoor Furniture',name:'Bookshelf, wall unit',room:'Living Room',cuft:35,cbm:0.99},
+  {code:'CI007',category:'Clothing Items',name:'Coat Rack',room:'Hallway',cuft:5,cbm:0.14},
+  {code:'IF025',category:'Indoor Furniture',name:'Toy Chest',room:'Bedroom 1',cuft:8,cbm:0.23},
+  {code:'IF026',category:'Indoor Furniture',name:'Tea Trolley / Cart',room:'Kitchen',cuft:8,cbm:0.23},
+  {code:'IF027',category:'Indoor Furniture',name:'Trunk / Storage Chest',room:'Hallway',cuft:12,cbm:0.34},
+  {code:'IF028',category:'Indoor Furniture',name:'Wall Shelf',room:'Living Room',cuft:8,cbm:0.23},
+  {code:'CT002',category:'Cartons',name:'Carton, large (6 cu.ft)',room:'General',cuft:6,cbm:0.17},
+  {code:'DC003',category:'Decoration',name:'Mirror (wall)',room:'Living Room',cuft:8,cbm:0.23},
+  {code:'IF029',category:'Indoor Furniture',name:'Folding Chair',room:'General',cuft:3,cbm:0.08},
+  {code:'EE006',category:'Electronics',name:'TV, flat screen LCD',room:'Living Room',cuft:12,cbm:0.34},
+  {code:'HA004',category:'Appliances',name:'Lamp (boxed)',room:'General',cuft:5,cbm:0.14},
+  {code:'BE004',category:'Bedding',name:'Blanket / Duvet',room:'Bedroom 1',cuft:3,cbm:0.08},
+  {code:'IF030',category:'Indoor Furniture',name:'Glass Top Table',room:'Living Room',cuft:18,cbm:0.51},
+  {code:'HA005',category:'Appliances',name:'Blender',room:'Kitchen',cuft:3,cbm:0.08},
+  {code:'DC004',category:'Decoration',name:'Christmas Tree',room:'Living Room',cuft:5,cbm:0.14},
+  {code:'CT003',category:'Cartons',name:'Carton, 2 cu.ft',room:'General',cuft:2,cbm:0.06},
+  {code:'HA006',category:'Appliances',name:'Lamp Shade',room:'General',cuft:3,cbm:0.08},
+  {code:'HA007',category:'Appliances',name:'Kettle',room:'Kitchen',cuft:2,cbm:0.06},
+  {code:'CH002',category:"Children's",name:'Pushchair / Stroller',room:'Hallway',cuft:8,cbm:0.23},
+  {code:'IF031',category:'Indoor Furniture',name:'Standing Desk',room:'Study/Office',cuft:30,cbm:0.85},
+  {code:'HA008',category:'Appliances',name:'Slow Cooker',room:'Kitchen',cuft:3,cbm:0.08},
+  {code:'IF032',category:'Indoor Furniture',name:'Coffee Table',room:'Living Room',cuft:12,cbm:0.34},
+  {code:'IF033',category:'Indoor Furniture',name:'Dining Table',room:'Living Room',cuft:20,cbm:0.57},
+  {code:'EE007',category:'Electronics',name:'Printer',room:'Study/Office',cuft:5,cbm:0.14},
+  {code:'MI001',category:'Musical Instruments',name:'Guitar, acoustic',room:'Living Room',cuft:8,cbm:0.23},
+  {code:'EE008',category:'Electronics',name:'DVD / Media',room:'Living Room',cuft:2,cbm:0.06},
+  {code:'IF034',category:'Indoor Furniture',name:'Futon Bed',room:'Bedroom 1',cuft:40,cbm:1.13},
+  {code:'HA009',category:'Appliances',name:'Toaster',room:'Kitchen',cuft:2,cbm:0.06},
+  {code:'IF035',category:'Indoor Furniture',name:'Wall Unit / Shelving System',room:'Living Room',cuft:35,cbm:0.99},
+  {code:'HA010',category:'Appliances',name:'Fridge / Refrigerator',room:'Kitchen',cuft:35,cbm:0.99},
+  {code:'IF036',category:'Indoor Furniture',name:'Beanbag Chair',room:'Living Room',cuft:10,cbm:0.28},
+  {code:'SP002',category:'Sports & Fitness',name:'Exercise Bike',room:'Garage',cuft:20,cbm:0.57},
+  {code:'IF037',category:'Indoor Furniture',name:'Bunk Bed',room:'Bedroom 1',cuft:60,cbm:1.70},
+  {code:'BE005',category:'Bedding',name:'Mattress, king',room:'Bedroom 1',cuft:50,cbm:1.42},
+  {code:'IF038',category:'Indoor Furniture',name:'Bookshelf, wooden',room:'Living Room',cuft:25,cbm:0.71},
+  {code:'IF039',category:'Indoor Furniture',name:'Bed Frame, single',room:'Bedroom 1',cuft:35,cbm:0.99},
+  {code:'IF040',category:'Indoor Furniture',name:'Mirror Stand',room:'Bedroom 1',cuft:8,cbm:0.23},
+  {code:'SP003',category:'Sports & Fitness',name:'Golf Bag with Clubs',room:'Garage',cuft:10,cbm:0.28},
+  {code:'HA011',category:'Appliances',name:'Fridge Freezer',room:'Kitchen',cuft:40,cbm:1.13},
+  {code:'BE006',category:'Bedding',name:'Mattress, queen',room:'Bedroom 1',cuft:40,cbm:1.13},
+  {code:'BE007',category:'Bedding',name:'Mattress, memory foam',room:'Bedroom 1',cuft:35,cbm:0.99},
+  {code:'CH003',category:"Children's",name:'Cot / Crib',room:'Bedroom 1',cuft:20,cbm:0.57},
+  {code:'MI002',category:'Musical Instruments',name:'Guitar, bass',room:'Living Room',cuft:8,cbm:0.23},
+  {code:'IF041',category:'Indoor Furniture',name:'Bed Frame, queen',room:'Bedroom 1',cuft:55,cbm:1.56},
+  {code:'HA012',category:'Appliances',name:'Chest Freezer',room:'Kitchen',cuft:25,cbm:0.71},
+  {code:'EE009',category:'Electronics',name:'PS5 / Game Console',room:'Living Room',cuft:3,cbm:0.08},
+  {code:'IF042',category:'Indoor Furniture',name:'Bed Frame, king',room:'Bedroom 1',cuft:65,cbm:1.84},
+  {code:'EE010',category:'Electronics',name:'Xbox / Game Console',room:'Living Room',cuft:3,cbm:0.08},
+  {code:'MI003',category:'Musical Instruments',name:'Electric Piano',room:'Living Room',cuft:20,cbm:0.57},
+  {code:'GA002',category:'Garage & Garden',name:'Gas BBQ',room:'Garage',cuft:15,cbm:0.42},
+  {code:'CT004',category:'Cartons',name:'Carton, 3 cu.ft',room:'General',cuft:3,cbm:0.08},
+  {code:'CT005',category:'Cartons',name:'Carton, small (2 cu.ft)',room:'General',cuft:2,cbm:0.06},
+  {code:'HA013',category:'Appliances',name:'Steam Cleaner',room:'Utility',cuft:8,cbm:0.23},
+  {code:'SP004',category:'Sports & Fitness',name:'Treadmill',room:'Garage',cuft:40,cbm:1.13},
+  {code:'GA003',category:'Garage & Garden',name:'Wheelbarrow',room:'Garage',cuft:8,cbm:0.23},
+  {code:'SP005',category:'Sports & Fitness',name:'Rowing Machine',room:'Garage',cuft:25,cbm:0.71},
+  {code:'IF043',category:'Indoor Furniture',name:'Portable / Travel Bed',room:'Bedroom 1',cuft:10,cbm:0.28},
+  {code:'HA014',category:'Appliances',name:'Washing Machine',room:'Utility',cuft:20,cbm:0.57},
+  {code:'HA015',category:'Appliances',name:'Tumble Dryer',room:'Utility',cuft:20,cbm:0.57},
+  {code:'HA016',category:'Appliances',name:'Dishwasher',room:'Kitchen',cuft:20,cbm:0.57},
+  {code:'HA017',category:'Appliances',name:'Oven / Cooker',room:'Kitchen',cuft:20,cbm:0.57},
+  {code:'HA018',category:'Appliances',name:'Microwave',room:'Kitchen',cuft:5,cbm:0.14},
+  {code:'EE011',category:'Electronics',name:'Desktop Computer',room:'Study/Office',cuft:5,cbm:0.14},
+  {code:'EE012',category:'Electronics',name:'Laptop',room:'Study/Office',cuft:2,cbm:0.06},
+  {code:'IF044',category:'Indoor Furniture',name:'Office Chair',room:'Study/Office',cuft:10,cbm:0.28},
+  {code:'IF045',category:'Indoor Furniture',name:'Desk',room:'Study/Office',cuft:25,cbm:0.71},
+  {code:'IF046',category:'Indoor Furniture',name:'Filing Cabinet',room:'Study/Office',cuft:15,cbm:0.42},
+  {code:'DC005',category:'Decoration',name:'Painting / Artwork',room:'Living Room',cuft:5,cbm:0.14},
+  {code:'DC006',category:'Decoration',name:'Curtains / Blinds',room:'Living Room',cuft:3,cbm:0.08},
+  {code:'FL002',category:'Floor Covering',name:'Carpet',room:'Living Room',cuft:15,cbm:0.42},
+  {code:'GA004',category:'Garage & Garden',name:'Lawnmower',room:'Garage',cuft:12,cbm:0.34},
+  {code:'GA005',category:'Garage & Garden',name:'Garden Tools',room:'Garage',cuft:6,cbm:0.17},
+  {code:'GA006',category:'Garage & Garden',name:'Garden Table',room:'Garage',cuft:12,cbm:0.34},
+  {code:'GA007',category:'Garage & Garden',name:'Garden Chair',room:'Garage',cuft:5,cbm:0.14},
+  {code:'SP006',category:'Sports & Fitness',name:'Trampoline',room:'Garage',cuft:25,cbm:0.71},
+  {code:'CT006',category:'Cartons',name:'Wardrobe Carton',room:'General',cuft:12,cbm:0.34},
+  {code:'CT007',category:'Cartons',name:'Book Carton',room:'General',cuft:4,cbm:0.11},
+  {code:'CT008',category:'Cartons',name:'TV Carton',room:'General',cuft:8,cbm:0.23},
+  {code:'IF047',category:'Indoor Furniture',name:'Sofa, 4-seater',room:'Living Room',cuft:70,cbm:1.98},
+  {code:'IF048',category:'Indoor Furniture',name:'Sofa Bed',room:'Living Room',cuft:65,cbm:1.84},
+  {code:'IF049',category:'Indoor Furniture',name:'Dining Table, large (6-8 seat)',room:'Living Room',cuft:30,cbm:0.85},
+  {code:'IF050',category:'Indoor Furniture',name:'Dresser / Dressing Table',room:'Bedroom 1',cuft:20,cbm:0.57},
 ];
 
 // ── ISO FUZZY SEARCH ──────────────────────────────────────────────────
@@ -13807,7 +13837,7 @@ function invRenderAddForm(jobId) {
     nameSection += '<div><div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(d.pieceName) + '</div>';
     nameSection += '<div style="font-size:11px;color:#00A86B;margin-top:2px">✓ ' + esc(d.isoMatch.name) + ' · ' + d.isoMatch.cuft + ' cu.ft</div></div>';
     nameSection += '<span style="font-size:11px;color:#7A849E">Edit ▾</span></div>';
-  } else if (d.pieceName && window._invExpanded_name === false) {
+  } else if (d.pieceName && !window._invExpanded_name) {
     nameSection += '<div onclick="window._invExpanded_name=true;invRenderAddForm(\'' + jobId + '\')" ' +
       'style="background:#FFF5E0;border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;cursor:pointer">';
     nameSection += '<div><div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(d.pieceName) + '</div>';
@@ -13849,7 +13879,9 @@ function invRenderAddForm(jobId) {
   h += nameSection;
 
   // ── 2. PHOTO + AI (collapses after use) ───────────────────────────
-  var photoExpanded = !_invPhotoB64 || !!window._invExpanded_photo;
+  // Photo section hides once: (a) photo taken, or (b) name is typed and confirmed
+  var nameConfirmed = !!(d.pieceName && (d.isoMatch || !window._invExpanded_name));
+  var photoExpanded = (!_invPhotoB64 && !nameConfirmed) || !!window._invExpanded_photo;
   var photoSection = '';
   if (_invPhotoB64 && !photoExpanded) {
     // Collapsed — show thumb + AI result
@@ -13871,8 +13903,7 @@ function invRenderAddForm(jobId) {
     } else {
       photoSection += '<div style="display:flex;gap:8px;margin-bottom:10px">';
       photoSection += '<input id="inv-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="invPhotoSelected(this,\'' + jobId + '\')">';
-      photoSection += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#EBF4FF;border:2px dashed #0073EA;border-radius:10px;padding:14px 10px;cursor:pointer;color:#0073EA;font-weight:700;font-size:13px">📷 Take Photo<br><span style="font-size:11px;font-weight:400;opacity:.7">AI will identify item</span></button>';
-      photoSection += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#F7F6F2;border:2px dashed #C8C5BE;border-radius:10px;padding:14px 10px;cursor:pointer;color:#7A849E;font-weight:700;font-size:13px">🖼 Choose Photo</button>';
+      photoSection += '<button onclick="el(\'inv-photo-input\').click()" style="width:100%;background:#EBF4FF;border:2px dashed #0073EA;border-radius:10px;padding:16px 10px;cursor:pointer;color:#0073EA;font-weight:700;font-size:14px">📷 Take Photo<br><span style="font-size:11px;font-weight:400;opacity:.7">AI will identify the item automatically</span></button>';
       photoSection += '</div>';
     }
     if (_invAiLoading) {
@@ -13896,13 +13927,28 @@ function invRenderAddForm(jobId) {
   // ── 4. PACK TYPE ──────────────────────────────────────────────────
   var ptObj = d.packType ? INV_PACK_TYPES.filter(function(p){return p.id===d.packType;})[0] : null;
   var ptLabel = ptObj ? ptObj.label : '';
-  var ptInner = invSelectGrid(INV_PACK_TYPES.map(function(p){return p.label;}), ptLabel, 'invSetPackType', 2);
-  addSection(!!ptLabel, invSection('Pack Type', ptLabel||null, '_invExpanded_invSetPackType',
+  var ptConfirmed = !!(d.packTypeConfirmed && ptLabel);
+  // Show pack type icons grid
+  var ptInner = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px">';
+  INV_PACK_TYPES.forEach(function(p, i) {
+    var active = p.id === d.packType;
+    var suggested = p.id === d.packType && !d.packTypeConfirmed;
+    var border = suggested ? '#FF9F1A' : (active ? '#0073EA' : '#E3E7F0');
+    var bg     = suggested ? '#FFF8EE' : (active ? '#EBF4FF' : 'transparent');
+    var col    = suggested ? '#9A5600' : (active ? '#0073EA' : '#4A5568');
+    ptInner += '<div onclick="invSetPackType(' + i + ')" style="padding:9px 8px;border-radius:8px;border:2px solid ' + border + ';background:' + bg + ';cursor:pointer;text-align:center;font-size:12px;font-weight:' + (active?'700':'500') + ';color:' + col + '">' + esc(p.icon ? p.icon + ' ' : '') + esc(p.label) + (suggested ? '<div style="font-size:9px;margin-top:2px;color:#FF9F1A">AI suggestion — tap to confirm</div>' : '') + '</div>';
+  });
+  ptInner += '</div>';
+  if (d.packType && !d.packTypeConfirmed) {
+    ptInner += '<div style="margin-top:8px;background:#FFF8EE;border-radius:8px;padding:8px 12px;font-size:12px;color:#9A5600">⚠ AI suggested <strong>' + esc(ptLabel) + '</strong> — tap to confirm or choose another</div>';
+  }
+  addSection(ptConfirmed, invSection('Pack Type', ptConfirmed ? ptLabel : null, '_invExpanded_invSetPackType',
     'invRenderAddForm(\'' + jobId + '\')', ptInner));
 
   // ── 5. PIECE SPECIFICS ────────────────────────────────────────────
   var specsSelected = d.pieceSpecifics && d.pieceSpecifics.length && !(d.pieceSpecifics.length===1 && d.pieceSpecifics[0]==='none');
-  var specsDone = d.pieceSpecifics && (d.pieceSpecifics[0]==='none' || specsSelected);
+  // Only mark done if user has explicitly confirmed (either tapped "Done" or selected specifics)
+  var specsDone = !!d.pieceSpecificsConfirmed && d.pieceSpecifics && (d.pieceSpecifics[0]==='none' || specsSelected);
   var specSummary = d.pieceSpecifics && d.pieceSpecifics[0]==='none' ? 'No Specifics' :
     (d.pieceSpecifics||[]).filter(function(s){return s!=='none';}).map(function(s){
       var sp = INV_SPECIFICS.filter(function(x){return x.id===s;})[0];
@@ -13988,6 +14034,8 @@ function invRenderAddForm(jobId) {
     });
     if (specsDone) {
       specsSection += '<button onclick="window._invExpanded_specifics=false;invRenderAddForm(\'' + jobId + '\')" style="width:100%;margin-top:8px;background:#F7F6F2;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;color:#7A849E;cursor:pointer">Done ✓</button>';
+    } else {
+      specsSection += '<button onclick="_invDraft.pieceSpecificsConfirmed=true;window._invExpanded_specifics=false;invRenderAddForm(\'' + jobId + '\')" style="width:100%;margin-top:8px;background:#0073EA;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Confirm ✓</button>';
     }
     specsSection += '</div>';
   }
@@ -14065,11 +14113,11 @@ function invRenderAddForm(jobId) {
   }
 
   // ── SAVE BUTTON ───────────────────────────────────────────────────
-  var canSave = !!(d.pieceName && d.room && d.packType && d.packCode);
+  var canSave = !!(d.pieceName && d.room && d.packType && d.packTypeConfirmed && d.packCode);
   var missing = [];
   if (!d.pieceName) missing.push('Item name');
   if (!d.room)      missing.push('Room');
-  if (!d.packType)  missing.push('Pack type');
+  if (!d.packType || !d.packTypeConfirmed)  missing.push('Pack type (confirm selection)');
   if (!d.packCode)  missing.push('Pack code');
   if (missing.length && missing.length < 4) {
     h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#9A5600">Still needed: ' + missing.join(', ') + '</div>';
@@ -14138,15 +14186,22 @@ function invNameInput(val) {
 
 function invSelectIso(resultIdx) {
   if (!_invDraft) return;
-  var results = isoSearch(_invDraft.pieceName, 6);
+  var results = isoSearch(_invDraft.pieceName, 7);
   var item = results[resultIdx];
   if (!item) return;
   _invDraft.isoMatch   = item;
   _invDraft.pieceName  = _invDraft.pieceName || item.name;
   _invDraft.volume     = {cuft: item.cuft, cbm: item.cbm, source: 'iso'};
-  // Auto-suggest pack type from ISO category if not set
+  window._invExpanded_name = false;  // collapse name section on ISO selection
+  // Auto-fill room from ISO if not already set
+  if (!_invDraft.room && item.room) {
+    _invDraft.room = item.room;
+    window['_invExpanded_invSetRoom'] = false;
+  }
+  // Auto-suggest pack type (unconfirmed — requires user tap)
   if (!_invDraft.packType) {
     _invDraft.packType = invGuessPackType(item.name.toLowerCase());
+    _invDraft.packTypeConfirmed = false;  // needs confirmation
   }
   invRenderAddForm(_invJobId);
 }
@@ -14162,7 +14217,11 @@ function invSetRoom(idx) {
 }
 
 function invSetPackType(idx) {
-  if (_invDraft) _invDraft.packType = INV_PACK_TYPES[idx].id;
+  if (_invDraft) {
+    _invDraft.packType = INV_PACK_TYPES[idx].id;
+    _invDraft.packTypeConfirmed = true;  // user explicitly tapped = confirmed
+    window['_invExpanded_invSetPackType'] = false;
+  }
   invRenderAddForm(_invJobId);
 }
 
@@ -14177,14 +14236,15 @@ function invToggleSpecific(id) {
   if (!spec) return;
   if (spec.exclusive) {
     _invDraft.pieceSpecifics = [id];
+    // Tapping "No Specifics" = explicit confirmation, collapse immediately
+    _invDraft.pieceSpecificsConfirmed = true;
+    window._invExpanded_specifics = false;
   } else {
-    // Remove 'none' when selecting something else
     _invDraft.pieceSpecifics = _invDraft.pieceSpecifics.filter(function(x){return x!=='none';});
     var i = _invDraft.pieceSpecifics.indexOf(id);
     if (i >= 0) _invDraft.pieceSpecifics.splice(i,1);
     else _invDraft.pieceSpecifics.push(id);
     if (_invDraft.pieceSpecifics.length === 0) _invDraft.pieceSpecifics = ['none'];
-    // Handle disposal flag
     _invDraft.disposal = _invDraft.pieceSpecifics.indexOf('disposal') >= 0;
   }
   invRenderAddForm(_invJobId);
