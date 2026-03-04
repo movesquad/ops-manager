@@ -4012,6 +4012,14 @@ function viewJob(id){
 
   if(j.notes) h+='<div class="fsec"><div class="fsec-t"><i>'+(j.journeyId?7:j.storageId?6:5)+'</i>Notes</div><div style="background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:10px;font-size:12.5px;color:var(--t2);line-height:1.7">'+esc(j.notes)+'</div></div>';
 
+  // Inventory live view (if crew have started one)
+  if (j.crewData && j.crewData.inventory && j.crewData.inventory.items && j.crewData.inventory.items.length) {
+    var invNum = (j.journeyId?7:j.storageId?6:5) + (j.notes?1:0) + 1;
+    h += '<div class="fsec"><div class="fsec-t"><i>' + invNum + '</i>📋 Crew Inventory</div>';
+    h += invRenderOfficeView(j.id);
+    h += '</div>';
+  }
+
   setH('p-body',h);
   setH('p-foot','<button class="btn btn-del btn-sm" id="btn-del-job">Delete</button><button class="btn btn-s" onclick="closePanel()">Close</button><button class="btn btn-p" id="btn-edit-job">Edit</button>');
   openPanel();
@@ -4848,7 +4856,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v48 — 4 Mar 2026';
+var APP_VERSION = 'v49 — 4 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -13215,38 +13223,78 @@ var INV_PACK_AI_HINTS = [
 ];
 
 var INV_SPECIFICS = [
-  {id:'none',          label:'No Specifics',            icon:'✅', exclusive:true,  conditions:[]},
-  {id:'electrical',    label:'Electrical Item',          icon:'⚡', exclusive:false, conditions:[
-    {id:'elec_working', type:'yesno',  label:'Tested and working?'},
+  {id:'none', label:'No Specifics', icon:'✅', exclusive:true, conditions:[]},
+
+  {id:'electrical', label:'Electrical Item', icon:'⚡', exclusive:false, conditions:[
+    {id:'elec_make',    type:'text',   label:'Make / manufacturer', placeholder:'e.g. Samsung, Dyson'},
+    {id:'elec_model',   type:'text',   label:'Model number (if visible)', placeholder:'e.g. WM1400'},
+    {id:'elec_working', type:'yesno',  label:'Tested and confirmed working?'},
+    {id:'elec_pat',     type:'yesno',  label:'Valid PAT / safety certificate present?'},
     {id:'elec_cables',  type:'yesno',  label:'All cables and accessories present?'},
+    {id:'elec_damage',  type:'yesno',  label:'Any visible damage to cable or plug?'},
+    {id:'elec_note',    type:'text',   label:'Additional notes', placeholder:'e.g. remote missing, door stiff'},
   ]},
-  {id:'battery',       label:'Contains Battery',         icon:'🔋', exclusive:false, conditions:[
+
+  {id:'battery', label:'Contains Battery', icon:'🔋', exclusive:false, conditions:[
     {id:'bat_type',    type:'select', label:'Battery type',
-     options:['Standard AA/AAA','Lithium-ion — small (phone/laptop)','Lithium-ion — large (e-bike/scooter)','Lead acid','Other']},
-    {id:'bat_removed', type:'yesno',  label:'Battery removed for transit?'},
+     options:['Standard AA/AAA/C/D','Lithium-ion — small (phone, laptop, tablet)','Lithium-ion — medium (power tool)','Lithium-ion — large (e-bike, scooter, EV)','Lead acid (car, mobility)','Alkaline button cell','Other']},
+    {id:'bat_removed', type:'yesno',  label:'Battery removed / disconnected for transit?'},
+    {id:'bat_secure',  type:'yesno',  label:'Battery terminals protected against short circuit?'},
+    {id:'bat_damaged', type:'yesno',  label:'Any sign of swelling, leakage or damage to battery?'},
+    {id:'bat_hazmat',  type:'info',   label:'⚠ Large lithium batteries (e-bike/EV) may require specialist transport — flag to move manager if unsure'},
   ]},
-  {id:'dismantled',    label:'Requires Dismantling',     icon:'🔧', exclusive:false, conditions:[
-    {id:'dis_who',     type:'select', label:'Who dismantles?',
-     options:['Crew to dismantle on collection day','Owner to dismantle before collection']},
-    {id:'dis_hardware',type:'yesno',  label:'Hardware bagged and labelled?'},
+
+  {id:'dismantled', label:'Requires Dismantling', icon:'🔧', exclusive:false, conditions:[
+    {id:'dis_who',      type:'select', label:'Who will dismantle?',
+     options:['Crew to dismantle on collection day','Owner to dismantle before collection','Specialist required — flag to office']},
+    {id:'dis_tools',    type:'yesno',  label:'Standard tools sufficient (no specialist tools needed)?'},
+    {id:'dis_hardware', type:'yesno',  label:'Hardware (screws/bolts/fittings) bagged and labelled?'},
+    {id:'dis_instruct', type:'yesno',  label:'Assembly instructions available (manual or photo)?'},
+    {id:'dis_sequence', type:'text',   label:'Dismantling notes / sequence', placeholder:'e.g. Remove glass shelves first, frame in 3 sections'},
+    {id:'dis_reassemble',type:'yesno', label:'Reassembly required at destination?'},
   ]},
-  {id:'pre_dismantled',label:'Pre-Dismantled by Owner',  icon:'📦', exclusive:false, conditions:[
-    {id:'predis_parts', type:'yesno', label:'All parts present and accounted for?'},
-    {id:'predis_hw',    type:'yesno', label:'Hardware bagged by owner?'},
+
+  {id:'pre_dismantled', label:'Pre-Dismantled by Owner', icon:'📦', exclusive:false, conditions:[
+    {id:'predis_parts',  type:'yesno', label:'All parts present and accounted for?'},
+    {id:'predis_hw',     type:'yesno', label:'Hardware bagged and labelled by owner?'},
+    {id:'predis_photos', type:'info',  label:'📷 Photograph all parts laid out before packing'},
+    {id:'predis_instruct',type:'yesno',label:'Assembly instructions included?'},
+    {id:'predis_note',   type:'text',  label:'Missing parts or notes', placeholder:'e.g. 2 bolts missing from base'},
   ]},
-  {id:'foods',         label:'Contains Food / Perishables',icon:'🍎',exclusive:false,conditions:[
-    {id:'food_sealed', type:'yesno',  label:'All food items sealed?'},
-    {id:'food_frozen', type:'yesno',  label:'Contains frozen / refrigerated items?'},
+
+  {id:'foods', label:'Contains Food / Perishables', icon:'🍎', exclusive:false, conditions:[
+    {id:'food_type',    type:'select', label:'Type of food items',
+     options:['Dry goods only (tins, packets)','Refrigerated items','Frozen items','Mix of above']},
+    {id:'food_sealed',  type:'yesno',  label:'All food items sealed in containers or bags?'},
+    {id:'food_frozen',  type:'yesno',  label:'Contains frozen / refrigerated items?'},
+    {id:'food_transit', type:'select', label:'Transit time acceptable for food type?',
+     options:['Yes — same day delivery','Borderline — client aware','No — client removing food items','Unknown']},
+    {id:'food_liability',type:'yesno', label:'Client has been advised of liability for perishables during transit?'},
+    {id:'food_note',    type:'text',   label:'Notes', placeholder:'e.g. client removing frozen items separately'},
   ]},
-  {id:'high_value',    label:'High Value Item',           icon:'💎', exclusive:false, conditions:[
-    {id:'hv_value',    type:'text',   label:'Declared value (£)', placeholder:'e.g. 500'},
-    {id:'hv_insured',  type:'yesno',  label:'On insurance schedule?'},
-    {id:'hv_notice',   type:'info',   label:'⚠ Take multiple photos and a short video of this item'},
+
+  {id:'high_value', label:'High Value Item', icon:'💎', exclusive:false, conditions:[
+    {id:'hv_desc',     type:'text',   label:'Full description of item', placeholder:'e.g. Antique mahogany writing desk c.1890'},
+    {id:'hv_value',    type:'text',   label:'Declared replacement value (£)', placeholder:'e.g. 2500'},
+    {id:'hv_insured',  type:'yesno',  label:'Item specifically listed on insurance schedule?'},
+    {id:'hv_prov',     type:'yesno',  label:'Provenance / valuation certificate available?'},
+    {id:'hv_cond',     type:'select', label:'Current condition',
+     options:['Excellent — no marks','Good — minor wear','Fair — visible wear','Poor — significant wear/damage']},
+    {id:'hv_photos',   type:'info',   label:'📷 Take minimum 4 photos from all angles + close-up of any marks'},
+    {id:'hv_video',    type:'video',  label:'🎥 Record a short video walkround of item'},
+    {id:'hv_pack',     type:'select', label:'Packing method agreed with move manager?',
+     options:['Standard blanket wrap','Double-wrapped','Custom crating required','Specialist packer required']},
   ]},
-  {id:'disposal',      label:'Request Disposal',          icon:'🗑', exclusive:false, conditions:[
-    {id:'dis_confirmed',type:'yesno', label:'Client confirms disposal?'},
-    {id:'dis_reason',   type:'select',label:'Reason',
-     options:['Client request — no longer needed','Too damaged to move','Does not fit at destination','Other']},
+
+  {id:'disposal', label:'Request Disposal', icon:'🗑', exclusive:false, conditions:[
+    {id:'disp_confirmed', type:'yesno',  label:'Client verbally confirms this item is to be disposed of?'},
+    {id:'disp_signed',    type:'yesno',  label:'Client has signed / will sign disposal authorisation?'},
+    {id:'disp_reason',    type:'select', label:'Reason for disposal',
+     options:['Client request — no longer needed','Too damaged to move','Does not fit at destination','End of life','Replacing with new item','Other']},
+    {id:'disp_method',    type:'select', label:'Disposal method',
+     options:['General waste — skip/tip','Charity donation if condition allows','Recycling centre','Specialist disposal required (WEEE/hazmat)','To be confirmed by office']},
+    {id:'disp_weee',      type:'yesno',  label:'Is this an electrical item (WEEE regulations apply)?'},
+    {id:'disp_note',      type:'text',   label:'Notes', placeholder:'e.g. TV but screen smashed — WEEE disposal'},
   ]},
 ];
 
@@ -13458,7 +13506,8 @@ function dvOpenInventory(jobId) {
   dvRenderInventory(jobId);
 }
 
-function dvRenderInventory(jobId) {
+function dvRenderInventory(jobId, filter) {
+  filter = filter || 'all';   // 'all' | 'standard' | 'disposal'
   var j   = jobs.filter(function(x){return x.id===jobId;})[0];
   if (!j) return;
   if (!j.crewData)           j.crewData = {};
@@ -13467,130 +13516,117 @@ function dvRenderInventory(jobId) {
   var items = inv.items || [];
   var done  = !!inv.completedAt;
 
-  // Volume totals
+  // Volume totals (always across ALL items)
   var totalCuft = 0, totalCbm = 0, pendingVol = 0;
   items.forEach(function(it){
     if (it.volume && it.volume.cuft) { totalCuft += it.volume.cuft; totalCbm += it.volume.cbm||0; }
     else pendingVol++;
   });
+  var disposalCount = items.filter(function(it){return it.disposal;}).length;
 
-  // Disposal items
-  var disposalItems = items.filter(function(it){return it.disposal;});
+  // Filtered view
+  var viewItems = items;
+  if (filter === 'disposal')  viewItems = items.filter(function(it){return it.disposal;});
+  if (filter === 'standard')  viewItems = items.filter(function(it){return !it.disposal;});
 
   var backFn = 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')';
   var h = dvDarkHeader('Inventory', j.client + ' · ' + items.length + ' items', backFn);
-
   h += '<div style="max-width:520px;margin:0 auto;padding:12px 14px 90px">';
 
   // ── VOLUME SUMMARY BAR ─────────────────────────────────────────────
-  h += '<div style="background:#151c2c;border-radius:12px;padding:13px 16px;margin-bottom:12px;display:flex;gap:16px">';
-  h += '<div style="flex:1;text-align:center">';
-  h += '<div style="font-size:22px;font-weight:900;color:#fff">' + totalCuft.toFixed(1) + '</div>';
-  h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">cu.ft</div>';
-  h += '</div>';
-  h += '<div style="width:1px;background:rgba(255,255,255,.1)"></div>';
-  h += '<div style="flex:1;text-align:center">';
-  h += '<div style="font-size:22px;font-weight:900;color:#fff">' + totalCbm.toFixed(2) + '</div>';
-  h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">cbm</div>';
-  h += '</div>';
-  h += '<div style="width:1px;background:rgba(255,255,255,.1)"></div>';
-  h += '<div style="flex:1;text-align:center">';
-  h += '<div style="font-size:22px;font-weight:900;color:' + (pendingVol?'#FFB800':'#00C875') + '">' + items.length + '</div>';
-  h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">items</div>';
-  h += '</div>';
-  if (pendingVol) {
-    h += '<div style="width:1px;background:rgba(255,255,255,.1)"></div>';
-    h += '<div style="flex:1;text-align:center">';
-    h += '<div style="font-size:22px;font-weight:900;color:#FF9F1A">' + pendingVol + '</div>';
-    h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">no vol</div>';
+  h += '<div style="background:#151c2c;border-radius:12px;padding:13px 16px;margin-bottom:12px;display:flex;gap:0">';
+  var cols = [{val:totalCuft.toFixed(1),unit:'cu.ft'},{val:totalCbm.toFixed(2),unit:'cbm'},
+              {val:items.length,unit:'items',col:pendingVol?'#FFB800':'#fff'},
+              {val:disposalCount,unit:'disposal',col:disposalCount?'#FF9F1A':'rgba(255,255,255,.3)'}];
+  cols.forEach(function(c,i){
+    if (i) h += '<div style="width:1px;background:rgba(255,255,255,.1)"></div>';
+    h += '<div style="flex:1;text-align:center;padding:0 4px">';
+    h += '<div style="font-size:20px;font-weight:900;color:' + (c.col||'#fff') + '">' + c.val + '</div>';
+    h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">' + c.unit + '</div>';
     h += '</div>';
-  }
+  });
   h += '</div>';
 
-  // Quoted volume comparison if available
+  // Quoted volume variance
   if (j.vol) {
     var diff = totalCuft - parseFloat(j.vol);
-    var diffCol = Math.abs(diff) < 10 ? '#00C875' : diff > 0 ? '#E44258' : '#FF9F1A';
+    var diffCol = Math.abs(diff)<10?'#00C875':diff>0?'#E44258':'#FF9F1A';
     h += '<div style="background:#fff;border-radius:10px;padding:9px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">';
     h += '<div style="font-size:12px;color:#7A849E">Quoted volume</div>';
     h += '<div style="font-size:13px;font-weight:700;color:#1C2333">' + j.vol + ' cu.ft</div>';
-    h += '<div style="font-size:12px;font-weight:800;color:' + diffCol + '">';
-    h += (diff >= 0 ? '+' : '') + diff.toFixed(1) + ' cu.ft';
-    h += '</div></div>';
+    h += '<div style="font-size:12px;font-weight:800;color:' + diffCol + '">' + (diff>=0?'+':'') + diff.toFixed(1) + ' cu.ft</div>';
+    h += '</div>';
   }
 
+  // ── FILTER TABS ────────────────────────────────────────────────────
+  if (disposalCount > 0) {
+    var tabs = [{id:'all',label:'All items',count:items.length},
+                {id:'standard',label:'Standard',count:items.length-disposalCount},
+                {id:'disposal',label:'🗑 Disposal',count:disposalCount}];
+    h += '<div style="display:flex;gap:6px;margin-bottom:12px">';
+    tabs.forEach(function(t){
+      var on = filter===t.id;
+      h += '<div onclick="dvRenderInventory(\'' + jobId + '\',\'' + t.id + '\')" style="flex:1;text-align:center;padding:8px 6px;border-radius:10px;border:2px solid ' + (on?'#0073EA':'#E3E7F0') + ';background:' + (on?'#EBF4FF':'#fff') + ';cursor:pointer">';
+      h += '<div style="font-size:12px;font-weight:800;color:' + (on?'#0073EA':'#7A849E') + '">' + t.label + '</div>';
+      h += '<div style="font-size:11px;color:' + (on?'#0073EA':'#B0BEC5') + '">' + t.count + ' items</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+
+  // ── ADD BUTTON ─────────────────────────────────────────────────────
   if (!done) {
-    // ── ADD ITEM BUTTON ────────────────────────────────────────────
-    h += '<button onclick="invOpenAddForm(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px">+ Add Item</button>';
+    h += '<button onclick="invOpenAddForm(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:14px">+ Add Item</button>';
   }
 
-  // ── ITEM LIST ──────────────────────────────────────────────────────
-  if (items.length) {
-    // Group by room
+  // ── ITEM LIST (grouped by room) ────────────────────────────────────
+  if (viewItems.length) {
     var byRoom = {};
-    items.forEach(function(it){
+    viewItems.forEach(function(it){
       var r = it.room || 'Unassigned';
       if (!byRoom[r]) byRoom[r] = [];
       byRoom[r].push(it);
     });
-
-    Object.keys(byRoom).forEach(function(room) {
+    Object.keys(byRoom).forEach(function(room){
       var roomItems = byRoom[room];
       var roomVol = roomItems.reduce(function(s,it){return s+(it.volume&&it.volume.cuft?it.volume.cuft:0);},0);
       h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#7A849E;margin:12px 0 6px;display:flex;justify-content:space-between">';
-      h += '<span>' + esc(room) + ' (' + roomItems.length + ')</span>';
-      h += '<span>' + (roomVol ? roomVol.toFixed(1) + ' cu.ft' : '') + '</span>';
-      h += '</div>';
+      h += '<span>' + esc(room) + ' (' + roomItems.length + ')</span><span>' + (roomVol?roomVol.toFixed(1)+' cu.ft':'') + '</span></div>';
       h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:4px">';
-      roomItems.forEach(function(it, ri) {
+      roomItems.forEach(function(it){
         var idx = items.indexOf(it);
-        var hasPhoto    = it.photos && it.photos.length > 0;
-        var hasDmg      = it.damages && !it.damages.noDamage && it.damages.codes && it.damages.codes.length;
-        var isDisposal  = it.disposal;
-        var aiEnriched  = it.aiData && it.aiData.status === 'enriched';
-        var aiPending   = it.entryMethod === 'photo-manual';
-        var condCol     = hasDmg ? '#E44258' : '#00A86B';
-        var packType    = INV_PACK_TYPES.filter(function(p){return p.id===it.packType;})[0];
+        var packType = INV_PACK_TYPES.filter(function(p){return p.id===it.packType;})[0];
+        var hasDmg   = it.damages && !it.damages.noDamage && it.damages.codes && it.damages.codes.length;
+        var aiTag    = it.entryMethod==='photo-ai'?'enriched':it.entryMethod==='photo-manual'?'pending':null;
+        var specIcons = (it.pieceSpecifics||[]).filter(function(s){return s!=='none';}).map(function(s){
+          var sp = INV_SPECIFICS.filter(function(x){return x.id===s;})[0];
+          return sp ? sp.icon : '';
+        }).join('');
 
         h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;display:flex;align-items:center;gap:10px">';
-        // Piece number
-        h += '<div style="width:26px;height:26px;border-radius:6px;background:#F7F6F2;font-size:11px;font-weight:800;color:#7A849E;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + it.pieceNo + '</div>';
-        // Main info
+        // Piece # badge — amber for disposal
+        h += '<div style="width:26px;height:26px;border-radius:6px;background:' + (it.disposal?'#FFF5E0':'#F7F6F2') + ';font-size:11px;font-weight:800;color:' + (it.disposal?'#B07800':'#7A849E') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' + it.pieceNo + '</div>';
         h += '<div style="flex:1;min-width:0">';
-        h += '<div style="font-size:13px;font-weight:700;color:#1C2333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.pieceName||'—') + '</div>';
+        h += '<div style="font-size:13px;font-weight:700;color:#1C2333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.pieceName||'—') + (specIcons?' <span style="font-size:11px">'+specIcons+'</span>':'') + '</div>';
         h += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">';
         if (packType) h += '<span style="font-size:10px;background:#EBF4FF;color:#0073EA;padding:1px 6px;border-radius:4px;font-weight:600">' + esc(packType.label) + '</span>';
-        if (it.volume && it.volume.cuft) h += '<span style="font-size:10px;background:#F7F6F2;color:#7A849E;padding:1px 6px;border-radius:4px;font-weight:600">' + it.volume.cuft + ' cuft</span>';
-        if (hasDmg) h += '<span style="font-size:10px;background:#FFF0F0;color:#E44258;padding:1px 6px;border-radius:4px;font-weight:700">⚠ Damage</span>';
-        if (isDisposal) h += '<span style="font-size:10px;background:#FFF5E0;color:#B07800;padding:1px 6px;border-radius:4px;font-weight:700">🗑 Dispose</span>';
-        if (aiEnriched) h += '<span style="font-size:10px;background:#F0FFF4;color:#00A86B;padding:1px 6px;border-radius:4px;font-weight:700">✦ AI</span>';
-        if (aiPending)  h += '<span style="font-size:10px;background:#FFFBE6;color:#B07800;padding:1px 6px;border-radius:4px;font-weight:700">⏳ AI pending</span>';
+        if (it.volume&&it.volume.cuft) h += '<span style="font-size:10px;background:#F7F6F2;color:#7A849E;padding:1px 6px;border-radius:4px;font-weight:600">' + it.volume.cuft + ' cuft</span>';
+        if (hasDmg)    h += '<span style="font-size:10px;background:#FFF0F0;color:#E44258;padding:1px 6px;border-radius:4px;font-weight:700">⚠ ' + it.damages.codes.map(function(c){return c.code;}).join(',') + '</span>';
+        if (it.disposal) h += '<span style="font-size:10px;background:#FFF5E0;color:#B07800;padding:1px 6px;border-radius:4px;font-weight:700">🗑 Dispose</span>';
+        if (aiTag==='enriched') h += '<span style="font-size:10px;background:#F0FFF4;color:#00A86B;padding:1px 6px;border-radius:4px;font-weight:700">✦ AI</span>';
+        if (aiTag==='pending')  h += '<span style="font-size:10px;background:#FFFBE6;color:#B07800;padding:1px 6px;border-radius:4px;font-weight:700">⏳ AI pending</span>';
         h += '</div></div>';
-        // Photo thumb
-        if (hasPhoto) h += '<img src="' + it.photos[0] + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0">';
-        // Edit / delete
-        if (!done) {
-          h += '<button onclick="invDeleteItem(\'' + jobId + '\',' + idx + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
-        }
+        if (it.photos&&it.photos.length) h += '<img src="' + it.photos[0] + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0">';
+        if (!done) h += '<button onclick="invDeleteItem(\'' + jobId + '\',' + idx + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
         h += '</div>';
       });
       h += '</div>';
     });
-  } else if (!done) {
+  } else {
     h += '<div style="text-align:center;padding:40px 20px;color:#7A849E">';
-    h += '<div style="font-size:40px;margin-bottom:12px">📋</div>';
-    h += '<div style="font-size:15px;font-weight:700;color:#1C2333;margin-bottom:6px">No items yet</div>';
-    h += '<div style="font-size:13px">Tap + Add Item to start recording inventory</div>';
-    h += '</div>';
-  }
-
-  // ── DISPOSAL LIST ──────────────────────────────────────────────────
-  if (disposalItems.length) {
-    h += '<div style="background:#FFF5E0;border:1px solid #FFE082;border-radius:12px;padding:13px 14px;margin-top:14px">';
-    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#B07800;margin-bottom:8px">🗑 DISPOSAL LIST (' + disposalItems.length + ' items)</div>';
-    disposalItems.forEach(function(it){
-      h += '<div style="font-size:13px;font-weight:600;color:#7A5200;padding:4px 0;border-bottom:1px solid #FFE08255">#' + it.pieceNo + ' ' + esc(it.pieceName) + '</div>';
-    });
+    h += filter==='disposal'
+      ? '<div style="font-size:13px">No disposal items</div>'
+      : '<div style="font-size:40px;margin-bottom:12px">📋</div><div style="font-size:15px;font-weight:700;color:#1C2333;margin-bottom:6px">No items yet</div><div style="font-size:13px">Tap + Add Item to start</div>';
     h += '</div>';
   }
 
@@ -13598,17 +13634,22 @@ function dvRenderInventory(jobId) {
   if (!done && items.length > 0) {
     h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-top:16px">';
     h += '<div style="font-size:13px;font-weight:800;color:#1C2333;margin-bottom:12px">Sign & Complete Inventory</div>';
-    h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Crew Signature</div>';
-    h += '<canvas id="inv-crew-sig" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
-    h += '<button onclick="dvClearCanvas(\'inv-crew-sig\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
-    h += '<div style="margin-bottom:14px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Client Signature</div>';
-    h += '<canvas id="inv-client-sig" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
-    h += '<button onclick="dvClearCanvas(\'inv-client-sig\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
+    ['Crew','Client'].forEach(function(who){
+      var cid = 'inv-' + who.toLowerCase() + '-sig';
+      h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">' + who + ' Signature</div>';
+      h += '<canvas id="' + cid + '" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
+      h += '<button onclick="dvClearCanvas(\'' + cid + '\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
+    });
     h += '<button onclick="dvCompleteInventory(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer">✓ Sign & Complete Inventory</button>';
     h += '</div>';
   }
   if (done) {
-    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Completed ' + fmtNice(inv.completedAt.slice(0,10)) + ' · ' + items.length + ' items · ' + totalCuft.toFixed(1) + ' cu.ft</div>';
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-top:14px">';
+    h += '<div style="font-size:13px;font-weight:700;color:#00A86B">✓ Completed · ' + items.length + ' items · ' + totalCuft.toFixed(1) + ' cu.ft</div>';
+    // Show office + client view buttons when complete
+    h += '<div style="display:flex;gap:8px;margin-top:10px">';
+    h += '<button onclick="invShowClientView(\'' + jobId + '\')" style="flex:1;background:#0073EA;color:#fff;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:700;cursor:pointer">📋 Client Summary</button>';
+    h += '</div></div>';
   }
   h += '</div>';
 
@@ -13621,7 +13662,7 @@ function dvRenderInventory(jobId) {
   }
 }
 
-// ── ADD ITEM FORM ─────────────────────────────────────────────────────
+
 function invOpenAddForm(jobId) {
   var j = jobs.filter(function(x){return x.id===jobId;})[0];
   if (!j) return;
@@ -13733,10 +13774,14 @@ function invRenderAddForm(jobId) {
       var val = (d.specificData && d.specificData[cond.id]) || '';
       if (cond.type === 'info') {
         h += '<div style="background:#FFF5E0;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#9A5600">' + cond.label + '</div>';
-        if (spec.id === 'high_value') {
-          h += '<input id="inv-photo-hv" type="file" accept="image/*" capture="environment" style="display:none" onchange="invAddHvPhoto(this)">';
-          h += '<button onclick="el(\'inv-photo-hv\').click()" style="margin-top:6px;background:#FFE082;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;color:#9A5600;cursor:pointer;width:100%">📷 Add High Value Photo</button>';
-        }
+        var hvPhotoCount = (_invDraft && _invDraft.photos && _invDraft.photos.length) || 0;
+        h += '<input id="inv-photo-hv-' + cond.id + '" type="file" accept="image/*" capture="environment" style="display:none" onchange="invAddHvPhoto(this)">';
+        h += '<button onclick="el(\'inv-photo-hv-' + cond.id + '\').click()" style="margin-top:6px;background:#FFE082;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;color:#9A5600;cursor:pointer;width:100%">📷 ' + (hvPhotoCount ? hvPhotoCount + ' photo(s) taken' : 'Add Photo') + '</button>';
+      } else if (cond.type === 'video') {
+        h += '<div style="background:#EBF4FF;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#0073EA">' + cond.label + '</div>';
+        var hvVidCount = (_invDraft && _invDraft.hvVideos && _invDraft.hvVideos.length) || 0;
+        h += '<input id="inv-video-hv" type="file" accept="video/*" capture="environment" style="display:none" onchange="invAddHvVideo(this)">';
+        h += '<button onclick="el(\'inv-video-hv\').click()" style="margin-top:6px;background:#EBF4FF;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;color:#0073EA;cursor:pointer;width:100%">🎥 ' + (hvVidCount ? hvVidCount + ' video(s) recorded' : 'Record Video') + '</button>';
       } else if (cond.type === 'yesno') {
         h += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
         h += '<div style="display:flex;gap:6px">';
@@ -14110,6 +14155,188 @@ function invSaveDraft(jobId) {
 }
 
 // ── DELETE ITEM ───────────────────────────────────────────────────────
+// ── HIGH VALUE VIDEO CAPTURE ──────────────────────────────────────────
+function invAddHvVideo(input) {
+  if (!input.files || !input.files[0]) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    if (!_invDraft.hvVideos) _invDraft.hvVideos = [];
+    _invDraft.hvVideos.push({name: input.files[0].name, size: input.files[0].size, data: e.target.result});
+    toast('🎥 Video captured (' + _invDraft.hvVideos.length + ')');
+    invRenderAddForm(_invJobId);
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+// ── CLIENT SIGN-OFF VIEW ──────────────────────────────────────────────
+// Clean printable summary shown to client at sign-off
+function invShowClientView(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j || !j.crewData || !j.crewData.inventory) return;
+  var inv   = j.crewData.inventory;
+  var items = inv.items || [];
+  var totalCuft = items.reduce(function(s,it){return s+(it.volume&&it.volume.cuft?it.volume.cuft:0);},0);
+  var totalCbm  = items.reduce(function(s,it){return s+(it.volume&&it.volume.cbm?it.volume.cbm:0);},0);
+
+  var h = dvDarkHeader('Client Inventory', 'Summary for ' + j.client, 'dvOpenInventory(\'' + jobId + '\')');
+  h += '<div style="max-width:520px;margin:0 auto;padding:12px 14px 90px">';
+
+  // Header card
+  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
+  h += '<div style="font-size:16px;font-weight:800;color:#1C2333;margin-bottom:2px">' + esc(j.client) + '</div>';
+  h += '<div style="font-size:12px;color:#7A849E">' + esc(j.collectionAddress||'') + ' → ' + esc(j.deliveryAddress||'') + '</div>';
+  h += '<div style="display:flex;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid #F0EFE9">';
+  h += '<div style="flex:1;text-align:center"><div style="font-size:20px;font-weight:900;color:#0073EA">' + items.length + '</div><div style="font-size:11px;color:#7A849E">Total items</div></div>';
+  h += '<div style="flex:1;text-align:center"><div style="font-size:20px;font-weight:900;color:#0073EA">' + totalCuft.toFixed(1) + '</div><div style="font-size:11px;color:#7A849E">cu.ft</div></div>';
+  h += '<div style="flex:1;text-align:center"><div style="font-size:20px;font-weight:900;color:#0073EA">' + totalCbm.toFixed(2) + '</div><div style="font-size:11px;color:#7A849E">cbm</div></div>';
+  h += '</div></div>';
+
+  // Items by room — client-friendly, no internal codes
+  var byRoom = {};
+  items.forEach(function(it){ var r=it.room||'Other'; if(!byRoom[r])byRoom[r]=[]; byRoom[r].push(it); });
+  Object.keys(byRoom).forEach(function(room){
+    h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:10px">';
+    h += '<div style="background:#F7F6F2;padding:9px 14px;font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E">' + esc(room) + '</div>';
+    byRoom[room].forEach(function(it){
+      var hasDmg = it.damages && !it.damages.noDamage && it.damages.codes && it.damages.codes.length;
+      var isDisp = it.disposal;
+      h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;display:flex;align-items:center;gap:10px">';
+      h += '<div style="width:24px;height:24px;border-radius:6px;background:#F0EFE9;font-size:11px;font-weight:800;color:#7A849E;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + it.pieceNo + '</div>';
+      h += '<div style="flex:1">';
+      h += '<div style="font-size:13px;font-weight:600;color:#1C2333">' + esc(it.pieceName||'—') + '</div>';
+      if (it.aiData && it.aiData.colour) h += '<div style="font-size:11px;color:#7A849E">' + esc(it.aiData.colour) + (it.aiData.material?' · '+esc(it.aiData.material):'') + '</div>';
+      h += '<div style="display:flex;gap:4px;margin-top:3px">';
+      if (hasDmg) h += '<span style="font-size:10px;background:#FFF0F0;color:#E44258;padding:1px 6px;border-radius:4px;font-weight:700">Pre-existing damage noted</span>';
+      if (isDisp) h += '<span style="font-size:10px;background:#FFF5E0;color:#B07800;padding:1px 6px;border-radius:4px;font-weight:700">🗑 For disposal</span>';
+      h += '</div></div>';
+      if (it.photos&&it.photos.length) h += '<img src="' + it.photos[0] + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px">';
+      h += '</div>';
+    });
+    h += '</div>';
+  });
+
+  // Damage summary
+  var damagedItems = items.filter(function(it){return it.damages && !it.damages.noDamage && it.damages.codes && it.damages.codes.length;});
+  if (damagedItems.length) {
+    h += '<div style="background:#FFF0F0;border-radius:12px;padding:14px;margin-bottom:12px">';
+    h += '<div style="font-size:12px;font-weight:800;color:#E44258;margin-bottom:10px">PRE-EXISTING DAMAGE RECORD</div>';
+    h += '<div style="font-size:11px;color:#7A849E;margin-bottom:10px">The following damage was noted before packing. This damage pre-exists the move and has been photographed.</div>';
+    damagedItems.forEach(function(it){
+      h += '<div style="padding:8px 0;border-bottom:1px solid #FFE0E0">';
+      h += '<div style="font-size:13px;font-weight:700;color:#1C2333">#' + it.pieceNo + ' ' + esc(it.pieceName) + '</div>';
+      it.damages.codes.forEach(function(dc){
+        var codeInfo = INV_DAMAGE_CODES.filter(function(x){return x.id===dc.code;})[0];
+        h += '<div style="font-size:11px;color:#E44258;margin-top:2px">Code ' + dc.code + ' — ' + esc(codeInfo?codeInfo.label:'') + '</div>';
+      });
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+
+  // Disposal summary
+  var dispItems = items.filter(function(it){return it.disposal;});
+  if (dispItems.length) {
+    h += '<div style="background:#FFF5E0;border-radius:12px;padding:14px;margin-bottom:12px">';
+    h += '<div style="font-size:12px;font-weight:800;color:#B07800;margin-bottom:8px">🗑 ITEMS AUTHORISED FOR DISPOSAL (' + dispItems.length + ')</div>';
+    dispItems.forEach(function(it){
+      h += '<div style="font-size:13px;font-weight:600;color:#7A5200;padding:5px 0;border-bottom:1px solid #FFE08255">#' + it.pieceNo + ' ' + esc(it.pieceName) + '</div>';
+    });
+    h += '<div style="font-size:11px;color:#9A5600;margin-top:10px">Client signature below confirms authorisation for disposal of the above items.</div>';
+    h += '</div>';
+  }
+
+  // Signatures
+  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-top:4px">';
+  h += '<div style="font-size:12px;font-weight:800;color:#1C2333;margin-bottom:12px">CONFIRMATION &amp; SIGNATURES</div>';
+  h += '<div style="font-size:12px;color:#4A5568;margin-bottom:14px">I confirm that the above inventory is accurate, that pre-existing damage noted above was present before collection, and that items listed for disposal are authorised for removal and disposal.</div>';
+  if (inv.crewSignature) {
+    h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;margin-bottom:5px">CREW SIGNATURE</div>';
+    h += '<img src="' + inv.crewSignature + '" style="width:100%;border:1px solid #E3E7F0;border-radius:8px;background:#fff">';
+    h += '</div>';
+  }
+  if (inv.clientSignature) {
+    h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;margin-bottom:5px">CLIENT SIGNATURE</div>';
+    h += '<img src="' + inv.clientSignature + '" style="width:100%;border:1px solid #E3E7F0;border-radius:8px;background:#fff">';
+    h += '</div>';
+  }
+  h += '<div style="font-size:11px;color:#B0BEC5;margin-top:8px">Inventory completed: ' + (inv.completedAt ? new Date(inv.completedAt).toLocaleString() : '—') + ' · ' + esc(inv.completedBy||'') + '</div>';
+  h += '</div>';
+  h += '</div>';
+
+  el('dv-inventory-body').innerHTML = h;
+  dvShowScreen('dv-screen-inventory');
+}
+
+// ── OFFICE VIEW (called from office job panel) ─────────────────────────
+// Returns HTML string for embedding in the office job detail panel
+function invRenderOfficeView(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j || !j.crewData || !j.crewData.inventory) {
+    return '<div style="color:#7A849E;font-size:13px;padding:12px">No inventory recorded yet.</div>';
+  }
+  var inv   = j.crewData.inventory;
+  var items = inv.items || [];
+  if (!items.length) return '<div style="color:#7A849E;font-size:13px;padding:12px">Inventory started — 0 items added.</div>';
+
+  var totalCuft = items.reduce(function(s,it){return s+(it.volume&&it.volume.cuft?it.volume.cuft:0);},0);
+  var totalCbm  = items.reduce(function(s,it){return s+(it.volume&&it.volume.cbm?it.volume.cbm:0);},0);
+  var dispCount = items.filter(function(it){return it.disposal;}).length;
+  var dmgCount  = items.filter(function(it){return it.damages&&!it.damages.noDamage&&it.damages.codes&&it.damages.codes.length;}).length;
+  var aiCount   = items.filter(function(it){return it.entryMethod==='photo-ai';}).length;
+  var pendCount = items.filter(function(it){return it.entryMethod==='photo-manual';}).length;
+
+  var h = '';
+  // Summary row
+  h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">';
+  [{v:items.length,l:'Items',c:'#0073EA'},{v:totalCuft.toFixed(1),l:'cu.ft',c:'#0073EA'},
+   {v:totalCbm.toFixed(2),l:'cbm',c:'#7A849E'},{v:dmgCount,l:'Damaged',c:dmgCount?'#E44258':'#B0BEC5'},
+   {v:dispCount,l:'Disposal',c:dispCount?'#FF9F1A':'#B0BEC5'},{v:pendCount,l:'AI pending',c:pendCount?'#B07800':'#B0BEC5'}
+  ].forEach(function(s){
+    h += '<div style="background:#F7F6F2;border-radius:8px;padding:8px 12px;text-align:center">';
+    h += '<div style="font-size:16px;font-weight:800;color:' + s.c + '">' + s.v + '</div>';
+    h += '<div style="font-size:10px;color:#7A849E">' + s.l + '</div></div>';
+  });
+  h += '</div>';
+
+  // Status + completion
+  h += '<div style="font-size:12px;color:#7A849E;margin-bottom:8px">';
+  h += inv.completedAt
+    ? '✓ Inventory completed ' + new Date(inv.completedAt).toLocaleString() + ' by ' + esc(inv.completedBy||'')
+    : '⏳ Inventory in progress — ' + items.length + ' items added so far';
+  h += '</div>';
+
+  // Item table — compact
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h += '<thead><tr style="background:#F7F6F2">';
+  ['#','Item','Room','Pack','Vol cuft','Damage','Disp','Entry'].forEach(function(col){
+    h += '<th style="padding:6px 8px;text-align:left;font-weight:700;color:#7A849E;font-size:10px;text-transform:uppercase">' + col + '</th>';
+  });
+  h += '</tr></thead><tbody>';
+  items.forEach(function(it){
+    var pt = INV_PACK_TYPES.filter(function(p){return p.id===it.packType;})[0];
+    var dmgCodes = (it.damages&&it.damages.codes||[]).map(function(c){return c.code;}).join(',');
+    var entryIcon = it.entryMethod==='photo-ai'?'✦AI':it.entryMethod==='photo-manual'?'⏳':it.entryMethod==='photo-enriched'?'✦✓':'M';
+    h += '<tr style="border-bottom:1px solid #F0EFE9' + (it.disposal?';background:#FFFBE6':'') + '">';
+    h += '<td style="padding:6px 8px;color:#7A849E;font-weight:700">' + it.pieceNo + '</td>';
+    h += '<td style="padding:6px 8px;font-weight:600;color:#1C2333;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.pieceName||'—') + '</td>';
+    h += '<td style="padding:6px 8px;color:#7A849E">' + esc((it.room||'').replace('Bedroom ','Bed ')) + '</td>';
+    h += '<td style="padding:6px 8px;color:#7A849E">' + esc(pt?pt.id:'—') + '</td>';
+    h += '<td style="padding:6px 8px;color:#0073EA;font-weight:700">' + (it.volume&&it.volume.cuft?it.volume.cuft:'—') + '</td>';
+    h += '<td style="padding:6px 8px;color:' + (dmgCodes?'#E44258':'#B0BEC5') + ';font-weight:700">' + (dmgCodes||'—') + '</td>';
+    h += '<td style="padding:6px 8px">' + (it.disposal?'🗑':'') + '</td>';
+    h += '<td style="padding:6px 8px;color:#7A849E">' + entryIcon + '</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+
+  if (j.vol) {
+    var diff = totalCuft - parseFloat(j.vol);
+    h += '<div style="margin-top:10px;font-size:12px;font-weight:700;color:' + (Math.abs(diff)<10?'#00A86B':diff>0?'#E44258':'#FF9F1A') + '">Volume variance vs quote: ' + (diff>=0?'+':'') + diff.toFixed(1) + ' cu.ft (' + j.vol + ' quoted)</div>';
+  }
+  return h;
+}
+
+
 function invDeleteItem(jobId, idx) {
   var j = jobs.filter(function(x){return x.id===jobId;})[0];
   if (!j || !j.crewData || !j.crewData.inventory) return;
