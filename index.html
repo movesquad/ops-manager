@@ -4848,7 +4848,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v47 — 2 Mar 2026';
+var APP_VERSION = 'v48 — 4 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -12972,234 +12972,6 @@ var DV_PACK_TYPES = [
 ];
 var _dvInvSeq = 0;  // sequential piece counter per inventory session
 
-function dvOpenInventory(jobId) {
-  dvCurrentJobId = jobId;
-  _dvInvSeq = 0;
-  dvShowScreen('dv-screen-inventory');
-  dvRenderInventory(jobId);
-}
-
-function dvRenderInventory(jobId) {
-  var j   = jobs.filter(function(x){ return x.id === jobId; })[0];
-  if (!j) return;
-  var inv  = (j.crewData && j.crewData.inventory) || {};
-  var items = inv.items || [];
-  var done  = !!inv.completedAt;
-  _dvInvSeq = items.length;
-
-  var h = dvDarkHeader('Inventory / Condition Report', j.client + ' · ' + items.length + ' items', 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
-  h += '<div style="padding:14px 16px">';
-
-  if (done) {
-    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:13px;font-weight:700;color:#00A86B">✓ ' + items.length + ' items · Completed ' + fmtNice(inv.completedAt.slice(0,10)) + '</div>';
-    // Show signatures if present
-    if (inv.crewSignature || inv.clientSignature) {
-      h += '<div style="display:flex;gap:10px;margin-bottom:12px">';
-      if (inv.crewSignature) {
-        h += '<div style="flex:1;background:#fff;border-radius:10px;padding:10px;text-align:center">';
-        h += '<div style="font-size:10px;font-weight:700;color:#7A849E;margin-bottom:6px">CREW SIGNATURE</div>';
-        h += '<img src="' + inv.crewSignature + '" style="max-width:100%;border-radius:4px;border:1px solid #E3E7F0">';
-        h += '</div>';
-      }
-      if (inv.clientSignature) {
-        h += '<div style="flex:1;background:#fff;border-radius:10px;padding:10px;text-align:center">';
-        h += '<div style="font-size:10px;font-weight:700;color:#7A849E;margin-bottom:6px">CLIENT SIGNATURE</div>';
-        h += '<img src="' + inv.clientSignature + '" style="max-width:100%;border-radius:4px;border:1px solid #E3E7F0">';
-        h += '</div>';
-      }
-      h += '</div>';
-    }
-  }
-
-  // Item list
-  if (items.length) {
-    h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:12px">';
-    h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;display:flex;align-items:center;justify-content:space-between">';
-    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E">Items (' + items.length + ')</div>';
-    if (!done) h += '<div style="font-size:11px;color:#0073EA;font-weight:700">Tap item to remove</div>';
-    h += '</div>';
-    items.forEach(function(item, idx) {
-      var condCol = item.condition==='Good'?'#00A86B':item.condition==='Damaged'?'#E44258':'#FF9F1A';
-      h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;display:flex;gap:10px;align-items:center">';
-      h += '<div style="width:28px;height:28px;border-radius:6px;background:#F7F6F2;font-size:11px;font-weight:800;color:#7A849E;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + item.pieceNo + '</div>';
-      h += '<div style="flex:1">';
-      h += '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(item.pieceName) + '</div>';
-      h += '<div style="font-size:11px;color:#7A849E;margin-top:1px">' + esc(item.packType||'Loose') + ' · <span style="color:' + condCol + ';font-weight:700">' + (item.condition||'Good') + '</span></div>';
-      if (item.damageNote) h += '<div style="font-size:11px;color:#E44258;margin-top:1px">⚠ ' + esc(item.damageNote) + '</div>';
-      h += '</div>';
-      if (item.photo) h += '<img src="' + item.photo + '" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0">';
-      if (!done) h += '<button onclick="dvRemoveItem(\'' + jobId + '\',' + idx + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
-      h += '</div>';
-    });
-    h += '</div>';
-  } else if (!done) {
-    h += '<div style="background:#fff;border-radius:12px;padding:18px;text-align:center;color:#7A849E;font-size:13px;margin-bottom:12px">No items yet — add your first item below</div>';
-  }
-
-  // Add item form
-  if (!done) {
-    h += '<div style="background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px" id="inv-add-form">';
-    h += '<div style="font-size:12px;font-weight:800;color:#1C2333;margin-bottom:10px">Add Item · Piece #' + (items.length + 1) + '</div>';
-
-    // Piece name
-    h += '<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Piece Name</div>';
-    h += '<input id="inv-piece-name" placeholder="e.g. 3-Seater Sofa" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:11px 12px;font-size:14px;font-family:inherit;box-sizing:border-box"></div>';
-
-    // Pack type
-    h += '<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Pack Type</div>';
-    h += '<select id="inv-pack-type" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:11px 12px;font-size:13px;font-family:inherit">';
-    DV_PACK_TYPES.forEach(function(pt){ h += '<option>' + esc(pt) + '</option>'; });
-    h += '</select></div>';
-
-    // Condition
-    h += '<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Condition</div>';
-    h += '<div style="display:flex;gap:6px" id="inv-cond-group">';
-    ['Good','Damaged','Pre-existing Damage'].forEach(function(c) {
-      var col = c==='Good'?'#00A86B':c==='Damaged'?'#E44258':'#FF9F1A';
-      h += '<div onclick="dvSelectCond(this,\'' + esc(c) + '\')" data-cond="' + esc(c) + '" style="flex:1;padding:9px 6px;border-radius:8px;border:2px solid ' + (c==='Good'?col:'#E3E7F0') + ';background:' + (c==='Good'?col+'22':'transparent') + ';text-align:center;cursor:pointer;font-size:11px;font-weight:700;color:' + (c==='Good'?col:'#7A849E') + '">' + c + '</div>';
-    });
-    h += '</div>';
-    h += '<input type="hidden" id="inv-cond-val" value="Good">';
-    h += '</div>';
-
-    // Damage note (shows when not Good)
-    h += '<div id="inv-damage-wrap" style="margin-bottom:10px;display:none"><div style="font-size:10px;font-weight:700;color:#E44258;text-transform:uppercase;margin-bottom:5px">Damage Description</div>';
-    h += '<input id="inv-damage-note" placeholder="Describe the damage..." style="width:100%;border:1.5px solid #FFD0D0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;box-sizing:border-box"></div>';
-
-    // Photo capture
-    h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Damage Photo (optional)</div>';
-    h += '<div style="display:flex;gap:8px;align-items:center">';
-    h += '<input id="inv-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="dvInvPhotoSelected(this)">';
-    h += '<div id="inv-photo-preview" style="width:60px;height:60px;border-radius:8px;border:2px dashed #C8C5BE;display:flex;align-items:center;justify-content:center;font-size:24px;cursor:pointer" onclick="el(\'inv-photo-input\').click()">📷</div>';
-    h += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#F7F6F2;border:1.5px dashed #C8C5BE;border-radius:8px;padding:11px;font-size:13px;font-weight:600;color:#7A849E;cursor:pointer">Take / Choose Photo</button>';
-    h += '</div></div>';
-
-    h += '<button onclick="dvAddInvItem(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:8px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">+ Add to Inventory</button>';
-    h += '</div>';
-
-    // Sign & complete
-    if (items.length > 0) {
-      h += '<div style="background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:12px">';
-      h += '<div style="font-size:12px;font-weight:800;color:#1C2333;margin-bottom:12px">Sign Inventory (' + items.length + ' items)</div>';
-
-      // Crew signature
-      h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Crew Signature</div>';
-      h += '<canvas id="inv-crew-sig" width="488" height="120" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
-      h += '<button onclick="dvClearCanvas(\'inv-crew-sig\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
-
-      // Client signature
-      h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Client Signature</div>';
-      h += '<canvas id="inv-client-sig" width="488" height="120" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
-      h += '<button onclick="dvClearCanvas(\'inv-client-sig\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
-
-      h += '<button onclick="dvCompleteInventory(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">✓ Sign & Complete Inventory</button>';
-      h += '</div>';
-    }
-  }
-
-  h += '</div>';
-  el('dv-inventory-body').innerHTML = h;
-
-  // Init signature pads
-  if (!done) {
-    setTimeout(function() {
-      dvInitSigPad('inv-crew-sig');
-      dvInitSigPad('inv-client-sig');
-    }, 80);
-  }
-}
-
-function dvSelectCond(el_ref, cond) {
-  var group = document.getElementById('inv-cond-group');
-  if (!group) return;
-  group.querySelectorAll('[data-cond]').forEach(function(btn) {
-    var c = btn.getAttribute('data-cond');
-    var col = c==='Good'?'#00A86B':c==='Damaged'?'#E44258':'#FF9F1A';
-    var active = c === cond;
-    btn.style.borderColor = active ? col : '#E3E7F0';
-    btn.style.background  = active ? col + '22' : 'transparent';
-    btn.style.color       = active ? col : '#7A849E';
-  });
-  var hid = document.getElementById('inv-cond-val');
-  if (hid) hid.value = cond;
-  var wrap = document.getElementById('inv-damage-wrap');
-  if (wrap) wrap.style.display = (cond !== 'Good') ? '' : 'none';
-}
-
-var _dvInvPhoto = null;
-function dvInvPhotoSelected(input) {
-  var file = input.files && input.files[0];
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    _dvInvPhoto = e.target.result;
-    var prev = document.getElementById('inv-photo-preview');
-    if (prev) prev.innerHTML = '<img src="' + _dvInvPhoto + '" style="width:100%;height:100%;object-fit:cover;border-radius:6px">';
-  };
-  reader.readAsDataURL(file);
-}
-
-function dvAddInvItem(jobId) {
-  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
-  if (!j) return;
-  var name  = (el('inv-piece-name')||{}).value || '';
-  var pack  = (el('inv-pack-type')||{}).value  || 'Loose';
-  var cond  = (el('inv-cond-val')||{}).value   || 'Good';
-  var dmg   = (el('inv-damage-note')||{}).value|| '';
-  if (!name.trim()) { toast('Enter piece name'); return; }
-  if (!j.crewData) j.crewData = {};
-  if (!j.crewData.inventory) j.crewData.inventory = { items: [] };
-  if (!j.crewData.inventory.items) j.crewData.inventory.items = [];
-  _dvInvSeq++;
-  j.crewData.inventory.items.push({
-    pieceNo:    _dvInvSeq,
-    pieceName:  name.trim(),
-    packType:   pack,
-    condition:  cond,
-    damageNote: dmg,
-    photo:      _dvInvPhoto || null,
-    addedAt:    new Date().toISOString(),
-    addedBy:    window._driverName || 'Crew'
-  });
-  _dvInvPhoto = null;
-  saveData('job', j.id, j);
-  // Trigger On Site if first item added
-  if (j.crewData.inventory.items.length === 1 && j.status !== 'On Site' && j.status !== 'Loading' && j.status !== 'Loaded') {
-    dvTriggerStatus(jobId, 'On Site');
-  }
-  dvRenderInventory(jobId);
-}
-
-function dvRemoveItem(jobId, idx) {
-  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
-  if (!j || !j.crewData || !j.crewData.inventory) return;
-  j.crewData.inventory.items.splice(idx, 1);
-  // Re-sequence piece numbers
-  j.crewData.inventory.items.forEach(function(item, i){ item.pieceNo = i + 1; });
-  _dvInvSeq = j.crewData.inventory.items.length;
-  saveData('job', j.id, j);
-  dvRenderInventory(jobId);
-}
-
-function dvCompleteInventory(jobId) {
-  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
-  if (!j || !j.crewData || !j.crewData.inventory) return;
-  var crewCanvas   = el('inv-crew-sig');
-  var clientCanvas = el('inv-client-sig');
-  if (!dvCanvasHasMark(crewCanvas))   { toast('Crew signature required'); return; }
-  if (!dvCanvasHasMark(clientCanvas)) { toast('Client signature required'); return; }
-  j.crewData.inventory.completedAt     = new Date().toISOString();
-  j.crewData.inventory.completedBy     = window._driverName || 'Crew';
-  j.crewData.inventory.crewSignature   = crewCanvas.toDataURL('image/png');
-  j.crewData.inventory.clientSignature = clientCanvas.toDataURL('image/png');
-  saveData('job', j.id, j);
-  // Status → Loading
-  dvTriggerStatus(jobId, 'Loading');
-  toast('✓ Inventory signed and saved');
-  dvShowScreen('dv-screen-job');
-  dvRenderJobDetail(jobId);
-}
-
 // ══════════════════════════════════════════════════════════════════════
 // 11. DELIVERY SIGN-OFF
 // ══════════════════════════════════════════════════════════════════════
@@ -13392,6 +13164,977 @@ function dvCompleteSignoff(jobId, crew) {
   saveData('job', j.id, j);
   dvTriggerStatus(jobId, 'Completed');
   toast('🎉 Job complete — great work!');
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+
+// ══════════════════════════════════════════════════════════════════════
+// INVENTORY MODULE v1 — Full ISO-linked inventory with AI identification
+// ══════════════════════════════════════════════════════════════════════
+
+// ── REFERENCE DATA ────────────────────────────────────────────────────
+
+var INV_ROOMS = [
+  'Hallway','Living Room','Kitchen','Dining Room','Garage','Shed',
+  'Attic / Loft','Conservatory','Bedroom 1','Bedroom 2','Bedroom 3',
+  'Bedroom 4','Bedroom 5','Study / Office','Stairway / Landing','Outhouse',
+];
+
+var INV_PACK_TYPES = [
+  {id:'EW',  label:'Export Wrapped'},
+  {id:'C2',  label:'Carton 2 cu.ft'},
+  {id:'C4',  label:'Carton 4 cu.ft'},
+  {id:'C6',  label:'Carton 6 cu.ft'},
+  {id:'WC',  label:'Wardrobe Carton'},
+  {id:'BC',  label:'Book Carton'},
+  {id:'LF',  label:'Layflat Carton'},
+  {id:'OP',  label:'Original Packaging'},
+  {id:'CR',  label:'Crated'},
+  {id:'OC',  label:'Over-Carded'},
+  {id:'MB',  label:'Mattress Bag'},
+  {id:'BW',  label:'Blanket Wrapped'},
+  {id:'AW',  label:'Artwork Carton'},
+  {id:'GC',  label:'Golf Carton'},
+  {id:'TV',  label:'TV Carton'},
+  {id:'BB',  label:'Bits Box'},
+  {id:'BKB', label:'Bike Box'},
+];
+
+var INV_PACK_AI_HINTS = [
+  {keywords:['book','encyclopedia','bible','dictionary'],       packId:'BC'},
+  {keywords:['shirt','blouse','dress','suit','jacket','coat'],  packId:'WC'},
+  {keywords:['trouser','jeans','jumper','folded clothes'],      packId:'LF'},
+  {keywords:['mattress'],                                       packId:'MB'},
+  {keywords:['tv','television','monitor','screen'],             packId:'TV'},
+  {keywords:['painting','artwork','picture frame','mirror'],    packId:'AW'},
+  {keywords:['bike','bicycle'],                                 packId:'BKB'},
+  {keywords:['golf'],                                           packId:'GC'},
+  {keywords:['sofa','chair','table','wardrobe','cabinet',
+             'chest','bed','bookcase','dresser'],               packId:'BW'},
+];
+
+var INV_SPECIFICS = [
+  {id:'none',          label:'No Specifics',            icon:'✅', exclusive:true,  conditions:[]},
+  {id:'electrical',    label:'Electrical Item',          icon:'⚡', exclusive:false, conditions:[
+    {id:'elec_working', type:'yesno',  label:'Tested and working?'},
+    {id:'elec_cables',  type:'yesno',  label:'All cables and accessories present?'},
+  ]},
+  {id:'battery',       label:'Contains Battery',         icon:'🔋', exclusive:false, conditions:[
+    {id:'bat_type',    type:'select', label:'Battery type',
+     options:['Standard AA/AAA','Lithium-ion — small (phone/laptop)','Lithium-ion — large (e-bike/scooter)','Lead acid','Other']},
+    {id:'bat_removed', type:'yesno',  label:'Battery removed for transit?'},
+  ]},
+  {id:'dismantled',    label:'Requires Dismantling',     icon:'🔧', exclusive:false, conditions:[
+    {id:'dis_who',     type:'select', label:'Who dismantles?',
+     options:['Crew to dismantle on collection day','Owner to dismantle before collection']},
+    {id:'dis_hardware',type:'yesno',  label:'Hardware bagged and labelled?'},
+  ]},
+  {id:'pre_dismantled',label:'Pre-Dismantled by Owner',  icon:'📦', exclusive:false, conditions:[
+    {id:'predis_parts', type:'yesno', label:'All parts present and accounted for?'},
+    {id:'predis_hw',    type:'yesno', label:'Hardware bagged by owner?'},
+  ]},
+  {id:'foods',         label:'Contains Food / Perishables',icon:'🍎',exclusive:false,conditions:[
+    {id:'food_sealed', type:'yesno',  label:'All food items sealed?'},
+    {id:'food_frozen', type:'yesno',  label:'Contains frozen / refrigerated items?'},
+  ]},
+  {id:'high_value',    label:'High Value Item',           icon:'💎', exclusive:false, conditions:[
+    {id:'hv_value',    type:'text',   label:'Declared value (£)', placeholder:'e.g. 500'},
+    {id:'hv_insured',  type:'yesno',  label:'On insurance schedule?'},
+    {id:'hv_notice',   type:'info',   label:'⚠ Take multiple photos and a short video of this item'},
+  ]},
+  {id:'disposal',      label:'Request Disposal',          icon:'🗑', exclusive:false, conditions:[
+    {id:'dis_confirmed',type:'yesno', label:'Client confirms disposal?'},
+    {id:'dis_reason',   type:'select',label:'Reason',
+     options:['Client request — no longer needed','Too damaged to move','Does not fit at destination','Other']},
+  ]},
+];
+
+var INV_PACK_CODES = [
+  {id:'CP',  label:'Crew Packed'},
+  {id:'OP2', label:'Owner Packed'},
+  {id:'CD',  label:'Crew Dismantled'},
+  {id:'OD',  label:'Owner Dismantled'},
+  {id:'PB',  label:'Professional Books'},
+  {id:'PP',  label:'Professional Papers'},
+  {id:'PE',  label:'Professional Equipment'},
+];
+
+var INV_DAMAGE_CODES = [
+  {id:'A', label:'A — Scratch',           desc:'Surface scratch, does not penetrate finish'},
+  {id:'B', label:'B — Scuff / Rub mark',  desc:'Rubbing or abrasion to surface'},
+  {id:'C', label:'C — Chip / Gouge',      desc:'Material missing from surface'},
+  {id:'D', label:'D — Dent / Bend',       desc:'Structural deformation without breaking'},
+  {id:'E', label:'E — Break / Crack',     desc:'Structural damage, item broken or cracked'},
+  {id:'F', label:'F — Stain / Mark',      desc:'Discolouration or permanent mark'},
+  {id:'G', label:'G — Tear / Rip',        desc:'Fabric, leather or material torn'},
+  {id:'H', label:'H — Missing part',      desc:'Component or part absent from item'},
+];
+
+var ISO_ITEMS = [
+  {code:'BED001',category:'Bedroom',     name:'Bed, single/twin frame',          cuft:35, cbm:0.99},
+  {code:'BED002',category:'Bedroom',     name:'Bed, double frame',               cuft:45, cbm:1.27},
+  {code:'BED003',category:'Bedroom',     name:'Bed, queen frame',                cuft:55, cbm:1.56},
+  {code:'BED004',category:'Bedroom',     name:'Bed, king frame',                 cuft:65, cbm:1.84},
+  {code:'BED005',category:'Bedroom',     name:'Mattress, single',                cuft:25, cbm:0.71},
+  {code:'BED006',category:'Bedroom',     name:'Mattress, double',                cuft:35, cbm:0.99},
+  {code:'BED007',category:'Bedroom',     name:'Mattress, queen',                 cuft:40, cbm:1.13},
+  {code:'BED008',category:'Bedroom',     name:'Mattress, king',                  cuft:50, cbm:1.42},
+  {code:'BED009',category:'Bedroom',     name:'Wardrobe, single',                cuft:35, cbm:0.99},
+  {code:'BED010',category:'Bedroom',     name:'Wardrobe, double',                cuft:52, cbm:1.47},
+  {code:'BED011',category:'Bedroom',     name:'Wardrobe, triple',                cuft:75, cbm:2.12},
+  {code:'BED012',category:'Bedroom',     name:'Chest of drawers, small',         cuft:15, cbm:0.42},
+  {code:'BED013',category:'Bedroom',     name:'Chest of drawers, medium',        cuft:20, cbm:0.57},
+  {code:'BED014',category:'Bedroom',     name:'Chest of drawers, large',         cuft:28, cbm:0.79},
+  {code:'BED015',category:'Bedroom',     name:'Dressing table',                  cuft:20, cbm:0.57},
+  {code:'BED016',category:'Bedroom',     name:'Dressing table stool',            cuft:5,  cbm:0.14},
+  {code:'BED017',category:'Bedroom',     name:'Bedside table / cabinet',         cuft:5,  cbm:0.14},
+  {code:'BED018',category:'Bedroom',     name:'Tallboy / highboy',               cuft:30, cbm:0.85},
+  {code:'BED019',category:'Bedroom',     name:'Ottoman / blanket box',           cuft:10, cbm:0.28},
+  {code:'BED020',category:'Bedroom',     name:'Cot / baby crib',                 cuft:20, cbm:0.57},
+  {code:'BED021',category:'Bedroom',     name:'Bunk bed',                        cuft:60, cbm:1.70},
+  {code:'LVG001',category:'Living Room', name:'Sofa, 2-seater',                  cuft:40, cbm:1.13},
+  {code:'LVG002',category:'Living Room', name:'Sofa, 3-seater',                  cuft:55, cbm:1.56},
+  {code:'LVG003',category:'Living Room', name:'Sofa, corner/L-shape',            cuft:90, cbm:2.55},
+  {code:'LVG004',category:'Living Room', name:'Sofa bed, 2-seater',              cuft:55, cbm:1.56},
+  {code:'LVG005',category:'Living Room', name:'Sofa bed, 3-seater',              cuft:70, cbm:1.98},
+  {code:'LVG006',category:'Living Room', name:'Armchair',                        cuft:15, cbm:0.42},
+  {code:'LVG007',category:'Living Room', name:'Armchair, recliner',              cuft:20, cbm:0.57},
+  {code:'LVG008',category:'Living Room', name:'Footstool / pouffe',              cuft:5,  cbm:0.14},
+  {code:'LVG009',category:'Living Room', name:'Coffee table, small',             cuft:8,  cbm:0.23},
+  {code:'LVG010',category:'Living Room', name:'Coffee table, medium',            cuft:12, cbm:0.34},
+  {code:'LVG011',category:'Living Room', name:'Coffee table, large/glass',       cuft:18, cbm:0.51},
+  {code:'LVG012',category:'Living Room', name:'TV unit / media stand',           cuft:15, cbm:0.42},
+  {code:'LVG013',category:'Living Room', name:'Bookcase, small',                 cuft:15, cbm:0.42},
+  {code:'LVG014',category:'Living Room', name:'Bookcase, medium',                cuft:25, cbm:0.71},
+  {code:'LVG015',category:'Living Room', name:'Bookcase, large',                 cuft:40, cbm:1.13},
+  {code:'LVG016',category:'Living Room', name:'Display cabinet / unit',          cuft:30, cbm:0.85},
+  {code:'LVG017',category:'Living Room', name:'Sideboard / buffet, small',       cuft:20, cbm:0.57},
+  {code:'LVG018',category:'Living Room', name:'Sideboard / buffet, large',       cuft:35, cbm:0.99},
+  {code:'LVG019',category:'Living Room', name:'TV, up to 42 inch',               cuft:8,  cbm:0.23},
+  {code:'LVG020',category:'Living Room', name:'TV, 43-65 inch',                  cuft:15, cbm:0.42},
+  {code:'LVG021',category:'Living Room', name:'TV, 66 inch and above',           cuft:25, cbm:0.71},
+  {code:'LVG022',category:'Living Room', name:'Floor lamp',                      cuft:5,  cbm:0.14},
+  {code:'LVG023',category:'Living Room', name:'Table lamp',                      cuft:3,  cbm:0.08},
+  {code:'LVG024',category:'Living Room', name:'Fireplace surround',              cuft:25, cbm:0.71},
+  {code:'LVG025',category:'Living Room', name:'Piano, upright',                  cuft:90, cbm:2.55},
+  {code:'LVG026',category:'Living Room', name:'Piano, grand',                    cuft:180,cbm:5.10},
+  {code:'DIN001',category:'Dining Room', name:'Dining table, small (4-seat)',    cuft:15, cbm:0.42},
+  {code:'DIN002',category:'Dining Room', name:'Dining table, medium (6-seat)',   cuft:20, cbm:0.57},
+  {code:'DIN003',category:'Dining Room', name:'Dining table, large (8+ seat)',   cuft:30, cbm:0.85},
+  {code:'DIN004',category:'Dining Room', name:'Dining table, extending',         cuft:25, cbm:0.71},
+  {code:'DIN005',category:'Dining Room', name:'Dining chair',                    cuft:5,  cbm:0.14},
+  {code:'DIN006',category:'Dining Room', name:'Carver / armchair dining',        cuft:7,  cbm:0.20},
+  {code:'DIN007',category:'Dining Room', name:'Dresser / hutch, small',          cuft:35, cbm:0.99},
+  {code:'DIN008',category:'Dining Room', name:'Dresser / hutch, large',          cuft:55, cbm:1.56},
+  {code:'DIN009',category:'Dining Room', name:'Bar stool',                       cuft:5,  cbm:0.14},
+  {code:'DIN010',category:'Dining Room', name:'Bar / drinks cabinet',            cuft:20, cbm:0.57},
+  {code:'DIN011',category:'Dining Room', name:'China cabinet / vitrine',         cuft:30, cbm:0.85},
+  {code:'KIT001',category:'Kitchen',     name:'Fridge, under-counter',           cuft:15, cbm:0.42},
+  {code:'KIT002',category:'Kitchen',     name:'Fridge, tall single door',        cuft:25, cbm:0.71},
+  {code:'KIT003',category:'Kitchen',     name:'Fridge freezer, double door',     cuft:35, cbm:0.99},
+  {code:'KIT004',category:'Kitchen',     name:'American fridge freezer',         cuft:50, cbm:1.42},
+  {code:'KIT005',category:'Kitchen',     name:'Freezer, chest',                  cuft:25, cbm:0.71},
+  {code:'KIT006',category:'Kitchen',     name:'Freezer, upright',                cuft:25, cbm:0.71},
+  {code:'KIT007',category:'Kitchen',     name:'Washing machine',                 cuft:20, cbm:0.57},
+  {code:'KIT008',category:'Kitchen',     name:'Tumble dryer',                    cuft:20, cbm:0.57},
+  {code:'KIT009',category:'Kitchen',     name:'Washer-dryer combined',           cuft:20, cbm:0.57},
+  {code:'KIT010',category:'Kitchen',     name:'Dishwasher',                      cuft:20, cbm:0.57},
+  {code:'KIT011',category:'Kitchen',     name:'Cooker / range, standard',        cuft:20, cbm:0.57},
+  {code:'KIT012',category:'Kitchen',     name:'Range cooker, large',             cuft:35, cbm:0.99},
+  {code:'KIT013',category:'Kitchen',     name:'Microwave',                       cuft:5,  cbm:0.14},
+  {code:'KIT014',category:'Kitchen',     name:'Kitchen table, small',            cuft:12, cbm:0.34},
+  {code:'KIT015',category:'Kitchen',     name:'Kitchen chair',                   cuft:4,  cbm:0.11},
+  {code:'KIT016',category:'Kitchen',     name:'Kitchen island / breakfast bar',  cuft:30, cbm:0.85},
+  {code:'OFF001',category:'Study',       name:'Desk, small',                     cuft:20, cbm:0.57},
+  {code:'OFF002',category:'Study',       name:'Desk, large / corner',            cuft:40, cbm:1.13},
+  {code:'OFF003',category:'Study',       name:'Office chair',                    cuft:10, cbm:0.28},
+  {code:'OFF004',category:'Study',       name:'Filing cabinet, 2-drawer',        cuft:12, cbm:0.34},
+  {code:'OFF005',category:'Study',       name:'Filing cabinet, 4-drawer',        cuft:22, cbm:0.62},
+  {code:'OFF006',category:'Study',       name:'Printer / copier, desktop',       cuft:5,  cbm:0.14},
+  {code:'OFF007',category:'Study',       name:'Computer tower / desktop',        cuft:5,  cbm:0.14},
+  {code:'OFF008',category:'Study',       name:'Monitor, desktop',                cuft:5,  cbm:0.14},
+  {code:'OFF009',category:'Study',       name:'Laptop',                          cuft:2,  cbm:0.06},
+  {code:'HAL001',category:'Hallway',     name:'Hall table / console table',      cuft:10, cbm:0.28},
+  {code:'HAL002',category:'Hallway',     name:'Hat stand / coat rack',           cuft:5,  cbm:0.14},
+  {code:'HAL003',category:'Hallway',     name:'Shoe cabinet / rack',             cuft:8,  cbm:0.23},
+  {code:'HAL004',category:'Hallway',     name:'Mirror, large',                   cuft:10, cbm:0.28},
+  {code:'HAL005',category:'Hallway',     name:'Storage bench',                   cuft:10, cbm:0.28},
+  {code:'GAR001',category:'Garage/Shed', name:'Bicycle',                         cuft:15, cbm:0.42},
+  {code:'GAR002',category:'Garage/Shed', name:'Bicycle, electric / heavy',       cuft:20, cbm:0.57},
+  {code:'GAR003',category:'Garage/Shed', name:'Lawnmower, push',                 cuft:12, cbm:0.34},
+  {code:'GAR004',category:'Garage/Shed', name:'Lawnmower, ride-on',              cuft:40, cbm:1.13},
+  {code:'GAR005',category:'Garage/Shed', name:'Workbench',                       cuft:30, cbm:0.85},
+  {code:'GAR006',category:'Garage/Shed', name:'Tool chest / cabinet',            cuft:20, cbm:0.57},
+  {code:'GAR007',category:'Garage/Shed', name:'Shelving unit, metal',            cuft:20, cbm:0.57},
+  {code:'GAR008',category:'Garage/Shed', name:'Trampoline',                      cuft:25, cbm:0.71},
+  {code:'GAR009',category:'Garage/Shed', name:'Barbecue / grill',                cuft:15, cbm:0.42},
+  {code:'GAR010',category:'Garage/Shed', name:'Garden bench',                    cuft:15, cbm:0.42},
+  {code:'GAR011',category:'Garage/Shed', name:'Garden table',                    cuft:15, cbm:0.42},
+  {code:'GAR012',category:'Garage/Shed', name:'Garden chair',                    cuft:5,  cbm:0.14},
+  {code:'GEN001',category:'General',     name:'Carton, general (4 cuft)',        cuft:4,  cbm:0.11},
+  {code:'GEN002',category:'General',     name:'Carton, small (2 cuft)',          cuft:2,  cbm:0.06},
+  {code:'GEN003',category:'General',     name:'Carton, large (6 cuft)',          cuft:6,  cbm:0.17},
+  {code:'GEN004',category:'General',     name:'Carton, wardrobe',                cuft:12, cbm:0.34},
+  {code:'GEN005',category:'General',     name:'Carton, artwork / picture',       cuft:5,  cbm:0.14},
+  {code:'GEN006',category:'General',     name:'Suitcase, small',                 cuft:3,  cbm:0.08},
+  {code:'GEN007',category:'General',     name:'Suitcase, large',                 cuft:6,  cbm:0.17},
+  {code:'GEN008',category:'General',     name:'Safe, small',                     cuft:5,  cbm:0.14},
+  {code:'GEN009',category:'General',     name:'Safe, large floor',               cuft:20, cbm:0.57},
+  {code:'GEN010',category:'General',     name:'Exercise equipment, large',       cuft:40, cbm:1.13},
+  {code:'GEN011',category:'General',     name:'Golf bag and clubs',              cuft:10, cbm:0.28},
+  {code:'GEN012',category:'General',     name:'Musical instrument, guitar',      cuft:8,  cbm:0.23},
+  {code:'GEN013',category:'General',     name:'Artwork / painting, large framed',cuft:8,  cbm:0.23},
+  {code:'GEN014',category:'General',     name:'Rug, large',                      cuft:8,  cbm:0.23},
+  {code:'GEN015',category:'General',     name:'Plant, large potted',             cuft:5,  cbm:0.14},
+];
+
+// ── ISO FUZZY SEARCH ──────────────────────────────────────────────────
+function isoSearch(query, max) {
+  if (!query || query.trim().length < 2) return [];
+  var q = query.toLowerCase().trim();
+  var words = q.split(/\s+/);
+  var results = [];
+  ISO_ITEMS.forEach(function(item) {
+    var n = item.name.toLowerCase();
+    var c = item.category.toLowerCase();
+    var score = 0;
+    if (n === q)               score = 100;
+    else if (n.startsWith(q)) score = 80;
+    else if (n.includes(q))   score = 60;
+    else {
+      var m = words.filter(function(w){ return n.includes(w)||c.includes(w); }).length;
+      score = m * 15;
+    }
+    if (score > 0) results.push({item:item, score:score});
+  });
+  results.sort(function(a,b){return b.score-a.score;});
+  return results.slice(0, max||8).map(function(r){return r.item;});
+}
+
+// AI pack type hint from description
+function invGuessPackType(descLower) {
+  for (var i = 0; i < INV_PACK_AI_HINTS.length; i++) {
+    var hint = INV_PACK_AI_HINTS[i];
+    if (hint.keywords.some(function(k){return descLower.includes(k);})) return hint.packId;
+  }
+  return 'BW'; // default blanket wrapped
+}
+
+// ── STATE ─────────────────────────────────────────────────────────────
+var _invJobId    = null;
+var _invDraft    = null;   // current item being added
+var _invPhotoB64 = null;   // photo captured for current draft
+var _invAiLoading = false;
+var _invDmgCode  = null;   // damage code being photographed
+
+function invEmptyDraft(seq) {
+  return {
+    pieceNo:        seq,
+    pieceName:      '',
+    isoMatch:       null,
+    room:           '',
+    packType:       '',
+    pieceSpecifics: ['none'],
+    specificData:   {},
+    packCode:       '',
+    damages:        {noDamage:false, codes:[], aiDetected:[]},
+    photos:         [],
+    damagePhotos:   {},   // { 'A': [b64, ...], 'B': [...] }
+    volume:         {cuft:null, cbm:null, source:null},
+    aiData:         null,
+    entryMethod:    'manual',
+    disposal:       false,
+    addedAt:        new Date().toISOString(),
+    addedBy:        window._driverName || 'Crew',
+  };
+}
+
+// ── MAIN INVENTORY SCREEN ─────────────────────────────────────────────
+function dvOpenInventory(jobId) {
+  dvCurrentJobId = jobId;
+  _invJobId      = jobId;
+  dvShowScreen('dv-screen-inventory');
+  dvRenderInventory(jobId);
+}
+
+function dvRenderInventory(jobId) {
+  var j   = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  if (!j.crewData)           j.crewData = {};
+  if (!j.crewData.inventory) j.crewData.inventory = {items:[], completedAt:null};
+  var inv   = j.crewData.inventory;
+  var items = inv.items || [];
+  var done  = !!inv.completedAt;
+
+  // Volume totals
+  var totalCuft = 0, totalCbm = 0, pendingVol = 0;
+  items.forEach(function(it){
+    if (it.volume && it.volume.cuft) { totalCuft += it.volume.cuft; totalCbm += it.volume.cbm||0; }
+    else pendingVol++;
+  });
+
+  // Disposal items
+  var disposalItems = items.filter(function(it){return it.disposal;});
+
+  var backFn = 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')';
+  var h = dvDarkHeader('Inventory', j.client + ' · ' + items.length + ' items', backFn);
+
+  h += '<div style="max-width:520px;margin:0 auto;padding:12px 14px 90px">';
+
+  // ── VOLUME SUMMARY BAR ─────────────────────────────────────────────
+  h += '<div style="background:#151c2c;border-radius:12px;padding:13px 16px;margin-bottom:12px;display:flex;gap:16px">';
+  h += '<div style="flex:1;text-align:center">';
+  h += '<div style="font-size:22px;font-weight:900;color:#fff">' + totalCuft.toFixed(1) + '</div>';
+  h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">cu.ft</div>';
+  h += '</div>';
+  h += '<div style="width:1px;background:rgba(255,255,255,.1)"></div>';
+  h += '<div style="flex:1;text-align:center">';
+  h += '<div style="font-size:22px;font-weight:900;color:#fff">' + totalCbm.toFixed(2) + '</div>';
+  h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">cbm</div>';
+  h += '</div>';
+  h += '<div style="width:1px;background:rgba(255,255,255,.1)"></div>';
+  h += '<div style="flex:1;text-align:center">';
+  h += '<div style="font-size:22px;font-weight:900;color:' + (pendingVol?'#FFB800':'#00C875') + '">' + items.length + '</div>';
+  h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">items</div>';
+  h += '</div>';
+  if (pendingVol) {
+    h += '<div style="width:1px;background:rgba(255,255,255,.1)"></div>';
+    h += '<div style="flex:1;text-align:center">';
+    h += '<div style="font-size:22px;font-weight:900;color:#FF9F1A">' + pendingVol + '</div>';
+    h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:rgba(255,255,255,.4)">no vol</div>';
+    h += '</div>';
+  }
+  h += '</div>';
+
+  // Quoted volume comparison if available
+  if (j.vol) {
+    var diff = totalCuft - parseFloat(j.vol);
+    var diffCol = Math.abs(diff) < 10 ? '#00C875' : diff > 0 ? '#E44258' : '#FF9F1A';
+    h += '<div style="background:#fff;border-radius:10px;padding:9px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between">';
+    h += '<div style="font-size:12px;color:#7A849E">Quoted volume</div>';
+    h += '<div style="font-size:13px;font-weight:700;color:#1C2333">' + j.vol + ' cu.ft</div>';
+    h += '<div style="font-size:12px;font-weight:800;color:' + diffCol + '">';
+    h += (diff >= 0 ? '+' : '') + diff.toFixed(1) + ' cu.ft';
+    h += '</div></div>';
+  }
+
+  if (!done) {
+    // ── ADD ITEM BUTTON ────────────────────────────────────────────
+    h += '<button onclick="invOpenAddForm(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:8px">+ Add Item</button>';
+  }
+
+  // ── ITEM LIST ──────────────────────────────────────────────────────
+  if (items.length) {
+    // Group by room
+    var byRoom = {};
+    items.forEach(function(it){
+      var r = it.room || 'Unassigned';
+      if (!byRoom[r]) byRoom[r] = [];
+      byRoom[r].push(it);
+    });
+
+    Object.keys(byRoom).forEach(function(room) {
+      var roomItems = byRoom[room];
+      var roomVol = roomItems.reduce(function(s,it){return s+(it.volume&&it.volume.cuft?it.volume.cuft:0);},0);
+      h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#7A849E;margin:12px 0 6px;display:flex;justify-content:space-between">';
+      h += '<span>' + esc(room) + ' (' + roomItems.length + ')</span>';
+      h += '<span>' + (roomVol ? roomVol.toFixed(1) + ' cu.ft' : '') + '</span>';
+      h += '</div>';
+      h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:4px">';
+      roomItems.forEach(function(it, ri) {
+        var idx = items.indexOf(it);
+        var hasPhoto    = it.photos && it.photos.length > 0;
+        var hasDmg      = it.damages && !it.damages.noDamage && it.damages.codes && it.damages.codes.length;
+        var isDisposal  = it.disposal;
+        var aiEnriched  = it.aiData && it.aiData.status === 'enriched';
+        var aiPending   = it.entryMethod === 'photo-manual';
+        var condCol     = hasDmg ? '#E44258' : '#00A86B';
+        var packType    = INV_PACK_TYPES.filter(function(p){return p.id===it.packType;})[0];
+
+        h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;display:flex;align-items:center;gap:10px">';
+        // Piece number
+        h += '<div style="width:26px;height:26px;border-radius:6px;background:#F7F6F2;font-size:11px;font-weight:800;color:#7A849E;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + it.pieceNo + '</div>';
+        // Main info
+        h += '<div style="flex:1;min-width:0">';
+        h += '<div style="font-size:13px;font-weight:700;color:#1C2333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(it.pieceName||'—') + '</div>';
+        h += '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">';
+        if (packType) h += '<span style="font-size:10px;background:#EBF4FF;color:#0073EA;padding:1px 6px;border-radius:4px;font-weight:600">' + esc(packType.label) + '</span>';
+        if (it.volume && it.volume.cuft) h += '<span style="font-size:10px;background:#F7F6F2;color:#7A849E;padding:1px 6px;border-radius:4px;font-weight:600">' + it.volume.cuft + ' cuft</span>';
+        if (hasDmg) h += '<span style="font-size:10px;background:#FFF0F0;color:#E44258;padding:1px 6px;border-radius:4px;font-weight:700">⚠ Damage</span>';
+        if (isDisposal) h += '<span style="font-size:10px;background:#FFF5E0;color:#B07800;padding:1px 6px;border-radius:4px;font-weight:700">🗑 Dispose</span>';
+        if (aiEnriched) h += '<span style="font-size:10px;background:#F0FFF4;color:#00A86B;padding:1px 6px;border-radius:4px;font-weight:700">✦ AI</span>';
+        if (aiPending)  h += '<span style="font-size:10px;background:#FFFBE6;color:#B07800;padding:1px 6px;border-radius:4px;font-weight:700">⏳ AI pending</span>';
+        h += '</div></div>';
+        // Photo thumb
+        if (hasPhoto) h += '<img src="' + it.photos[0] + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0">';
+        // Edit / delete
+        if (!done) {
+          h += '<button onclick="invDeleteItem(\'' + jobId + '\',' + idx + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
+        }
+        h += '</div>';
+      });
+      h += '</div>';
+    });
+  } else if (!done) {
+    h += '<div style="text-align:center;padding:40px 20px;color:#7A849E">';
+    h += '<div style="font-size:40px;margin-bottom:12px">📋</div>';
+    h += '<div style="font-size:15px;font-weight:700;color:#1C2333;margin-bottom:6px">No items yet</div>';
+    h += '<div style="font-size:13px">Tap + Add Item to start recording inventory</div>';
+    h += '</div>';
+  }
+
+  // ── DISPOSAL LIST ──────────────────────────────────────────────────
+  if (disposalItems.length) {
+    h += '<div style="background:#FFF5E0;border:1px solid #FFE082;border-radius:12px;padding:13px 14px;margin-top:14px">';
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#B07800;margin-bottom:8px">🗑 DISPOSAL LIST (' + disposalItems.length + ' items)</div>';
+    disposalItems.forEach(function(it){
+      h += '<div style="font-size:13px;font-weight:600;color:#7A5200;padding:4px 0;border-bottom:1px solid #FFE08255">#' + it.pieceNo + ' ' + esc(it.pieceName) + '</div>';
+    });
+    h += '</div>';
+  }
+
+  // ── SIGN & COMPLETE ────────────────────────────────────────────────
+  if (!done && items.length > 0) {
+    h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-top:16px">';
+    h += '<div style="font-size:13px;font-weight:800;color:#1C2333;margin-bottom:12px">Sign & Complete Inventory</div>';
+    h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Crew Signature</div>';
+    h += '<canvas id="inv-crew-sig" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
+    h += '<button onclick="dvClearCanvas(\'inv-crew-sig\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
+    h += '<div style="margin-bottom:14px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Client Signature</div>';
+    h += '<canvas id="inv-client-sig" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
+    h += '<button onclick="dvClearCanvas(\'inv-client-sig\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
+    h += '<button onclick="dvCompleteInventory(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer">✓ Sign & Complete Inventory</button>';
+    h += '</div>';
+  }
+  if (done) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-top:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Completed ' + fmtNice(inv.completedAt.slice(0,10)) + ' · ' + items.length + ' items · ' + totalCuft.toFixed(1) + ' cu.ft</div>';
+  }
+  h += '</div>';
+
+  el('dv-inventory-body').innerHTML = h;
+  if (!done && items.length > 0) {
+    setTimeout(function(){
+      dvInitSigPad('inv-crew-sig');
+      dvInitSigPad('inv-client-sig');
+    }, 80);
+  }
+}
+
+// ── ADD ITEM FORM ─────────────────────────────────────────────────────
+function invOpenAddForm(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  var seq = ((j.crewData && j.crewData.inventory && j.crewData.inventory.items) || []).length + 1;
+  _invDraft    = invEmptyDraft(seq);
+  _invJobId    = jobId;
+  _invPhotoB64 = null;
+  dvShowScreen('dv-screen-inv-add');
+  invRenderAddForm(jobId);
+}
+
+function invRenderAddForm(jobId) {
+  var j    = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  var d    = _invDraft;
+  var seq  = d.pieceNo;
+
+  var backFn = 'dvOpenInventory(\'' + jobId + '\')';
+  var h = dvDarkHeader('Add Item · Piece #' + seq, j.client, backFn);
+  h += '<div style="max-width:520px;margin:0 auto;padding:12px 14px 100px">';
+
+  // ── PHOTO + AI ─────────────────────────────────────────────────────
+  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Photo & AI Identification</div>';
+
+  if (_invPhotoB64) {
+    h += '<div style="position:relative;margin-bottom:10px">';
+    h += '<img src="' + _invPhotoB64 + '" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px">';
+    h += '<button onclick="invClearPhoto()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:28px;height:28px;color:#fff;font-size:14px;cursor:pointer">✕</button>';
+    h += '</div>';
+  } else {
+    h += '<div style="display:flex;gap:8px;margin-bottom:10px">';
+    h += '<input id="inv-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="invPhotoSelected(this,\'' + jobId + '\')">';
+    h += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#EBF4FF;border:2px dashed #0073EA;border-radius:10px;padding:16px 10px;cursor:pointer;color:#0073EA;font-weight:700;font-size:13px">📷 Take Photo<br><span style="font-size:11px;font-weight:400;opacity:.7">AI will identify item</span></button>';
+    h += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#F7F6F2;border:2px dashed #C8C5BE;border-radius:10px;padding:16px 10px;cursor:pointer;color:#7A849E;font-weight:700;font-size:13px">🖼 Choose Photo<br><span style="font-size:11px;font-weight:400">From library</span></button>';
+    h += '</div>';
+  }
+
+  if (_invAiLoading) {
+    h += '<div style="background:#EBF4FF;border-radius:8px;padding:12px;text-align:center;font-size:13px;color:#0073EA;font-weight:600">✦ Analysing image…</div>';
+  } else if (d.aiData && d.aiData.status === 'enriched') {
+    h += '<div style="background:#E6FFF5;border-radius:8px;padding:10px 12px;font-size:12px;color:#00A86B;font-weight:600">✦ AI identified: ' + esc(d.aiData.description || '') + '</div>';
+  }
+  h += '</div>';
+
+  // ── PIECE NAME + ISO SEARCH ────────────────────────────────────────
+  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:8px">Item Name & Volume</div>';
+  h += '<input id="inv-piece-name" value="' + esc(d.pieceName) + '" placeholder="e.g. Double Bed, 3-Seater Sofa..." style="width:100%;border:2px solid ' + (d.pieceName?'#0073EA':'#E3E7F0') + ';border-radius:10px;padding:12px 14px;font-size:15px;font-family:inherit;box-sizing:border-box" oninput="invNameInput(this.value)">';
+
+  // ISO search results
+  if (d.pieceName && d.pieceName.length >= 2 && !d.isoMatch) {
+    var results = isoSearch(d.pieceName, 6);
+    if (results.length) {
+      h += '<div style="margin-top:8px;font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Select from ISO list:</div>';
+      h += '<div style="max-height:200px;overflow-y:auto;border:1.5px solid #E3E7F0;border-radius:8px;overflow:hidden">';
+      results.forEach(function(item, ri) {
+        h += '<div onclick="invSelectIso(' + ri + ')" data-iso="' + esc(item.code) + '" style="padding:9px 12px;border-bottom:1px solid #F0EFE9;cursor:pointer;display:flex;align-items:center;justify-content:space-between">';
+        h += '<div><div style="font-size:13px;font-weight:600;color:#1C2333">' + esc(item.name) + '</div>';
+        h += '<div style="font-size:11px;color:#7A849E">' + esc(item.category) + '</div></div>';
+        h += '<div style="font-size:12px;font-weight:700;color:#0073EA;white-space:nowrap">' + item.cuft + ' cuft</div>';
+        h += '</div>';
+      });
+      h += '</div>';
+    }
+  }
+
+  // ISO match confirmed
+  if (d.isoMatch) {
+    h += '<div style="margin-top:8px;background:#EBF4FF;border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">';
+    h += '<div>';
+    h += '<div style="font-size:10px;font-weight:700;color:#0073EA;text-transform:uppercase">ISO Match · ' + esc(d.isoMatch.code) + '</div>';
+    h += '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(d.isoMatch.name) + '</div>';
+    h += '</div>';
+    h += '<div style="text-align:right">';
+    h += '<div style="font-size:18px;font-weight:900;color:#0073EA">' + d.isoMatch.cuft + '</div>';
+    h += '<div style="font-size:10px;color:#7A849E">cu.ft</div>';
+    h += '</div>';
+    h += '<button onclick="invClearIso()" style="background:none;border:none;color:#7A849E;font-size:13px;cursor:pointer;margin-left:8px">✕</button>';
+    h += '</div>';
+  }
+  h += '</div>';
+
+  // ── ROOM ──────────────────────────────────────────────────────────
+  h += invFieldCard('Room', invSelectGrid(INV_ROOMS, d.room, 'invSetRoom', 3));
+
+  // ── PACK TYPE ─────────────────────────────────────────────────────
+  h += invFieldCard('Pack Type', invSelectGrid(INV_PACK_TYPES.map(function(p){return p.label;}), 
+    d.packType ? INV_PACK_TYPES.filter(function(p){return p.id===d.packType;})[0].label : '',
+    'invSetPackType', 2));
+
+  // ── PIECE SPECIFICS ───────────────────────────────────────────────
+  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Piece Specifics</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
+  INV_SPECIFICS.forEach(function(spec) {
+    var active = d.pieceSpecifics.indexOf(spec.id) >= 0;
+    h += '<div onclick="invToggleSpecific(\'' + spec.id + '\')" style="padding:7px 12px;border-radius:8px;border:2px solid ' + (active?'#0073EA':'#E3E7F0') + ';background:' + (active?'#EBF4FF':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (active?'#0073EA':'#7A849E') + '">' + spec.icon + ' ' + spec.label + '</div>';
+  });
+  h += '</div>';
+
+  // Conditional sub-questions for active specifics
+  var activeSpecs = INV_SPECIFICS.filter(function(s){return d.pieceSpecifics.indexOf(s.id)>=0 && s.conditions.length;});
+  activeSpecs.forEach(function(spec) {
+    if (spec.id === 'none') return;
+    h += '<div style="background:#F7F6F2;border-radius:8px;padding:10px 12px;margin-top:8px;border-left:3px solid #0073EA">';
+    h += '<div style="font-size:11px;font-weight:800;color:#0073EA;margin-bottom:8px">' + spec.icon + ' ' + spec.label + ' — Details</div>';
+    spec.conditions.forEach(function(cond) {
+      var val = (d.specificData && d.specificData[cond.id]) || '';
+      if (cond.type === 'info') {
+        h += '<div style="background:#FFF5E0;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#9A5600">' + cond.label + '</div>';
+        if (spec.id === 'high_value') {
+          h += '<input id="inv-photo-hv" type="file" accept="image/*" capture="environment" style="display:none" onchange="invAddHvPhoto(this)">';
+          h += '<button onclick="el(\'inv-photo-hv\').click()" style="margin-top:6px;background:#FFE082;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;color:#9A5600;cursor:pointer;width:100%">📷 Add High Value Photo</button>';
+        }
+      } else if (cond.type === 'yesno') {
+        h += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+        h += '<div style="display:flex;gap:6px">';
+        h += '<div onclick="invSetSpecificData(\'' + cond.id + '\',\'yes\')" style="flex:1;padding:8px;text-align:center;border-radius:6px;border:2px solid ' + (val==='yes'?'#00C875':'#E3E7F0') + ';background:' + (val==='yes'?'#E6FFF5':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (val==='yes'?'#00A86B':'#7A849E') + '">Yes</div>';
+        h += '<div onclick="invSetSpecificData(\'' + cond.id + '\',\'no\')" style="flex:1;padding:8px;text-align:center;border-radius:6px;border:2px solid ' + (val==='no'?'#E44258':'#E3E7F0') + ';background:' + (val==='no'?'#FFF0F0':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (val==='no'?'#E44258':'#7A849E') + '">No</div>';
+        h += '</div></div>';
+      } else if (cond.type === 'select') {
+        h += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+        h += '<select onchange="invSetSpecificData(\'' + cond.id + '\',this.value)" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;font-family:inherit">';
+        h += '<option value="">Select…</option>';
+        (cond.options||[]).forEach(function(opt){
+          h += '<option' + (val===opt?' selected':'') + '>' + esc(opt) + '</option>';
+        });
+        h += '</select></div>';
+      } else if (cond.type === 'text') {
+        h += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+        h += '<input value="' + esc(val) + '" placeholder="' + esc(cond.placeholder||'') + '" onchange="invSetSpecificData(\'' + cond.id + '\',this.value)" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;font-family:inherit;box-sizing:border-box">';
+        h += '</div>';
+      }
+    });
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // ── PACK CODE ─────────────────────────────────────────────────────
+  h += invFieldCard('Pack Code', invSelectGrid(INV_PACK_CODES.map(function(p){return p.label;}),
+    d.packCode ? INV_PACK_CODES.filter(function(p){return p.id===d.packCode;})[0].label : '',
+    'invSetPackCode', 2));
+
+  // ── DAMAGES ───────────────────────────────────────────────────────
+  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Pre-Existing Damage</div>';
+
+  if (d.aiData && d.aiData.condition && d.aiData.condition !== 'Good') {
+    h += '<div style="background:#FFF5E0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#9A5600">⚠ AI detected: ' + esc(d.aiData.conditionNotes||d.aiData.condition) + '</div>';
+  }
+
+  // No damage toggle
+  var noDmg = d.damages.noDamage;
+  h += '<div onclick="invToggleNoDamage()" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:2px solid ' + (noDmg?'#00C875':'#E3E7F0') + ';border-radius:10px;background:' + (noDmg?'#E6FFF5':'transparent') + ';cursor:pointer;margin-bottom:8px">';
+  h += '<div style="width:22px;height:22px;border-radius:6px;border:2px solid ' + (noDmg?'#00C875':'#C8C5BE') + ';background:' + (noDmg?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center">' + (noDmg?'<span style="color:#fff;font-size:12px">✓</span>':'') + '</div>';
+  h += '<div style="font-size:13px;font-weight:700;color:' + (noDmg?'#00A86B':'#1C2333') + '">No pre-existing damage</div>';
+  h += '</div>';
+
+  if (!noDmg) {
+    h += '<div style="font-size:11px;color:#7A849E;margin-bottom:8px">Select damage code(s) — then photograph each:</div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
+    INV_DAMAGE_CODES.forEach(function(dc) {
+      var active = d.damages.codes.some(function(c){return c.code===dc.id;});
+      h += '<div onclick="invToggleDamageCode(\'' + dc.id + '\')" style="padding:6px 10px;border-radius:8px;border:2px solid ' + (active?'#E44258':'#E3E7F0') + ';background:' + (active?'#FFF0F0':'transparent') + ';cursor:pointer">';
+      h += '<div style="font-size:12px;font-weight:700;color:' + (active?'#E44258':'#1C2333') + '">' + esc(dc.label) + '</div>';
+      h += '<div style="font-size:10px;color:#7A849E">' + esc(dc.desc) + '</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+
+    // Photo prompt for each selected damage code
+    d.damages.codes.forEach(function(dc) {
+      var photos = (d.damagePhotos && d.damagePhotos[dc.code]) || [];
+      h += '<div style="background:#FFF0F0;border-radius:8px;padding:10px 12px;margin-bottom:8px">';
+      h += '<div style="font-size:11px;font-weight:700;color:#E44258;margin-bottom:6px">Code ' + dc.code + ' — ' + esc(INV_DAMAGE_CODES.filter(function(x){return x.id===dc.code;})[0].label) + '</div>';
+      h += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+      photos.forEach(function(p) {
+        h += '<img src="' + p + '" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:2px solid #E44258">';
+      });
+      h += '<input id="inv-dmg-photo-' + dc.code + '" type="file" accept="image/*" capture="environment" style="display:none" onchange="invAddDamagePhoto(this,\'' + dc.code + '\')">';
+      h += '<button onclick="el(\'inv-dmg-photo-' + dc.code + '\').click()" style="width:56px;height:56px;border:2px dashed #E44258;border-radius:6px;background:#FFF5F5;cursor:pointer;font-size:20px;color:#E44258">+</button>';
+      h += '</div></div>';
+    });
+  }
+  h += '</div>';
+
+  // ── SAVE BUTTON ───────────────────────────────────────────────────
+  var canSave = !!(d.pieceName && d.room && d.packType && d.packCode);
+  var missingFields = [];
+  if (!d.pieceName) missingFields.push('Item name');
+  if (!d.room)      missingFields.push('Room');
+  if (!d.packType)  missingFields.push('Pack type');
+  if (!d.packCode)  missingFields.push('Pack code');
+
+  if (missingFields.length && missingFields.length < 4) {
+    h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#9A5600">Still needed: ' + missingFields.join(', ') + '</div>';
+  }
+
+  h += '<button onclick="invSaveDraft(\'' + jobId + '\')" ' + (canSave?'':'disabled ') + 'style="width:100%;background:' + (canSave?'#0073EA':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:' + (canSave?'pointer':'not-allowed') + '">Add to Inventory</button>';
+  h += '</div>';
+
+  el('dv-inv-add-body').innerHTML = h;
+}
+
+// ── ADD FORM HELPERS ──────────────────────────────────────────────────
+
+function invFieldCard(label, content) {
+  return '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">' +
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">' + label + '</div>' +
+    content + '</div>';
+}
+
+function invSelectGrid(options, current, fn, cols) {
+  var h = '<div style="display:grid;grid-template-columns:repeat(' + (cols||2) + ',1fr);gap:6px">';
+  options.forEach(function(opt, i) {
+    var active = opt === current;
+    h += '<div onclick="' + fn + '(' + i + ')" style="padding:9px 8px;border-radius:8px;border:2px solid ' + (active?'#0073EA':'#E3E7F0') + ';background:' + (active?'#EBF4FF':'transparent') + ';cursor:pointer;text-align:center;font-size:12px;font-weight:' + (active?'700':'500') + ';color:' + (active?'#0073EA':'#4A5568') + '">' + esc(opt) + '</div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+function invNameInput(val) {
+  if (!_invDraft) return;
+  _invDraft.pieceName = val;
+  _invDraft.isoMatch  = null;  // clear ISO match when name changes
+  // Debounce re-render
+  if (window._invNameTimer) clearTimeout(window._invNameTimer);
+  window._invNameTimer = setTimeout(function(){ invRenderAddForm(_invJobId); }, 350);
+}
+
+function invSelectIso(resultIdx) {
+  if (!_invDraft) return;
+  var results = isoSearch(_invDraft.pieceName, 6);
+  var item = results[resultIdx];
+  if (!item) return;
+  _invDraft.isoMatch   = item;
+  _invDraft.pieceName  = _invDraft.pieceName || item.name;
+  _invDraft.volume     = {cuft: item.cuft, cbm: item.cbm, source: 'iso'};
+  // Auto-suggest pack type from ISO category if not set
+  if (!_invDraft.packType) {
+    _invDraft.packType = invGuessPackType(item.name.toLowerCase());
+  }
+  invRenderAddForm(_invJobId);
+}
+
+function invClearIso() {
+  if (_invDraft) { _invDraft.isoMatch = null; _invDraft.volume = {cuft:null,cbm:null,source:null}; }
+  invRenderAddForm(_invJobId);
+}
+
+function invSetRoom(idx) {
+  if (_invDraft) _invDraft.room = INV_ROOMS[idx];
+  invRenderAddForm(_invJobId);
+}
+
+function invSetPackType(idx) {
+  if (_invDraft) _invDraft.packType = INV_PACK_TYPES[idx].id;
+  invRenderAddForm(_invJobId);
+}
+
+function invSetPackCode(idx) {
+  if (_invDraft) _invDraft.packCode = INV_PACK_CODES[idx].id;
+  invRenderAddForm(_invJobId);
+}
+
+function invToggleSpecific(id) {
+  if (!_invDraft) return;
+  var spec = INV_SPECIFICS.filter(function(s){return s.id===id;})[0];
+  if (!spec) return;
+  if (spec.exclusive) {
+    _invDraft.pieceSpecifics = [id];
+  } else {
+    // Remove 'none' when selecting something else
+    _invDraft.pieceSpecifics = _invDraft.pieceSpecifics.filter(function(x){return x!=='none';});
+    var i = _invDraft.pieceSpecifics.indexOf(id);
+    if (i >= 0) _invDraft.pieceSpecifics.splice(i,1);
+    else _invDraft.pieceSpecifics.push(id);
+    if (_invDraft.pieceSpecifics.length === 0) _invDraft.pieceSpecifics = ['none'];
+    // Handle disposal flag
+    _invDraft.disposal = _invDraft.pieceSpecifics.indexOf('disposal') >= 0;
+  }
+  invRenderAddForm(_invJobId);
+}
+
+function invSetSpecificData(condId, val) {
+  if (!_invDraft) return;
+  if (!_invDraft.specificData) _invDraft.specificData = {};
+  _invDraft.specificData[condId] = val;
+  invRenderAddForm(_invJobId);
+}
+
+function invToggleNoDamage() {
+  if (!_invDraft) return;
+  _invDraft.damages.noDamage = !_invDraft.damages.noDamage;
+  if (_invDraft.damages.noDamage) _invDraft.damages.codes = [];
+  invRenderAddForm(_invJobId);
+}
+
+function invToggleDamageCode(code) {
+  if (!_invDraft) return;
+  var codes = _invDraft.damages.codes;
+  var i = codes.findIndex(function(c){return c.code===code;});
+  if (i >= 0) {
+    codes.splice(i, 1);
+    if (_invDraft.damagePhotos) delete _invDraft.damagePhotos[code];
+  } else {
+    codes.push({code:code, photos:[]});
+  }
+  invRenderAddForm(_invJobId);
+}
+
+function invAddDamagePhoto(input, code) {
+  if (!input.files || !input.files[0]) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    if (!_invDraft.damagePhotos) _invDraft.damagePhotos = {};
+    if (!_invDraft.damagePhotos[code]) _invDraft.damagePhotos[code] = [];
+    _invDraft.damagePhotos[code].push(e.target.result);
+    invRenderAddForm(_invJobId);
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function invAddHvPhoto(input) {
+  if (!input.files || !input.files[0]) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    if (!_invDraft.photos) _invDraft.photos = [];
+    _invDraft.photos.push(e.target.result);
+    toast('High value photo added (' + _invDraft.photos.length + ')');
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function invClearPhoto() {
+  _invPhotoB64 = null;
+  if (_invDraft) { _invDraft.photos = []; _invDraft.aiData = null; }
+  invRenderAddForm(_invJobId);
+}
+
+// ── PHOTO CAPTURE + AI ─────────────────────────────────────────────────
+function invPhotoSelected(input, jobId) {
+  if (!input.files || !input.files[0]) return;
+  var file = input.files[0];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    _invPhotoB64 = e.target.result;
+    if (_invDraft) _invDraft.photos = [_invPhotoB64];
+    _invDraft.entryMethod = 'photo-manual';
+    invRenderAddForm(jobId);
+    // Try AI identification
+    invTryAiIdentify(jobId);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function invTryAiIdentify(jobId) {
+  if (!_invPhotoB64 || !_invDraft) return;
+  _invAiLoading = true;
+  invRenderAddForm(jobId);
+
+  try {
+    // Extract base64 data (remove data:image/...;base64, prefix)
+    var base64Data = _invPhotoB64.split(',')[1];
+    var mediaType  = _invPhotoB64.split(';')[0].split(':')[1] || 'image/jpeg';
+
+    var isoNames = ISO_ITEMS.slice(0, 40).map(function(i){ return i.name; }).join(', ');
+    var prompt = 'You are an inventory assistant for a professional removal company. ' +
+      'Analyse this image and identify the household item. ' +
+      'Match it to the closest item from this partial ISO 17451-1 list: ' + isoNames + '. ' +
+      'Return ONLY valid JSON (no markdown, no explanation) with these fields: ' +
+      '{"description":"concise item name","colour":"primary colour","material":"primary material if visible",' +
+      '"size":"Small|Medium|Large|Extra Large","condition":"Good|Damaged|Pre-existing Damage",' +
+      '"conditionNotes":"describe any damage or empty string",' +
+      '"isoName":"closest ISO item name from the list above",' +
+      '"volumeCuft":number,"volumeCbm":number,' +
+      '"suggestedPackType":"one of: Export Wrapped|Carton 2 cu.ft|Carton 4 cu.ft|Carton 6 cu.ft|Wardrobe Carton|Book Carton|Layflat Carton|Original Packaging|Crated|Over-Carded|Mattress Bag|Blanket Wrapped|Artwork Carton|Golf Carton|TV Carton|Bits Box|Bike Box",' +
+      '"confidence":"high|medium|low"}';
+
+    var response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 500,
+        messages: [{
+          role: 'user',
+          content: [
+            {type: 'image', source: {type: 'base64', media_type: mediaType, data: base64Data}},
+            {type: 'text',  text: prompt}
+          ]
+        }]
+      })
+    });
+
+    var data = await response.json();
+    var text = (data.content||[]).map(function(b){return b.text||'';}).join('');
+    text = text.replace(/```json|```/g,'').trim();
+    var ai = JSON.parse(text);
+
+    // Apply AI results to draft
+    _invDraft.aiData = {
+      status:       'enriched',
+      description:  ai.description || '',
+      colour:       ai.colour || '',
+      material:     ai.material || '',
+      size:         ai.size || '',
+      condition:    ai.condition || 'Good',
+      conditionNotes: ai.conditionNotes || '',
+      confidence:   ai.confidence || 'medium',
+      processedAt:  new Date().toISOString(),
+    };
+
+    // Auto-fill name if empty
+    if (!_invDraft.pieceName && ai.description) _invDraft.pieceName = ai.description;
+
+    // Auto-match ISO
+    if (ai.isoName) {
+      var isoMatch = ISO_ITEMS.filter(function(i){
+        return i.name.toLowerCase() === ai.isoName.toLowerCase();
+      })[0];
+      if (!isoMatch) {
+        var isoResults = isoSearch(ai.isoName, 1);
+        isoMatch = isoResults[0] || null;
+      }
+      if (isoMatch) {
+        _invDraft.isoMatch = isoMatch;
+        _invDraft.volume   = {cuft: isoMatch.cuft, cbm: isoMatch.cbm, source: 'ai'};
+      } else if (ai.volumeCuft) {
+        _invDraft.volume   = {cuft: ai.volumeCuft, cbm: ai.volumeCbm||null, source: 'ai'};
+      }
+    }
+
+    // Auto-suggest pack type
+    if (ai.suggestedPackType && !_invDraft.packType) {
+      var pt = INV_PACK_TYPES.filter(function(p){return p.label===ai.suggestedPackType;})[0];
+      if (pt) _invDraft.packType = pt.id;
+    }
+
+    // Flag damage if AI detected it
+    if (ai.condition && ai.condition !== 'Good') {
+      _invDraft.damages.aiDetected = [ai.conditionNotes || ai.condition];
+    }
+
+    _invDraft.entryMethod = 'photo-ai';
+    _invAiLoading = false;
+    invRenderAddForm(jobId);
+    toast('✦ AI identified: ' + ai.description);
+
+  } catch(e) {
+    _invAiLoading = false;
+    _invDraft.entryMethod = 'photo-manual';
+    invRenderAddForm(jobId);
+    toast('No connectivity — enter item manually');
+  }
+}
+
+// ── SAVE DRAFT TO INVENTORY ───────────────────────────────────────────
+function invSaveDraft(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j || !_invDraft) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.inventory) j.crewData.inventory = {items:[]};
+
+  // Merge damage photos into damage codes
+  var d = _invDraft;
+  d.damages.codes.forEach(function(dc){
+    dc.photos = (d.damagePhotos && d.damagePhotos[dc.code]) || [];
+  });
+
+  j.crewData.inventory.items.push(d);
+  saveData('job', j.id, j);
+
+  // Status trigger on first item
+  if (j.crewData.inventory.items.length === 1 &&
+      j.status !== 'On Site' && j.status !== 'Loading' && j.status !== 'Loaded') {
+    dvTriggerStatus(jobId, 'On Site');
+  }
+
+  toast('✓ #' + d.pieceNo + ' ' + d.pieceName + ' added');
+  _invDraft    = null;
+  _invPhotoB64 = null;
+  dvOpenInventory(jobId);
+}
+
+// ── DELETE ITEM ───────────────────────────────────────────────────────
+function invDeleteItem(jobId, idx) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j || !j.crewData || !j.crewData.inventory) return;
+  j.crewData.inventory.items.splice(idx, 1);
+  // Re-sequence piece numbers
+  j.crewData.inventory.items.forEach(function(it,i){ it.pieceNo = i+1; });
+  saveData('job', j.id, j);
+  dvRenderInventory(jobId);
+}
+
+// ── COMPLETE INVENTORY ────────────────────────────────────────────────
+function dvCompleteInventory(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j || !j.crewData || !j.crewData.inventory) return;
+  var crewCanvas   = el('inv-crew-sig');
+  var clientCanvas = el('inv-client-sig');
+  if (!dvCanvasHasMark(crewCanvas))   { toast('Crew signature required');   return; }
+  if (!dvCanvasHasMark(clientCanvas)) { toast('Client signature required'); return; }
+  j.crewData.inventory.completedAt     = new Date().toISOString();
+  j.crewData.inventory.completedBy     = window._driverName || 'Crew';
+  j.crewData.inventory.crewSignature   = crewCanvas.toDataURL('image/png');
+  j.crewData.inventory.clientSignature = clientCanvas.toDataURL('image/png');
+  saveData('job', j.id, j);
+  dvTriggerStatus(jobId, 'Loading');
+  toast('✓ Inventory signed and complete');
   dvShowScreen('dv-screen-job');
   dvRenderJobDetail(jobId);
 }
@@ -14309,6 +15052,13 @@ function whSelectOptions(selectedId) {
     <div id="dv-screen-inventory" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
       <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
         <div id="dv-inventory-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: ADD INVENTORY ITEM -->
+    <div id="dv-screen-inv-add" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-inv-add-body"></div>
       </div>
     </div>
 
