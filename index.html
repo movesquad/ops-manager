@@ -4860,7 +4860,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v52 — 4 Mar 2026';
+var APP_VERSION = 'v53 — 4 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -12358,7 +12358,12 @@ function dvRenderJobDetail(jobId) {
     h += '</button>';
   }
 
-  // Job Info card
+  // Job Info card — collapsible, collapses after first view
+  var _jiKey  = '_dvJobInfoCollapsed_' + j.id;
+  var _adKey  = '_dvAddrCollapsed_' + j.id;
+  // Auto-collapse after job sheet viewed
+  if (cd.jobSheetViewed && window[_jiKey] === undefined) window[_jiKey] = true;
+  if (cd.jobSheetViewed && window[_adKey] === undefined) window[_adKey] = true;
   h += dvInfoCard('Job Info', [
     ['Client',     j.client],
     ['Job Type',   j.jobType],
@@ -12369,12 +12374,12 @@ function dvRenderJobDetail(jobId) {
     ['Crew',       crew.join(', ') || '—'],
     j.moveManager ? ['Move Manager', j.moveManager] : null,
     j.ref ? ['Reference', j.ref] : null,
-  ]);
+  ], _jiKey);
 
-  // Addresses
-  if (isOrigin) h += dvAddressCard('Collection Address', j.origin, '#0073EA', '📦');
-  if (hasDest)  h += dvAddressCard('Delivery Address',   j.dest,   '#00A86B', '🏠');
-  if (isWh)     h += dvAddressCard('Collect From Warehouse', APP_SETTINGS.warehouseAddress || 'Warehouse', '#9B59B6', '🏭');
+  // Addresses — collapsible
+  if (isOrigin) h += dvAddressCard('Collection Address', j.origin, '#0073EA', '📦', _adKey + '_o');
+  if (hasDest)  h += dvAddressCard('Delivery Address',   j.dest,   '#00A86B', '🏠', _adKey + '_d');
+  if (isWh)     h += dvAddressCard('Collect From Warehouse', APP_SETTINGS.warehouseAddress || 'Warehouse', '#9B59B6', '🏭', _adKey + '_w');
 
   // Notes / special instructions
   if (j.notes) {
@@ -12405,6 +12410,18 @@ function dvRenderJobDetail(jobId) {
     done: !!cl.completedAt,
     fn: 'dvOpenPrecheck(\'' + j.id + '\')'
   });
+
+  // 2b. Property walkaround (origin jobs only)
+  if (isOrigin) {
+    var wa = cd.walkaround || {};
+    var waDmgCount = (wa.damages || []).length;
+    formDefs.push({
+      label: 'Property Walkaround', sub: 'Record pre-existing damage to property on arrival', icon: '🏠',
+      status: wa.completedAt ? (waDmgCount + ' item' + (waDmgCount===1?'':'s') + ' noted · Done') : (waDmgCount ? waDmgCount + ' recorded — not complete' : 'Not started'),
+      done: !!wa.completedAt,
+      fn: 'dvOpenWalkaround(\'' + j.id + '\')'
+    });
+  }
 
   // 3. Warehouse loading (if out-of-store)
   if (isWh || (j.containersToRemove && j.containersToRemove.length)) {
@@ -12457,6 +12474,9 @@ function dvRenderJobDetail(jobId) {
     fn: 'dvOpenSignoff(\'' + j.id + '\')'
   });
 
+  // Forms library button (always shown as action, not in formDefs)
+  var formsActionHtml = dvActionButton('📝 Forms Library', 'Damage waiver, long walk, specialist forms', 'dvOpenFormsLibrary(\'' + j.id + '\')', '#9B59B6');
+
   // Completed forms sink to bottom, pending stay at top
   var pendingForms = formDefs.filter(function(f){ return !f.done; });
   var doneForms    = formDefs.filter(function(f){ return f.done; });
@@ -12466,6 +12486,7 @@ function dvRenderJobDetail(jobId) {
     doneForms.forEach(function(f){ h += dvFormCard(f.label, f.sub, f.icon, f.status, f.done, f.fn); });
   }
 
+  h += formsActionHtml;
   h += '</div>';
   el('dv-job-detail-body').innerHTML = h;
 }
@@ -13702,17 +13723,14 @@ function dvRenderInventory(jobId, filter) {
     h += '</div>';
   }
 
-  // ── SIGN & COMPLETE ────────────────────────────────────────────────
+  // ── COMPLETE INVENTORY BUTTON ─────────────────────────────────────
   if (!done && items.length > 0) {
-    h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-top:16px">';
-    h += '<div style="font-size:13px;font-weight:800;color:#1C2333;margin-bottom:12px">Sign & Complete Inventory</div>';
-    ['Crew','Client'].forEach(function(who){
-      var cid = 'inv-' + who.toLowerCase() + '-sig';
-      h += '<div style="margin-bottom:12px"><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">' + who + ' Signature</div>';
-      h += '<canvas id="' + cid + '" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
-      h += '<button onclick="dvClearCanvas(\'' + cid + '\')" style="margin-top:4px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:4px 12px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button></div>';
-    });
-    h += '<button onclick="dvCompleteInventory(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer">✓ Sign & Complete Inventory</button>';
+    h += '<div style="background:#fff;border-radius:12px;padding:16px;margin-top:16px;border:2px solid #E3E7F0">';
+    h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">';
+    h += '<div style="width:40px;height:40px;border-radius:10px;background:#FFF5E0;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">📋</div>';
+    h += '<div><div style="font-size:14px;font-weight:800;color:#1C2333">Ready to complete?</div>';
+    h += '<div style="font-size:12px;color:#7A849E;margin-top:2px">' + items.length + ' items · ' + totalCuft.toFixed(1) + ' cu.ft · Review before signing</div></div></div>';
+    h += '<button onclick="dvOpenInvCompletion(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;cursor:pointer">Complete Inventory →</button>';
     h += '</div>';
   }
   if (done) {
@@ -13929,20 +13947,35 @@ function invRenderAddForm(jobId) {
   var ptLabel = ptObj ? ptObj.label : '';
   var ptConfirmed = !!(d.packTypeConfirmed && ptLabel);
   // Show pack type icons grid
-  var ptInner = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px">';
-  INV_PACK_TYPES.forEach(function(p, i) {
-    var active = p.id === d.packType;
-    var suggested = p.id === d.packType && !d.packTypeConfirmed;
-    var border = suggested ? '#FF9F1A' : (active ? '#0073EA' : '#E3E7F0');
-    var bg     = suggested ? '#FFF8EE' : (active ? '#EBF4FF' : 'transparent');
-    var col    = suggested ? '#9A5600' : (active ? '#0073EA' : '#4A5568');
-    ptInner += '<div onclick="invSetPackType(' + i + ')" style="padding:9px 8px;border-radius:8px;border:2px solid ' + border + ';background:' + bg + ';cursor:pointer;text-align:center;font-size:12px;font-weight:' + (active?'700':'500') + ';color:' + col + '">' + esc(p.icon ? p.icon + ' ' : '') + esc(p.label) + (suggested ? '<div style="font-size:9px;margin-top:2px;color:#FF9F1A">AI suggestion — tap to confirm</div>' : '') + '</div>';
+  // Pack type: wraps/packs LEFT column, cartons RIGHT column
+  var ptCartons = INV_PACK_TYPES.filter(function(p){
+    return p.label.toLowerCase().indexOf('carton') >= 0 || p.id==='BB' || p.id==='BKB';
   });
+  var ptOthers = INV_PACK_TYPES.filter(function(p){ return ptCartons.indexOf(p) < 0; });
+  var maxPT = Math.max(ptOthers.length, ptCartons.length);
+  var ptInner = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+  ptInner += '<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#7A849E;letter-spacing:.5px;padding:2px 4px">Wrap / Pack</div>';
+  ptInner += '<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#7A849E;letter-spacing:.5px;padding:2px 4px">Cartons</div>';
+  for (var _pti = 0; _pti < maxPT; _pti++) {
+    [ptOthers[_pti]||null, ptCartons[_pti]||null].forEach(function(p) {
+      if (!p) { ptInner += '<div></div>'; return; }
+      var pi = INV_PACK_TYPES.indexOf(p);
+      var active    = p.id === d.packType;
+      var suggested = active && !d.packTypeConfirmed;
+      var ptBdr = suggested ? '#FF9F1A' : (active ? '#0073EA' : '#E3E7F0');
+      var ptBg  = suggested ? '#FFF8EE' : (active ? '#EBF4FF' : 'transparent');
+      var ptCol = suggested ? '#9A5600' : (active ? '#0073EA' : '#4A5568');
+      ptInner += '<div onclick="invSetPackType(' + pi + ')" style="padding:9px 8px;border-radius:8px;border:2px solid ' + ptBdr + ';background:' + ptBg + ';cursor:pointer;text-align:center;font-size:12px;font-weight:' + (active?'700':'500') + ';color:' + ptCol + '">';
+      ptInner += esc(p.icon ? p.icon + ' ' : '') + esc(p.label);
+      if (suggested) ptInner += '<div style="font-size:9px;margin-top:2px;color:#FF9F1A">AI suggestion</div>';
+      ptInner += '</div>';
+    });
+  }
   ptInner += '</div>';
   if (d.packType && !d.packTypeConfirmed) {
     ptInner += '<div style="margin-top:8px;background:#FFF8EE;border-radius:8px;padding:8px 12px;font-size:12px;color:#9A5600">⚠ AI suggested <strong>' + esc(ptLabel) + '</strong> — tap to confirm or choose another</div>';
   }
-  addSection(ptConfirmed, invSection('Pack Type', ptConfirmed ? ptLabel : null, '_invExpanded_invSetPackType',
+    addSection(ptConfirmed, invSection('Pack Type', ptConfirmed ? ptLabel : null, '_invExpanded_invSetPackType',
     'invRenderAddForm(\'' + jobId + '\')', ptInner));
 
   // ── 5. PIECE SPECIFICS ────────────────────────────────────────────
@@ -15004,28 +15037,45 @@ function dvDarkHeader(title, sub, backFn, badge, badgeCol) {
   return h;
 }
 
-function dvInfoCard(title, rows) {
+function dvInfoCard(title, rows, collapseKey) {
+  var isCollapsed = collapseKey && !!window[collapseKey];
+  var toggleFn = collapseKey ? collapseKey + '=!' + collapseKey + ';dvRenderJobDetail(dvCurrentJobId)' : '';
   var h = '<div style="background:#fff;border-radius:12px;margin-bottom:12px;overflow:hidden">';
-  if (title) h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#7A849E">' + title + '</div>';
-  rows.filter(Boolean).forEach(function(row) {
-    h += '<div style="display:flex;align-items:center;padding:9px 14px;border-bottom:1px solid #F0EFE9;gap:12px">';
-    h += '<div style="font-size:12px;color:#7A849E;min-width:90px">' + esc(row[0]) + '</div>';
-    h += '<div style="font-size:13px;font-weight:600;color:#1C2333;flex:1">' + esc(String(row[1]||'—')) + '</div>';
+  if (title) {
+    h += '<div onclick="' + toggleFn + '" style="padding:10px 14px;' + (collapseKey?'cursor:pointer;':'') + 'border-bottom:' + (isCollapsed?'none':'1px solid #F0EFE9') + ';font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#7A849E;display:flex;align-items:center;justify-content:space-between">';
+    h += '<span>' + title + '</span>';
+    if (collapseKey) h += '<span style="font-size:14px;color:#C8C5BE">' + (isCollapsed ? '▾ Show' : '▴ Hide') + '</span>';
     h += '</div>';
-  });
+  }
+  if (!isCollapsed) {
+    rows.filter(Boolean).forEach(function(row) {
+      h += '<div style="display:flex;align-items:center;padding:9px 14px;border-bottom:1px solid #F0EFE9;gap:12px">';
+      h += '<div style="font-size:12px;color:#7A849E;min-width:90px">' + esc(row[0]) + '</div>';
+      h += '<div style="font-size:13px;font-weight:600;color:#1C2333;flex:1">' + esc(String(row[1]||'—')) + '</div>';
+      h += '</div>';
+    });
+  }
   h += '</div>';
   return h;
 }
 
-function dvAddressCard(label, address, col, icon) {
+function dvAddressCard(label, address, col, icon, collapseKey) {
+  var isCollapsed = collapseKey && !!window[collapseKey];
+  var toggleFn = collapseKey ? collapseKey + '=!' + collapseKey + ';dvRenderJobDetail(dvCurrentJobId)' : '';
   var h = '<div style="background:#fff;border-radius:12px;margin-bottom:12px;overflow:hidden">';
-  h += '<div style="padding:10px 14px;border-bottom:1px solid #F0EFE9;font-size:11px;font-weight:800;text-transform:uppercase;color:' + col + '">' + icon + ' ' + label + '</div>';
-  h += '<div style="padding:12px 14px">';
-  h += '<div style="font-size:14px;font-weight:600;color:#1C2333;line-height:1.4;margin-bottom:10px">' + esc(address) + '</div>';
-  h += '<div style="display:flex;gap:8px">';
-  h += '<a href="https://maps.google.com/?q=' + encodeURIComponent(address) + '" target="_blank" style="flex:1;background:#EBF4FF;color:#0073EA;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🗺 Maps</a>';
-  h += '<a href="https://waze.com/ul?q=' + encodeURIComponent(address) + '" target="_blank" style="flex:1;background:#E8FFEE;color:#00A86B;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🔵 Waze</a>';
-  h += '</div></div></div>';
+  h += '<div onclick="' + toggleFn + '" style="padding:10px 14px;' + (collapseKey?'cursor:pointer;':'') + 'border-bottom:' + (isCollapsed?'none':'1px solid #F0EFE9') + ';font-size:11px;font-weight:800;text-transform:uppercase;color:' + col + ';display:flex;align-items:center;justify-content:space-between">';
+  h += '<span>' + icon + ' ' + label + '</span>';
+  if (collapseKey) h += '<span style="font-size:14px;color:' + col + ';opacity:.5">' + (isCollapsed ? '▾ Show' : '▴ Hide') + '</span>';
+  h += '</div>';
+  if (!isCollapsed) {
+    h += '<div style="padding:12px 14px">';
+    h += '<div style="font-size:14px;font-weight:600;color:#1C2333;line-height:1.4;margin-bottom:10px">' + esc(address) + '</div>';
+    h += '<div style="display:flex;gap:8px">';
+    h += '<a href="https://maps.google.com/?q=' + encodeURIComponent(address) + '" target="_blank" style="flex:1;background:#EBF4FF;color:#0073EA;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🗺 Maps</a>';
+    h += '<a href="https://waze.com/ul?q=' + encodeURIComponent(address) + '" target="_blank" style="flex:1;background:#E8FFEE;color:#00A86B;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🔵 Waze</a>';
+    h += '</div></div>';
+  }
+  h += '</div>';
   return h;
 }
 
@@ -15928,6 +15978,29 @@ function whSelectOptions(selectedId) {
       <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
         <div id="dv-signoff-body"></div>
       </div>
+    </div>
+
+    <!-- SCREEN: INVENTORY COMPLETION + CLIENT PROMPTS + SIGNATURES -->
+    <div id="dv-screen-inv-complete" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-inv-complete-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: FORMS LIBRARY -->
+    <div id="dv-screen-forms" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-forms-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: PROPERTY WALKAROUND -->
+    <div id="dv-screen-walkaround" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-walkaround-body"></div>
+      </div>
+      <!-- Slide-up panel for adding a damage record -->
+      <div id="dv-wa-panel" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;background:rgba(0,0,0,.45);align-items:flex-end"></div>
     </div>
 
   </div>
@@ -18426,4 +18499,450 @@ document.addEventListener('keydown', function(e) {
 
 </script>
 </body>
-</html>
+</html
+// ══════════════════════════════════════════════════════════════════════
+// INVENTORY COMPLETION SCREEN
+// ══════════════════════════════════════════════════════════════════════
+
+function dvOpenInvCompletion(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-inv-complete');
+  dvRenderInvCompletion(jobId);
+}
+
+// 5 client acknowledgement prompts before signatures become available
+var INV_CLIENT_PROMPTS = [
+  'I confirm that I have been present during the inventory process and have had the opportunity to review all items recorded.',
+  'I acknowledge that the item descriptions, conditions and damage codes shown in this inventory are accurate to the best of my knowledge.',
+  'I understand that any pre-existing damage noted on items is recorded for both parties\' protection and does not affect the agreed move price.',
+  'I confirm that any items marked for disposal have been agreed verbally with the crew and I authorise their removal.',
+  'I agree that this signed inventory will form the condition record for this move and will be used as the reference document in the event of any damage claim.',
+];
+
+function dvRenderInvCompletion(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  var inv = (j.crewData && j.crewData.inventory) || {items:[]};
+  var items = inv.items || [];
+  var confirmed = inv.clientPrompts || {};   // {0:true, 1:true, ...}
+  var confirmedCount = Object.keys(confirmed).filter(function(k){return confirmed[k];}).length;
+  var allPromptsDone = confirmedCount === INV_CLIENT_PROMPTS.length;
+
+  var h = dvDarkHeader('Complete Inventory', j.client + ' · ' + items.length + ' items',
+    'dvOpenInventory(\'' + jobId + '\')');
+  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 100px">';
+
+  // Summary strip
+  var totalCuft = items.reduce(function(t,it){ return t + ((it.volume&&it.volume.cuft)||0); }, 0);
+  h += '<div style="background:#EBF4FF;border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-around">';
+  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:#0073EA">' + items.length + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Items</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:#0073EA">' + totalCuft.toFixed(0) + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Cu.ft</div></div>';
+  var dmgCount = items.filter(function(it){return it.damages&&it.damages.codes&&it.damages.codes.length;}).length;
+  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:' + (dmgCount?'#E44258':'#00C875') + '">' + dmgCount + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Damage</div></div>';
+  h += '</div>';
+
+  // Client acknowledgements
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px;letter-spacing:.6px">Client Acknowledgements</div>';
+  h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:16px">';
+
+  INV_CLIENT_PROMPTS.forEach(function(prompt, i) {
+    var done = !!confirmed[i];
+    var isNext = !done && (i === 0 || !!confirmed[i-1]);
+    var locked = !done && !isNext;
+
+    var bgCol  = done ? '#E6FFF5' : (isNext ? '#fff' : '#F9F9F9');
+    var border = done ? '1px solid #D1FAE5' : (isNext ? '1px solid #E3E7F0' : '1px solid #F0EFE9');
+    var cursor = (isNext && !done) ? 'cursor:pointer;' : '';
+    var clickFn = isNext ? 'dvInvConfirmPrompt(\'' + jobId + '\',' + i + ')' : '';
+
+    h += '<div onclick="' + clickFn + '" style="padding:13px 16px;border-bottom:' + border + ';background:' + bgCol + ';' + cursor + 'display:flex;align-items:flex-start;gap:12px">';
+
+    // Check circle
+    h += '<div style="width:24px;height:24px;border-radius:50%;border:2px solid ' + (done?'#00C875':(isNext?'#0073EA':'#C8C5BE')) + ';background:' + (done?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">';
+    if (done) h += '<span style="color:#fff;font-size:12px">✓</span>';
+    else if (!locked) h += '<span style="color:#0073EA;font-size:12px;font-weight:900">' + (i+1) + '</span>';
+    h += '</div>';
+
+    h += '<div style="flex:1">';
+    h += '<div style="font-size:13px;line-height:1.5;color:' + (locked?'#C8C5BE':(done?'#00A86B':'#1C2333')) + '">' + esc(prompt) + '</div>';
+    if (isNext) h += '<div style="font-size:11px;font-weight:700;color:#0073EA;margin-top:6px">Tap to confirm →</div>';
+    if (done)   h += '<div style="font-size:11px;font-weight:700;color:#00A86B;margin-top:4px">✓ Confirmed</div>';
+    h += '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // Progress bar for prompts
+  h += '<div style="background:#F7F6F2;border-radius:8px;padding:8px 14px;margin-bottom:16px;display:flex;align-items:center;gap:12px">';
+  h += '<div style="flex:1;background:#E3E7F0;border-radius:20px;height:6px"><div style="background:' + (allPromptsDone?'#00C875':'#0073EA') + ';border-radius:20px;height:6px;width:' + Math.round(confirmedCount/INV_CLIENT_PROMPTS.length*100) + '%"></div></div>';
+  h += '<div style="font-size:12px;font-weight:800;color:#1C2333">' + confirmedCount + '/' + INV_CLIENT_PROMPTS.length + ' confirmed</div>';
+  h += '</div>';
+
+  // Signatures — only shown once all prompts done
+  if (allPromptsDone) {
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px;letter-spacing:.6px">Signatures</div>';
+    ['Crew','Client'].forEach(function(who){
+      var cid = 'inv-' + who.toLowerCase() + '-sig';
+      h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
+      h += '<div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:8px">' + who + ' Signature</div>';
+      h += '<canvas id="' + cid + '" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
+      h += '<button onclick="dvClearCanvas(\'' + cid + '\')" style="margin-top:6px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:5px 14px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button>';
+      h += '</div>';
+    });
+    h += '<button onclick="dvCompleteInventory(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">✓ Sign & Complete Inventory</button>';
+  } else {
+    h += '<div style="background:#F7F6F2;border-radius:12px;padding:14px;text-align:center;color:#B0BEC5">';
+    h += '<div style="font-size:24px;margin-bottom:8px">🔒</div>';
+    h += '<div style="font-size:13px;font-weight:700">Signatures unlock after all ' + INV_CLIENT_PROMPTS.length + ' acknowledgements</div>';
+    h += '<div style="font-size:12px;margin-top:4px">' + (INV_CLIENT_PROMPTS.length - confirmedCount) + ' remaining</div>';
+    h += '</div>';
+  }
+
+  h += '</div>';
+  el('dv-inv-complete-body').innerHTML = h;
+  if (allPromptsDone) {
+    setTimeout(function(){
+      dvInitSigPad('inv-crew-sig');
+      dvInitSigPad('inv-client-sig');
+    }, 80);
+  }
+}
+
+function dvInvConfirmPrompt(jobId, idx) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.inventory) j.crewData.inventory = {items:[]};
+  if (!j.crewData.inventory.clientPrompts) j.crewData.inventory.clientPrompts = {};
+  j.crewData.inventory.clientPrompts[idx] = true;
+  saveData('job', j.id, j);
+  dvRenderInvCompletion(jobId);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// FORMS LIBRARY
+// ══════════════════════════════════════════════════════════════════════
+
+function dvOpenFormsLibrary(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-forms');
+  dvRenderFormsLibrary(jobId);
+}
+
+var DV_FORMS_LIBRARY = [
+  {
+    id: 'damage_waiver',
+    label: 'Damage Waiver',
+    icon: '🛡',
+    sub: 'Client waives liability for specific pre-existing conditions',
+    status: 'Placeholder — form coming soon',
+    col: '#E44258'
+  },
+  {
+    id: 'long_walk',
+    label: 'Long Walk / Long Carry Form',
+    icon: '🚶',
+    sub: 'Record excess distance from vehicle to property',
+    status: 'Placeholder — form coming soon',
+    col: '#FF9F1A'
+  },
+  {
+    id: 'specialist_items',
+    label: 'Specialist Items Declaration',
+    icon: '💎',
+    sub: 'High value / antique / fragile item agreement',
+    status: 'Placeholder — form coming soon',
+    col: '#9B59B6'
+  },
+  {
+    id: 'third_party',
+    label: 'Third Party Access Form',
+    icon: '🔑',
+    sub: 'Authorisation for crew to access property without client present',
+    status: 'Placeholder — form coming soon',
+    col: '#0073EA'
+  },
+  {
+    id: 'packing_exclusion',
+    label: 'Packing Exclusion Notice',
+    icon: '📦',
+    sub: 'Items client is packing themselves — liability exclusion',
+    status: 'Placeholder — form coming soon',
+    col: '#00A86B'
+  },
+];
+
+function dvRenderFormsLibrary(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  var h = dvDarkHeader('Forms Library', j.client, 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 90px">';
+  h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#9A5600">⚠ Forms are currently placeholders. Full digital form capture is coming — content for each form will be added shortly.</div>';
+  DV_FORMS_LIBRARY.forEach(function(form) {
+    h += '<div style="background:#fff;border-radius:12px;margin-bottom:10px;padding:14px 16px;border-left:4px solid ' + form.col + ';display:flex;align-items:center;gap:14px">';
+    h += '<div style="width:42px;height:42px;border-radius:10px;background:' + form.col + '22;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">' + form.icon + '</div>';
+    h += '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1C2333">' + form.label + '</div>';
+    h += '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + form.sub + '</div>';
+    h += '<div style="font-size:11px;font-weight:600;color:' + form.col + ';margin-top:5px">→ ' + form.status + '</div>';
+    h += '</div></div>';
+  });
+  h += '</div>';
+  el('dv-forms-body').innerHTML = h;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PROPERTY WALKAROUND
+// ══════════════════════════════════════════════════════════════════════
+
+function dvOpenWalkaround(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-walkaround');
+  dvRenderWalkaround(jobId);
+}
+
+var DV_WALKAROUND_TYPES = [
+  {id:'wall_scratch',  label:'Wall — Scratch / Scuff',  icon:'🪟', col:'#FF9F1A'},
+  {id:'wall_hole',     label:'Wall — Hole / Dent',       icon:'🔲', col:'#E44258'},
+  {id:'floor_scratch', label:'Floor — Scratch / Gouge',  icon:'🪵', col:'#FF9F1A'},
+  {id:'floor_stain',   label:'Floor — Stain / Mark',     icon:'💧', col:'#9B59B6'},
+  {id:'door_chip',     label:'Door Frame — Chip / Crack',icon:'🚪', col:'#E44258'},
+  {id:'ceiling',       label:'Ceiling — Mark / Damage',  icon:'☁',  col:'#7A849E'},
+  {id:'banister',      label:'Banister / Rail — Damage', icon:'🪜', col:'#FF9F1A'},
+  {id:'skirting',      label:'Skirting Board — Damage',  icon:'📐', col:'#9B59B6'},
+  {id:'tile',          label:'Tile — Crack / Chip',      icon:'🔷', col:'#0073EA'},
+  {id:'window',        label:'Window — Crack / Chip',    icon:'🪟', col:'#E44258'},
+  {id:'other',         label:'Other Property Damage',    icon:'⚠',  col:'#7A849E'},
+];
+
+var _waJobId   = null;
+var _waPhotos  = {};    // {tempId: b64}
+var _waAiLoading = false;
+
+function dvRenderWalkaround(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[], completedAt:null};
+  var wa   = j.crewData.walkaround;
+  var done = !!wa.completedAt;
+  var dmgs = wa.damages || [];
+  _waJobId = jobId;
+
+  var h = dvDarkHeader('Property Walkaround', j.client + ' — ' + (j.origin||'Property'), 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 100px">';
+
+  if (done) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Walkaround complete · ' + dvNiceDate(new Date(wa.completedAt)) + ' · ' + esc(wa.completedBy||'') + '</div>';
+  } else {
+    h += '<div style="background:#EBF4FF;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#0073EA">Walk around the property and record any pre-existing damage before work begins. Tap <strong>+ Add Damage</strong> for each item found.</div>';
+  }
+
+  // Damage list
+  if (dmgs.length) {
+    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:8px;letter-spacing:.5px">' + dmgs.length + ' damage' + (dmgs.length===1?'':'s') + ' recorded</div>';
+    dmgs.forEach(function(dmg, di) {
+      var typeObj = DV_WALKAROUND_TYPES.filter(function(t){return t.id===dmg.type;})[0] || {icon:'⚠',col:'#7A849E',label:dmg.type};
+      h += '<div style="background:#fff;border-radius:12px;margin-bottom:8px;overflow:hidden;border-left:4px solid ' + typeObj.col + '">';
+      h += '<div style="padding:10px 14px;display:flex;align-items:flex-start;gap:10px">';
+      h += '<span style="font-size:20px;flex-shrink:0">' + typeObj.icon + '</span>';
+      h += '<div style="flex:1">';
+      h += '<div style="font-size:12px;font-weight:800;color:' + typeObj.col + '">' + esc(typeObj.label) + '</div>';
+      if (dmg.location) h += '<div style="font-size:12px;color:#1C2333;margin-top:2px">📍 ' + esc(dmg.location) + '</div>';
+      if (dmg.notes)    h += '<div style="font-size:12px;color:#7A849E;margin-top:2px">' + esc(dmg.notes) + '</div>';
+      if (dmg.aiDesc)   h += '<div style="font-size:11px;color:#0073EA;margin-top:2px">✦ ' + esc(dmg.aiDesc) + '</div>';
+      h += '</div>';
+      if (!done) h += '<button onclick="dvWaDeleteDamage(\'' + jobId + '\',' + di + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
+      h += '</div>';
+      // Photos
+      if (dmg.photos && dmg.photos.length) {
+        h += '<div style="padding:0 14px 10px;display:flex;gap:6px;flex-wrap:wrap">';
+        dmg.photos.forEach(function(p){ h += '<img src="' + p + '" style="width:60px;height:60px;object-fit:cover;border-radius:8px">'; });
+        h += '</div>';
+      }
+      h += '</div>';
+    });
+  } else if (!done) {
+    h += '<div style="background:#F7F6F2;border-radius:12px;padding:24px;text-align:center;margin-bottom:16px">';
+    h += '<div style="font-size:32px;margin-bottom:8px">🏠</div>';
+    h += '<div style="font-size:14px;font-weight:700;color:#7A849E">No damage recorded yet</div>';
+    h += '<div style="font-size:12px;color:#B0BEC5;margin-top:4px">Tap + Add Damage to record any issues</div>';
+    h += '</div>';
+  }
+
+  // Add damage button
+  if (!done) {
+    h += '<button onclick="dvWaOpenAddDamage(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:12px">+ Add Damage</button>';
+    h += '<button onclick="dvWaComplete(\'' + jobId + '\')" style="width:100%;background:' + (dmgs.length?'#00C875':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:' + (dmgs.length?'pointer':'not-allowed') + '">' + (dmgs.length?'✓ Complete Walkaround':'Complete Walkaround (no damage is also valid)') + '</button>';
+    // Allow completing with no damage too
+    if (!dmgs.length) {
+      h += '<button onclick="dvWaComplete(\'' + jobId + '\')" style="width:100%;margin-top:8px;background:#00C875;color:#fff;border:none;border-radius:12px;padding:13px;font-size:13px;font-weight:700;cursor:pointer">✓ Complete — No Damage Found</button>';
+    }
+  }
+
+  h += '</div>';
+  el('dv-walkaround-body').innerHTML = h;
+}
+
+// Add damage modal — rendered inline as a slide-up panel
+function dvWaOpenAddDamage(jobId) {
+  var panel = el('dv-wa-panel');
+  if (!panel) return;
+  _waJobId = jobId;
+  var h = '<div style="background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 40px;max-width:520px;margin:0 auto">';
+  h += '<div style="width:40px;height:4px;background:#E3E7F0;border-radius:2px;margin:0 auto 16px"></div>';
+  h += '<div style="font-size:14px;font-weight:800;color:#1C2333;margin-bottom:14px">Add Property Damage</div>';
+
+  // Type selector
+  h += '<div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:8px">Damage Type</div>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">';
+  DV_WALKAROUND_TYPES.forEach(function(t) {
+    h += '<div onclick="dvWaSelectType(\'' + t.id + '\')" id="wa-type-' + t.id + '" style="padding:8px;border-radius:8px;border:2px solid #E3E7F0;cursor:pointer;display:flex;align-items:center;gap:8px">';
+    h += '<span>' + t.icon + '</span><span style="font-size:12px;font-weight:600;color:#4A5568">' + t.label + '</span></div>';
+  });
+  h += '</div>';
+
+  // Location input
+  h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Location in Property</div>';
+  h += '<input id="wa-location" placeholder="e.g. Hallway, 1st floor landing, master bedroom..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;box-sizing:border-box"></div>';
+
+  // Notes
+  h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Description</div>';
+  h += '<textarea id="wa-notes" rows="2" placeholder="Describe the damage..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box"></textarea></div>';
+
+  // Photo + AI
+  h += '<div style="margin-bottom:14px">';
+  h += '<input id="wa-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="dvWaPhotoSelected(this)">';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<button onclick="el(\'wa-photo-input\').click()" style="flex:1;background:#EBF4FF;border:2px dashed #0073EA;border-radius:10px;padding:12px;cursor:pointer;color:#0073EA;font-weight:700;font-size:13px">📷 Take Photo<br><span style="font-size:11px;font-weight:400;opacity:.7">AI will describe damage</span></button>';
+  h += '</div>';
+  h += '<div id="wa-photo-preview"></div>';
+  h += '</div>';
+
+  h += '<button onclick="dvWaSaveDamage(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer">Save Damage Record</button>';
+  h += '<button onclick="dvWaClosePanel()" style="width:100%;margin-top:8px;background:none;border:1px solid #E3E7F0;border-radius:12px;padding:12px;font-size:13px;color:#7A849E;cursor:pointer">Cancel</button>';
+  h += '</div>';
+
+  panel.innerHTML = h;
+  panel.style.display = 'block';
+  panel.style.position = 'fixed';
+  panel.style.bottom = '0';
+  panel.style.left = '0';
+  panel.style.right = '0';
+  panel.style.zIndex = '999';
+  panel.style.background = 'rgba(0,0,0,.4)';
+  panel.style.top = '0';
+  panel.style.display = 'flex';
+  panel.style.alignItems = 'flex-end';
+  window._waSelectedType = null;
+  window._waPhotoB64 = null;
+  window._waAiDesc = null;
+}
+
+function dvWaSelectType(typeId) {
+  window._waSelectedType = typeId;
+  DV_WALKAROUND_TYPES.forEach(function(t) {
+    var el2 = el('wa-type-' + t.id);
+    if (!el2) return;
+    var active = t.id === typeId;
+    el2.style.borderColor = active ? t.col : '#E3E7F0';
+    el2.style.background  = active ? (t.col + '22') : 'transparent';
+  });
+}
+
+function dvWaPhotoSelected(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    window._waPhotoB64 = e.target.result;
+    var prev = el('wa-photo-preview');
+    if (prev) {
+      prev.innerHTML = '<div style="position:relative;margin-top:8px"><img src="' + e.target.result + '" style="width:100%;max-height:150px;object-fit:cover;border-radius:8px"><div id="wa-ai-status" style="margin-top:6px;font-size:12px;color:#0073EA;font-weight:600">✦ Analysing damage with AI…</div></div>';
+    }
+    dvWaRunAi(e.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+function dvWaRunAi(b64) {
+  var apiKey = APP_SETTINGS && APP_SETTINGS.claudeApiKey;
+  var imgData = b64.split(',')[1];
+  var mediaType = b64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+  var prompt = 'You are a property damage assessment assistant for a removals company. Look at this photo and in 1-2 short sentences describe: (1) what type of property surface or feature is damaged, (2) the nature and approximate severity of the damage. Be factual and concise. Format: "[Surface]: [damage description]". Example: "Hallway wall: shallow scratch approx 30cm long, paint surface only".';
+  var body = JSON.stringify({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 120,
+    messages: [{role:'user', content:[{type:'image',source:{type:'base64',media_type:mediaType,data:imgData}},{type:'text',text:prompt}]}]
+  });
+  var headers = {'Content-Type':'application/json'};
+  var url = '/api/claude';
+  if (apiKey) { url = 'https://api.anthropic.com/v1/messages'; headers['x-api-key'] = apiKey; headers['anthropic-version'] = '2023-06-01'; headers['anthropic-dangerous-allow-browser'] = 'true'; }
+  fetch(url, {method:'POST', headers:headers, credentials:apiKey?undefined:'include', body:body})
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var blocks = data.content || (data.result && data.result.content) || [];
+      var txt = blocks.filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+      window._waAiDesc = txt.trim();
+      var statusEl = el('wa-ai-status');
+      if (statusEl) statusEl.innerHTML = '✦ AI: <em>' + esc(window._waAiDesc) + '</em>';
+      // Auto-fill notes if empty
+      var notesEl = el('wa-notes');
+      if (notesEl && !notesEl.value) notesEl.value = window._waAiDesc;
+    })
+    .catch(function(){ var statusEl = el('wa-ai-status'); if (statusEl) statusEl.innerHTML = 'AI unavailable — enter notes manually'; });
+}
+
+function dvWaSaveDamage(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  var type     = window._waSelectedType;
+  var location = (el('wa-location')||{}).value || '';
+  var notes    = (el('wa-notes')||{}).value || '';
+  if (!type) { toast('Select a damage type'); return; }
+  if (!location && !notes) { toast('Add a location or description'); return; }
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[]};
+  j.crewData.walkaround.damages.push({
+    type:     type,
+    location: location,
+    notes:    notes,
+    aiDesc:   window._waAiDesc || null,
+    photos:   window._waPhotoB64 ? [window._waPhotoB64] : [],
+    recordedAt: new Date().toISOString(),
+    recordedBy: window._driverName || 'Crew'
+  });
+  saveData('job', j.id, j);
+  dvWaClosePanel();
+  dvRenderWalkaround(jobId);
+  toast('✓ Damage recorded');
+}
+
+function dvWaClosePanel() {
+  var panel = el('dv-wa-panel');
+  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+  window._waSelectedType = null;
+  window._waPhotoB64 = null;
+  window._waAiDesc = null;
+}
+
+function dvWaDeleteDamage(jobId, idx) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j || !j.crewData || !j.crewData.walkaround) return;
+  j.crewData.walkaround.damages.splice(idx, 1);
+  saveData('job', j.id, j);
+  dvRenderWalkaround(jobId);
+}
+
+function dvWaComplete(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[]};
+  j.crewData.walkaround.completedAt = new Date().toISOString();
+  j.crewData.walkaround.completedBy = window._driverName || 'Crew';
+  saveData('job', j.id, j);
+  toast('✓ Property walkaround complete');
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+>
