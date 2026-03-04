@@ -4860,7 +4860,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v50 — 4 Mar 2026';
+var APP_VERSION = 'v51 — 4 Mar 2026';
 
 var APP_SETTINGS = {
   googleMapsKey:    '',            // Google Maps Platform API key
@@ -12457,7 +12457,14 @@ function dvRenderJobDetail(jobId) {
     fn: 'dvOpenSignoff(\'' + j.id + '\')'
   });
 
-  formDefs.forEach(function(f) { h += dvFormCard(f.label, f.sub, f.icon, f.status, f.done, f.fn); });
+  // Completed forms sink to bottom, pending stay at top
+  var pendingForms = formDefs.filter(function(f){ return !f.done; });
+  var doneForms    = formDefs.filter(function(f){ return f.done; });
+  pendingForms.forEach(function(f){ h += dvFormCard(f.label, f.sub, f.icon, f.status, f.done, f.fn); });
+  if (doneForms.length) {
+    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#B0BEC5;margin:10px 0 6px">Completed</div>';
+    doneForms.forEach(function(f){ h += dvFormCard(f.label, f.sub, f.icon, f.status, f.done, f.fn); });
+  }
 
   h += '</div>';
   el('dv-job-detail-body').innerHTML = h;
@@ -13233,36 +13240,34 @@ var INV_SPECIFICS = [
   {id:'electrical', label:'Electrical Item', icon:'⚡', exclusive:false, conditions:[
     {id:'elec_make',    type:'text',   label:'Make / manufacturer', placeholder:'e.g. Samsung, Dyson'},
     {id:'elec_model',   type:'text',   label:'Model number (if visible)', placeholder:'e.g. WM1400'},
+    {id:'elec_serial',  type:'serial', label:'Serial number'},
     {id:'elec_working', type:'yesno',  label:'Tested and confirmed working?'},
-    {id:'elec_pat',     type:'yesno',  label:'Valid PAT / safety certificate present?'},
-    {id:'elec_cables',  type:'yesno',  label:'All cables and accessories present?'},
-    {id:'elec_damage',  type:'yesno',  label:'Any visible damage to cable or plug?'},
-    {id:'elec_note',    type:'text',   label:'Additional notes', placeholder:'e.g. remote missing, door stiff'},
+    {id:'elec_cables',  type:'text',   label:'Associated cables / remote controls', placeholder:'e.g. Power cable only, no remote'},
+    {id:'elec_note',    type:'text',   label:'Additional notes', placeholder:'e.g. door stiff, missing lid'},
   ]},
 
   {id:'battery', label:'Contains Battery', icon:'🔋', exclusive:false, conditions:[
     {id:'bat_type',    type:'select', label:'Battery type',
      options:['Standard AA/AAA/C/D','Lithium-ion — small (phone, laptop, tablet)','Lithium-ion — medium (power tool)','Lithium-ion — large (e-bike, scooter, EV)','Lead acid (car, mobility)','Alkaline button cell','Other']},
     {id:'bat_removed', type:'yesno',  label:'Battery removed / disconnected for transit?'},
+    {id:'bat_client',  type:'yesnoonly', label:'Battery handed to client?'},
     {id:'bat_secure',  type:'yesno',  label:'Battery terminals protected against short circuit?'},
     {id:'bat_damaged', type:'yesno',  label:'Any sign of swelling, leakage or damage to battery?'},
     {id:'bat_hazmat',  type:'info',   label:'⚠ Large lithium batteries (e-bike/EV) may require specialist transport — flag to move manager if unsure'},
   ]},
 
-  {id:'dismantled', label:'Requires Dismantling', icon:'🔧', exclusive:false, conditions:[
-    {id:'dis_who',      type:'select', label:'Who will dismantle?',
-     options:['Crew to dismantle on collection day','Owner to dismantle before collection','Specialist required — flag to office']},
-    {id:'dis_tools',    type:'yesno',  label:'Standard tools sufficient (no specialist tools needed)?'},
-    {id:'dis_hardware', type:'yesno',  label:'Hardware (screws/bolts/fittings) bagged and labelled?'},
+  {id:'dismantled', label:'Dismantled', icon:'🔧', exclusive:false, conditions:[
+    {id:'dis_who',      type:'select', label:'Dismantled by',
+     options:['Crew dismantled','Handyman dismantled','Owner dismantled before collection','Specialist — flag to office']},
+    {id:'dis_bits',     type:'yesonly', label:'Bits and parts added to Bits Box?'},
     {id:'dis_instruct', type:'yesno',  label:'Assembly instructions available (manual or photo)?'},
-    {id:'dis_sequence', type:'text',   label:'Dismantling notes / sequence', placeholder:'e.g. Remove glass shelves first, frame in 3 sections'},
+    {id:'dis_sequence', type:'text',   label:'Dismantling notes', placeholder:'e.g. Frame in 3 sections, glass shelves separate'},
     {id:'dis_reassemble',type:'yesno', label:'Reassembly required at destination?'},
   ]},
 
   {id:'pre_dismantled', label:'Pre-Dismantled by Owner', icon:'📦', exclusive:false, conditions:[
     {id:'predis_parts',  type:'yesno', label:'All parts present and accounted for?'},
-    {id:'predis_hw',     type:'yesno', label:'Hardware bagged and labelled by owner?'},
-    {id:'predis_photos', type:'info',  label:'📷 Photograph all parts laid out before packing'},
+    {id:'predis_bits',   type:'yesonly',label:'Parts / bits added to Bits Box?'},
     {id:'predis_instruct',type:'yesno',label:'Assembly instructions included?'},
     {id:'predis_note',   type:'text',  label:'Missing parts or notes', placeholder:'e.g. 2 bolts missing from base'},
   ]},
@@ -13271,10 +13276,9 @@ var INV_SPECIFICS = [
     {id:'food_type',    type:'select', label:'Type of food items',
      options:['Dry goods only (tins, packets)','Refrigerated items','Frozen items','Mix of above']},
     {id:'food_sealed',  type:'yesno',  label:'All food items sealed in containers or bags?'},
-    {id:'food_frozen',  type:'yesno',  label:'Contains frozen / refrigerated items?'},
     {id:'food_transit', type:'select', label:'Transit time acceptable for food type?',
      options:['Yes — same day delivery','Borderline — client aware','No — client removing food items','Unknown']},
-    {id:'food_liability',type:'yesno', label:'Client has been advised of liability for perishables during transit?'},
+    {id:'food_liability',type:'yesno', label:'Client advised of liability for perishables during transit?'},
     {id:'food_note',    type:'text',   label:'Notes', placeholder:'e.g. client removing frozen items separately'},
   ]},
 
@@ -13465,6 +13469,28 @@ function isoSearch(query, max) {
   return results.slice(0, max||8).map(function(r){return r.item;});
 }
 
+// Format AI-returned item names to title case with descriptor after dash
+// "white desk fan" -> "Desk Fan - White"
+// "3-seater grey sofa" -> "Sofa, 3-Seater - Grey"
+function invFormatAiName(raw) {
+  if (!raw) return '';
+  // Extract colour words (common colours)
+  var colours = ['white','black','grey','gray','brown','oak','pine','beige','cream','silver',
+                 'gold','blue','red','green','yellow','orange','purple','pink','dark','light',
+                 'natural','walnut','mahogany','cherry','maple'];
+  var words = raw.trim().toLowerCase().split(/\s+/);
+  var colourWords = [], mainWords = [];
+  words.forEach(function(w){
+    if (colours.indexOf(w) >= 0) colourWords.push(w);
+    else mainWords.push(w);
+  });
+  // Title-case main words
+  function titleCase(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+  var main = mainWords.map(titleCase).join(' ');
+  var col  = colourWords.map(titleCase).join(' ');
+  return main + (col ? ' - ' + col : '');
+}
+
 // AI pack type hint from description
 function invGuessPackType(descLower) {
   for (var i = 0; i < INV_PACK_AI_HINTS.length; i++) {
@@ -13628,7 +13654,12 @@ function dvRenderInventory(jobId, filter) {
         if (aiTag==='pending')  h += '<span style="font-size:10px;background:#FFFBE6;color:#B07800;padding:1px 6px;border-radius:4px;font-weight:700">⏳ AI pending</span>';
         h += '</div></div>';
         if (it.photos&&it.photos.length) h += '<img src="' + it.photos[0] + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0">';
-        if (!done) h += '<button onclick="invDeleteItem(\'' + jobId + '\',' + idx + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
+        if (!done) {
+          h += '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">';
+          h += '<button onclick="invEditItem(\'' + jobId + '\',' + idx + ')" style="background:#EBF4FF;border:none;border-radius:6px;width:32px;height:32px;color:#0073EA;font-size:13px;cursor:pointer">✏</button>';
+          h += '<button onclick="invDeleteItem(\'' + jobId + '\',' + idx + ')" style="background:#FFF0F0;border:none;border-radius:6px;width:32px;height:32px;color:#E44258;font-size:14px;cursor:pointer">✕</button>';
+          h += '</div>';
+        }
         h += '</div>';
       });
       h += '</div>';
@@ -13685,236 +13716,407 @@ function invOpenAddForm(jobId) {
   invRenderAddForm(jobId);
 }
 
+
+// ── ITEM EDIT (open existing item for editing) ─────────────────────────
+function invEditItem(jobId, idx) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j || !j.crewData || !j.crewData.inventory) return;
+  var item = j.crewData.inventory.items[idx];
+  if (!item) return;
+  _invDraft      = JSON.parse(JSON.stringify(item)); // deep clone
+  _invDraft._editIdx = idx;                           // mark as edit
+  _invJobId      = jobId;
+  _invPhotoB64   = item.photos && item.photos[0] ? item.photos[0] : null;
+  _invAiLoading  = false;
+  // Reset expand states
+  ['invSetRoom','invSetPackType','invSetPackCode'].forEach(function(k){ window['_invExpanded_'+k]=false; });
+  dvShowScreen('dv-screen-inv-add');
+  invRenderAddForm(jobId);
+}
+
+// ── COLLAPSED DONE PILL — matches "pre-existing damage" pill style ─────
+function invDonePill(label, value, expandFn) {
+  return '<div onclick="' + expandFn + '" ' +
+    'style="display:flex;align-items:center;justify-content:space-between;' +
+    'padding:10px 14px;border-radius:10px;border:2px solid #D1FAE5;background:#E6FFF5;cursor:pointer;margin-bottom:8px">' +
+    '<div style="display:flex;align-items:center;gap:8px">' +
+    '<span style="font-size:14px;color:#00A86B">✓</span>' +
+    '<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#00A86B;letter-spacing:.4px">' + label + '</div>' +
+    '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(value) + '</div></div>' +
+    '</div>' +
+    '<span style="font-size:11px;color:#00A86B;opacity:.7">Edit ▾</span>' +
+    '</div>';
+}
+
+// ── SECTION WRAPPER — pending (white card) vs done (collapsed green pill) ──
+// doneValue: string to show when collapsed, or null if not done
+// expandKey: window key to track expanded state
+// renderFn:  string of JS to call to re-render
+function invSection(titleLabel, doneValue, expandKey, renderFn, innerHtml) {
+  var isExpanded = !doneValue || !!window[expandKey];
+  if (!isExpanded) {
+    return invDonePill(titleLabel, doneValue, expandKey + '=true;' + renderFn);
+  }
+  var h = '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:8px">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">' + titleLabel + '</div>';
+  h += innerHtml;
+  h += '</div>';
+  return h;
+}
+
+// ── MAIN FORM RENDER ──────────────────────────────────────────────────
 function invRenderAddForm(jobId) {
-  var j    = jobs.filter(function(x){return x.id===jobId;})[0];
+  var j   = jobs.filter(function(x){return x.id===jobId;})[0];
   if (!j) return;
-  var d    = _invDraft;
-  var seq  = d.pieceNo;
+  var d   = _invDraft;
+  if (!d) return;
+  var seq = d.pieceNo;
+  var isEdit = d._editIdx !== undefined;
 
   var backFn = 'dvOpenInventory(\'' + jobId + '\')';
-  var h = dvDarkHeader('Add Item · Piece #' + seq, j.client + ' · ' + (d.pieceCode||''), backFn);
+  var h = dvDarkHeader((isEdit ? 'Edit Item' : 'Add Item') + ' · #' + seq,
+    j.client + ' · ' + (d.pieceCode||''), backFn);
   h += '<div style="max-width:520px;margin:0 auto;padding:12px 14px 100px">';
 
-  // ── PHOTO + AI ─────────────────────────────────────────────────────
-  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
-  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Photo & AI Identification</div>';
+  // ── SECTION ORDER: completed sections float to bottom ─────────────
+  // We build two buckets: pending (top) and done (bottom, collapsed)
+  var pendingSections = [], doneSections = [];
+  function addSection(isDone, html) {
+    if (isDone) doneSections.push(html);
+    else        pendingSections.push(html);
+  }
 
-  if (_invPhotoB64) {
-    h += '<div style="position:relative;margin-bottom:10px">';
-    h += '<img src="' + _invPhotoB64 + '" style="width:100%;max-height:200px;object-fit:cover;border-radius:10px">';
-    h += '<button onclick="invClearPhoto()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:28px;height:28px;color:#fff;font-size:14px;cursor:pointer">✕</button>';
-    h += '</div>';
+  // ── 1. ITEM NAME + PIECE INFO (always pinned at top, never moves) ──
+  var nameSection = '';
+  nameSection += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:8px">';
+  // Piece number badge + piece code
+  nameSection += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+  nameSection += '<div style="display:flex;align-items:center;gap:8px">';
+  nameSection += '<div style="width:32px;height:32px;border-radius:8px;background:#0073EA;color:#fff;font-size:14px;font-weight:900;display:flex;align-items:center;justify-content:center">' + seq + '</div>';
+  if (d.pieceCode) nameSection += '<div style="font-size:11px;font-weight:700;color:#7A849E;font-family:monospace">' + esc(d.pieceCode) + '</div>';
+  nameSection += '</div>';
+  if (d.isoMatch && d.isoMatch.cuft) {
+    nameSection += '<div style="text-align:right"><div style="font-size:18px;font-weight:900;color:#0073EA;line-height:1">' + d.isoMatch.cuft + '</div><div style="font-size:10px;color:#7A849E">cu.ft</div></div>';
+  }
+  nameSection += '</div>';
+
+  if (d.pieceName && d.isoMatch) {
+    // Name + volume confirmed — show compact with edit option
+    nameSection += '<div onclick="window._invExpanded_name=true;invRenderAddForm(\'' + jobId + '\')" ' +
+      'style="background:#F7F6F2;border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;cursor:pointer">';
+    nameSection += '<div><div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(d.pieceName) + '</div>';
+    nameSection += '<div style="font-size:11px;color:#00A86B;margin-top:2px">✓ ' + esc(d.isoMatch.name) + ' · ' + d.isoMatch.cuft + ' cu.ft</div></div>';
+    nameSection += '<span style="font-size:11px;color:#7A849E">Edit ▾</span></div>';
+  } else if (d.pieceName && window._invExpanded_name === false) {
+    nameSection += '<div onclick="window._invExpanded_name=true;invRenderAddForm(\'' + jobId + '\')" ' +
+      'style="background:#FFF5E0;border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;cursor:pointer">';
+    nameSection += '<div><div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(d.pieceName) + '</div>';
+    nameSection += '<div style="font-size:11px;color:#FF9F1A;margin-top:2px">⚠ No ISO volume matched yet</div></div>';
+    nameSection += '<span style="font-size:11px;color:#7A849E">Edit ▾</span></div>';
   } else {
-    h += '<div style="display:flex;gap:8px;margin-bottom:10px">';
-    h += '<input id="inv-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="invPhotoSelected(this,\'' + jobId + '\')">';
-    h += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#EBF4FF;border:2px dashed #0073EA;border-radius:10px;padding:16px 10px;cursor:pointer;color:#0073EA;font-weight:700;font-size:13px">📷 Take Photo<br><span style="font-size:11px;font-weight:400;opacity:.7">AI will identify item</span></button>';
-    h += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#F7F6F2;border:2px dashed #C8C5BE;border-radius:10px;padding:16px 10px;cursor:pointer;color:#7A849E;font-weight:700;font-size:13px">🖼 Choose Photo<br><span style="font-size:11px;font-weight:400">From library</span></button>';
-    h += '</div>';
-  }
-
-  if (_invAiLoading) {
-    h += '<div style="background:#EBF4FF;border-radius:8px;padding:12px;text-align:center;font-size:13px;color:#0073EA;font-weight:600">✦ Analysing image…</div>';
-  } else if (d.aiData && d.aiData.status === 'enriched') {
-    h += '<div style="background:#E6FFF5;border-radius:8px;padding:10px 12px;font-size:12px;color:#00A86B;font-weight:600">✦ AI identified: ' + esc(d.aiData.description || '') + '</div>';
-  }
-  h += '</div>';
-
-  // ── PIECE NAME + ISO SEARCH ────────────────────────────────────────
-  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
-  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:8px">Item Name & Volume</div>';
-  h += '<input id="inv-piece-name" value="' + esc(d.pieceName) + '" placeholder="e.g. Double Bed, 3-Seater Sofa..." style="width:100%;border:2px solid ' + (d.pieceName?'#0073EA':'#E3E7F0') + ';border-radius:10px;padding:12px 14px;font-size:15px;font-family:inherit;box-sizing:border-box" oninput="invNameInput(this.value)">';
-
-  // ISO search results
-  if (d.pieceName && d.pieceName.length >= 2 && !d.isoMatch) {
-    var results = isoSearch(d.pieceName, 6);
-    if (results.length) {
-      h += '<div style="margin-top:8px;font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Select from ISO list:</div>';
-      h += '<div style="max-height:200px;overflow-y:auto;border:1.5px solid #E3E7F0;border-radius:8px;overflow:hidden">';
-      results.forEach(function(item, ri) {
-        h += '<div onclick="invSelectIso(' + ri + ')" data-iso="' + esc(item.code) + '" style="padding:9px 12px;border-bottom:1px solid #F0EFE9;cursor:pointer;display:flex;align-items:center;justify-content:space-between">';
-        h += '<div><div style="font-size:13px;font-weight:600;color:#1C2333">' + esc(item.name) + '</div>';
-        h += '<div style="font-size:11px;color:#7A849E">' + esc(item.category) + '</div></div>';
-        h += '<div style="font-size:12px;font-weight:700;color:#0073EA;white-space:nowrap">' + item.cuft + ' cuft</div>';
-        h += '</div>';
-      });
-      h += '</div>';
+    // Expanded input
+    nameSection += '<input id="inv-piece-name" value="' + esc(d.pieceName) + '" placeholder="e.g. Double Bed, 3-Seater Sofa..." ' +
+      'style="width:100%;border:2px solid ' + (d.pieceName?'#0073EA':'#E3E7F0') + ';border-radius:10px;padding:12px 14px;font-size:15px;font-family:inherit;box-sizing:border-box;margin-bottom:8px" ' +
+      'oninput="invNameInput(this.value)">';
+    // ISO results
+    if (d.pieceName && d.pieceName.length >= 2 && !d.isoMatch) {
+      var results = isoSearch(d.pieceName, 7);
+      if (results.length) {
+        nameSection += '<div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Select from ISO list:</div>';
+        nameSection += '<div style="border:1.5px solid #E3E7F0;border-radius:8px;overflow:hidden">';
+        results.forEach(function(item, ri) {
+          nameSection += '<div onclick="invSelectIso(' + ri + ')" style="padding:9px 12px;border-bottom:1px solid #F0EFE9;cursor:pointer;display:flex;align-items:center;justify-content:space-between">';
+          nameSection += '<div><div style="font-size:13px;font-weight:600;color:#1C2333">' + esc(item.name) + '</div>';
+          nameSection += '<div style="font-size:11px;color:#7A849E">' + esc(item.category) + '</div></div>';
+          nameSection += '<div style="font-size:12px;font-weight:700;color:#0073EA;white-space:nowrap">' + item.cuft + ' cuft</div></div>';
+        });
+        nameSection += '</div>';
+      }
+    }
+    if (d.isoMatch) {
+      nameSection += '<div style="background:#EBF4FF;border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">';
+      nameSection += '<div><div style="font-size:10px;font-weight:700;color:#0073EA;text-transform:uppercase">ISO · ' + esc(d.isoMatch.code) + '</div>';
+      nameSection += '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(d.isoMatch.name) + '</div></div>';
+      nameSection += '<div style="text-align:right"><div style="font-size:18px;font-weight:900;color:#0073EA">' + d.isoMatch.cuft + '</div><div style="font-size:10px;color:#7A849E">cu.ft</div></div>';
+      nameSection += '<button onclick="invClearIso()" style="background:none;border:none;color:#7A849E;font-size:13px;cursor:pointer;margin-left:8px">✕</button></div>';
+    }
+    if (d.pieceName) {
+      nameSection += '<button onclick="window._invExpanded_name=false;invRenderAddForm(\'' + jobId + '\')" ' +
+        'style="width:100%;margin-top:8px;background:#F7F6F2;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;color:#7A849E;cursor:pointer">Done ✓</button>';
     }
   }
+  nameSection += '</div>';
+  h += nameSection;
 
-  // ISO match confirmed
-  if (d.isoMatch) {
-    h += '<div style="margin-top:8px;background:#EBF4FF;border-radius:8px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between">';
-    h += '<div>';
-    h += '<div style="font-size:10px;font-weight:700;color:#0073EA;text-transform:uppercase">ISO Match · ' + esc(d.isoMatch.code) + '</div>';
-    h += '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(d.isoMatch.name) + '</div>';
-    h += '</div>';
-    h += '<div style="text-align:right">';
-    h += '<div style="font-size:18px;font-weight:900;color:#0073EA">' + d.isoMatch.cuft + '</div>';
-    h += '<div style="font-size:10px;color:#7A849E">cu.ft</div>';
-    h += '</div>';
-    h += '<button onclick="invClearIso()" style="background:none;border:none;color:#7A849E;font-size:13px;cursor:pointer;margin-left:8px">✕</button>';
-    h += '</div>';
+  // ── 2. PHOTO + AI (collapses after use) ───────────────────────────
+  var photoExpanded = !_invPhotoB64 || !!window._invExpanded_photo;
+  var photoSection = '';
+  if (_invPhotoB64 && !photoExpanded) {
+    // Collapsed — show thumb + AI result
+    photoSection = '<div onclick="window._invExpanded_photo=true;invRenderAddForm(\'' + jobId + '\')" ' +
+      'style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;border:2px solid #D1FAE5;background:#E6FFF5;cursor:pointer;margin-bottom:8px">';
+    photoSection += '<img src="' + _invPhotoB64 + '" style="width:44px;height:44px;object-fit:cover;border-radius:6px;flex-shrink:0">';
+    photoSection += '<div style="flex:1"><div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#00A86B;letter-spacing:.4px">Photo & AI</div>';
+    photoSection += '<div style="font-size:12px;font-weight:700;color:#1C2333">' +
+      (_invAiLoading ? '✦ Analysing…' : d.aiData ? ('✦ ' + esc(d.aiData.description||'AI identified')) : 'Photo captured') +
+      '</div></div><span style="font-size:11px;color:#00A86B;opacity:.7">Edit ▾</span></div>';
+  } else {
+    photoSection = '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:8px">';
+    photoSection += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Photo & AI Identification</div>';
+    if (_invPhotoB64) {
+      photoSection += '<div style="position:relative;margin-bottom:10px">';
+      photoSection += '<img src="' + _invPhotoB64 + '" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px">';
+      photoSection += '<button onclick="invClearPhoto()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);border:none;border-radius:50%;width:28px;height:28px;color:#fff;font-size:14px;cursor:pointer">✕</button>';
+      photoSection += '</div>';
+    } else {
+      photoSection += '<div style="display:flex;gap:8px;margin-bottom:10px">';
+      photoSection += '<input id="inv-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="invPhotoSelected(this,\'' + jobId + '\')">';
+      photoSection += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#EBF4FF;border:2px dashed #0073EA;border-radius:10px;padding:14px 10px;cursor:pointer;color:#0073EA;font-weight:700;font-size:13px">📷 Take Photo<br><span style="font-size:11px;font-weight:400;opacity:.7">AI will identify item</span></button>';
+      photoSection += '<button onclick="el(\'inv-photo-input\').click()" style="flex:1;background:#F7F6F2;border:2px dashed #C8C5BE;border-radius:10px;padding:14px 10px;cursor:pointer;color:#7A849E;font-weight:700;font-size:13px">🖼 Choose Photo</button>';
+      photoSection += '</div>';
+    }
+    if (_invAiLoading) {
+      photoSection += '<div style="background:#EBF4FF;border-radius:8px;padding:12px;text-align:center;font-size:13px;color:#0073EA;font-weight:600">✦ Analysing image…</div>';
+    } else if (d.aiData && d.aiData.status === 'enriched') {
+      photoSection += '<div style="background:#E6FFF5;border-radius:8px;padding:10px 12px;font-size:12px;color:#00A86B;font-weight:600">✦ AI identified: ' + esc(d.aiData.description||'') + ' · ' + esc(d.aiData.confidence||'') + ' confidence</div>';
+    }
+    if (_invPhotoB64) {
+      photoSection += '<button onclick="window._invExpanded_photo=false;invRenderAddForm(\'' + jobId + '\')" style="width:100%;margin-top:8px;background:#F7F6F2;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;color:#7A849E;cursor:pointer">Done ✓</button>';
+    }
+    photoSection += '</div>';
   }
-  h += '</div>';
+  addSection(!!_invPhotoB64 && !window._invExpanded_photo, photoSection);
 
-  // ── ROOM ──────────────────────────────────────────────────────────
+  // ── 3. ROOM ───────────────────────────────────────────────────────
   var roomLabel = d.room || '';
-  h += invFieldCard('Room', invSelectGrid(INV_ROOMS, roomLabel, 'invSetRoom', 3), roomLabel||null);
+  var roomInner = invSelectGrid(INV_ROOMS, roomLabel, 'invSetRoom', 3);
+  addSection(!!roomLabel, invSection('Room', roomLabel||null, '_invExpanded_invSetRoom',
+    'invRenderAddForm(\'' + jobId + '\')', roomInner));
 
-  // ── PACK TYPE ─────────────────────────────────────────────────────
-  var ptLabel = d.packType ? (INV_PACK_TYPES.filter(function(p){return p.id===d.packType;})[0]||{}).label||'' : '';
-  h += invFieldCard('Pack Type', invSelectGrid(INV_PACK_TYPES.map(function(p){return p.label;}), ptLabel, 'invSetPackType', 2), ptLabel||null);
+  // ── 4. PACK TYPE ──────────────────────────────────────────────────
+  var ptObj = d.packType ? INV_PACK_TYPES.filter(function(p){return p.id===d.packType;})[0] : null;
+  var ptLabel = ptObj ? ptObj.label : '';
+  var ptInner = invSelectGrid(INV_PACK_TYPES.map(function(p){return p.label;}), ptLabel, 'invSetPackType', 2);
+  addSection(!!ptLabel, invSection('Pack Type', ptLabel||null, '_invExpanded_invSetPackType',
+    'invRenderAddForm(\'' + jobId + '\')', ptInner));
 
-  // ── PIECE SPECIFICS ───────────────────────────────────────────────
-  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
-  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Piece Specifics</div>';
-  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
-  INV_SPECIFICS.forEach(function(spec) {
-    var active = d.pieceSpecifics.indexOf(spec.id) >= 0;
-    h += '<div onclick="invToggleSpecific(\'' + spec.id + '\')" style="padding:7px 12px;border-radius:8px;border:2px solid ' + (active?'#0073EA':'#E3E7F0') + ';background:' + (active?'#EBF4FF':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (active?'#0073EA':'#7A849E') + '">' + spec.icon + ' ' + spec.label + '</div>';
-  });
-  h += '</div>';
+  // ── 5. PIECE SPECIFICS ────────────────────────────────────────────
+  var specsSelected = d.pieceSpecifics && d.pieceSpecifics.length && !(d.pieceSpecifics.length===1 && d.pieceSpecifics[0]==='none');
+  var specsDone = d.pieceSpecifics && (d.pieceSpecifics[0]==='none' || specsSelected);
+  var specSummary = d.pieceSpecifics && d.pieceSpecifics[0]==='none' ? 'No Specifics' :
+    (d.pieceSpecifics||[]).filter(function(s){return s!=='none';}).map(function(s){
+      var sp = INV_SPECIFICS.filter(function(x){return x.id===s;})[0];
+      return sp ? sp.icon + ' ' + sp.label : s;
+    }).join(', ') || '';
 
-  // Conditional sub-questions for active specifics
-  var activeSpecs = INV_SPECIFICS.filter(function(s){return d.pieceSpecifics.indexOf(s.id)>=0 && s.conditions.length;});
-  activeSpecs.forEach(function(spec) {
-    if (spec.id === 'none') return;
-    h += '<div style="background:#F7F6F2;border-radius:8px;padding:10px 12px;margin-top:8px;border-left:3px solid #0073EA">';
-    h += '<div style="font-size:11px;font-weight:800;color:#0073EA;margin-bottom:8px">' + spec.icon + ' ' + spec.label + ' — Details</div>';
-    spec.conditions.forEach(function(cond) {
-      var val = (d.specificData && d.specificData[cond.id]) || '';
-      if (cond.type === 'info') {
-        h += '<div style="background:#FFF5E0;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#9A5600">' + cond.label + '</div>';
-        var hvPhotoCount = (_invDraft && _invDraft.photos && _invDraft.photos.length) || 0;
-        h += '<input id="inv-photo-hv-' + cond.id + '" type="file" accept="image/*" capture="environment" style="display:none" onchange="invAddHvPhoto(this)">';
-        h += '<button onclick="el(\'inv-photo-hv-' + cond.id + '\').click()" style="margin-top:6px;background:#FFE082;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;color:#9A5600;cursor:pointer;width:100%">📷 ' + (hvPhotoCount ? hvPhotoCount + ' photo(s) taken' : 'Add Photo') + '</button>';
-      } else if (cond.type === 'video') {
-        h += '<div style="background:#EBF4FF;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#0073EA">' + cond.label + '</div>';
-        var hvVidCount = (_invDraft && _invDraft.hvVideos && _invDraft.hvVideos.length) || 0;
-        h += '<input id="inv-video-hv" type="file" accept="video/*" capture="environment" style="display:none" onchange="invAddHvVideo(this)">';
-        h += '<button onclick="el(\'inv-video-hv\').click()" style="margin-top:6px;background:#EBF4FF;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;color:#0073EA;cursor:pointer;width:100%">🎥 ' + (hvVidCount ? hvVidCount + ' video(s) recorded' : 'Record Video') + '</button>';
-      } else if (cond.type === 'yesno') {
-        h += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
-        h += '<div style="display:flex;gap:6px">';
-        h += '<div onclick="invSetSpecificData(\'' + cond.id + '\',\'yes\')" style="flex:1;padding:8px;text-align:center;border-radius:6px;border:2px solid ' + (val==='yes'?'#00C875':'#E3E7F0') + ';background:' + (val==='yes'?'#E6FFF5':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (val==='yes'?'#00A86B':'#7A849E') + '">Yes</div>';
-        h += '<div onclick="invSetSpecificData(\'' + cond.id + '\',\'no\')" style="flex:1;padding:8px;text-align:center;border-radius:6px;border:2px solid ' + (val==='no'?'#E44258':'#E3E7F0') + ';background:' + (val==='no'?'#FFF0F0':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (val==='no'?'#E44258':'#7A849E') + '">No</div>';
-        h += '</div></div>';
-      } else if (cond.type === 'select') {
-        h += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
-        h += '<select onchange="invSetSpecificData(\'' + cond.id + '\',this.value)" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;font-family:inherit">';
-        h += '<option value="">Select…</option>';
-        (cond.options||[]).forEach(function(opt){
-          h += '<option' + (val===opt?' selected':'') + '>' + esc(opt) + '</option>';
-        });
-        h += '</select></div>';
-      } else if (cond.type === 'text') {
-        h += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
-        h += '<input value="' + esc(val) + '" placeholder="' + esc(cond.placeholder||'') + '" onchange="invSetSpecificData(\'' + cond.id + '\',this.value)" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;font-family:inherit;box-sizing:border-box">';
-        h += '</div>';
-      }
+  var specsExpanded = !specsDone || !!window._invExpanded_specifics;
+  var specsSection = '';
+  if (!specsExpanded && specsDone) {
+    specsSection = invDonePill('Piece Specifics', specSummary, '_invExpanded_specifics=true;invRenderAddForm(\'' + jobId + '\')');
+  } else {
+    specsSection = '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:8px">';
+    specsSection += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Piece Specifics</div>';
+    specsSection += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
+    INV_SPECIFICS.forEach(function(spec) {
+      var active = d.pieceSpecifics.indexOf(spec.id) >= 0;
+      specsSection += '<div onclick="invToggleSpecific(\'' + spec.id + '\')" style="padding:7px 12px;border-radius:8px;border:2px solid ' + (active?'#0073EA':'#E3E7F0') + ';background:' + (active?'#EBF4FF':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (active?'#0073EA':'#7A849E') + '">' + spec.icon + ' ' + spec.label + '</div>';
     });
-    h += '</div>';
-  });
-  h += '</div>';
-
-  // ── PACK CODE ─────────────────────────────────────────────────────
-  var pcLabel = d.packCode ? (INV_PACK_CODES.filter(function(p){return p.id===d.packCode;})[0]||{}).label||'' : '';
-  h += invFieldCard('Pack Code', invSelectGrid(INV_PACK_CODES.map(function(p){return p.label;}), pcLabel, 'invSetPackCode', 2), pcLabel||null);
-
-  // ── DAMAGES ───────────────────────────────────────────────────────
-  h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
-  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Pre-Existing Damage</div>';
-
-  if (d.aiData && d.aiData.condition && d.aiData.condition !== 'Good') {
-    h += '<div style="background:#FFF5E0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#9A5600">⚠ AI detected: ' + esc(d.aiData.conditionNotes||d.aiData.condition) + '</div>';
-  }
-
-  // No damage toggle
-  var noDmg = d.damages.noDamage;
-  h += '<div onclick="invToggleNoDamage()" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:2px solid ' + (noDmg?'#00C875':'#E3E7F0') + ';border-radius:10px;background:' + (noDmg?'#E6FFF5':'transparent') + ';cursor:pointer;margin-bottom:8px">';
-  h += '<div style="width:22px;height:22px;border-radius:6px;border:2px solid ' + (noDmg?'#00C875':'#C8C5BE') + ';background:' + (noDmg?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center">' + (noDmg?'<span style="color:#fff;font-size:12px">✓</span>':'') + '</div>';
-  h += '<div style="font-size:13px;font-weight:700;color:' + (noDmg?'#00A86B':'#1C2333') + '">No pre-existing damage</div>';
-  h += '</div>';
-
-  if (!noDmg) {
-    h += '<div style="font-size:11px;color:#7A849E;margin-bottom:8px">Select damage code(s) — then photograph each:</div>';
-    h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
-    INV_DAMAGE_CODES.forEach(function(dc) {
-      var active = d.damages.codes.some(function(c){return c.code===dc.id;});
-      h += '<div onclick="invToggleDamageCode(\'' + dc.id + '\')" style="padding:6px 10px;border-radius:8px;border:2px solid ' + (active?'#E44258':'#E3E7F0') + ';background:' + (active?'#FFF0F0':'transparent') + ';cursor:pointer">';
-      h += '<div style="font-size:12px;font-weight:700;color:' + (active?'#E44258':'#1C2333') + '">' + esc(dc.label) + '</div>';
-      h += '<div style="font-size:10px;color:#7A849E">' + esc(dc.desc) + '</div>';
-      h += '</div>';
-    });
-    h += '</div>';
-
-    // Photo prompt for each selected damage code
-    d.damages.codes.forEach(function(dc) {
-      var photos = (d.damagePhotos && d.damagePhotos[dc.code]) || [];
-      h += '<div style="background:#FFF0F0;border-radius:8px;padding:10px 12px;margin-bottom:8px">';
-      h += '<div style="font-size:11px;font-weight:700;color:#E44258;margin-bottom:6px">Code ' + dc.code + ' — ' + esc(INV_DAMAGE_CODES.filter(function(x){return x.id===dc.code;})[0].label) + '</div>';
-      h += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
-      photos.forEach(function(p) {
-        h += '<img src="' + p + '" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:2px solid #E44258">';
+    specsSection += '</div>';
+    // Sub-questions for active non-none specifics
+    var activeSpecs = INV_SPECIFICS.filter(function(s){return d.pieceSpecifics.indexOf(s.id)>=0 && s.id!=='none' && s.conditions.length;});
+    activeSpecs.forEach(function(spec) {
+      specsSection += '<div style="background:#F7F6F2;border-radius:8px;padding:10px 12px;margin-top:6px;border-left:3px solid #0073EA">';
+      specsSection += '<div style="font-size:11px;font-weight:800;color:#0073EA;margin-bottom:8px">' + spec.icon + ' ' + spec.label + '</div>';
+      spec.conditions.forEach(function(cond) {
+        var val = (d.specificData && d.specificData[cond.id]) || '';
+        if (cond.type === 'info') {
+          specsSection += '<div style="background:#FFF5E0;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#9A5600;margin-bottom:6px">' + cond.label + '</div>';
+          var hvPhotoCount = (_invDraft && _invDraft.photos && _invDraft.photos.length) || 0;
+          specsSection += '<input id="inv-photo-hv-' + cond.id + '" type="file" accept="image/*" capture="environment" style="display:none" onchange="invAddHvPhoto(this)">';
+          specsSection += '<button onclick="el(\'inv-photo-hv-' + cond.id + '\').click()" style="margin-bottom:6px;background:#FFE082;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;color:#9A5600;cursor:pointer;width:100%">📷 ' + (hvPhotoCount ? hvPhotoCount + ' photo(s) taken' : 'Add Photo') + '</button>';
+        } else if (cond.type === 'video') {
+          specsSection += '<div style="background:#EBF4FF;border-radius:6px;padding:8px 10px;font-size:12px;font-weight:600;color:#0073EA;margin-bottom:6px">' + cond.label + '</div>';
+          var hvVidCount = (_invDraft && _invDraft.hvVideos && _invDraft.hvVideos.length) || 0;
+          specsSection += '<input id="inv-video-hv" type="file" accept="video/*" capture="environment" style="display:none" onchange="invAddHvVideo(this)">';
+          specsSection += '<button onclick="el(\'inv-video-hv\').click()" style="margin-bottom:6px;background:#EBF4FF;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;color:#0073EA;cursor:pointer;width:100%">🎥 ' + (hvVidCount ? hvVidCount + ' video(s) recorded' : 'Record Video') + '</button>';
+        } else if (cond.type === 'serial') {
+          // Serial number: text input OR "No serial number" checkbox
+          var noSerial = val === 'NO_SERIAL';
+          specsSection += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+          if (!noSerial) {
+            specsSection += '<input value="' + esc(noSerial?'':val) + '" placeholder="Enter serial number…" ' +
+              'oninput="invSetSpecificData(\'' + cond.id + '\',this.value)" ' +
+              'style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;font-family:monospace;box-sizing:border-box;margin-bottom:6px">';
+          }
+          specsSection += '<div onclick="invSetSpecificData(\'' + cond.id + '\',\'' + (noSerial?'':'NO_SERIAL') + '\')" ' +
+            'style="display:flex;align-items:center;gap:8px;cursor:pointer">';
+          specsSection += '<div style="width:18px;height:18px;border-radius:4px;border:2px solid ' + (noSerial?'#0073EA':'#C8C5BE') + ';background:' + (noSerial?'#0073EA':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' + (noSerial?'<span style="color:#fff;font-size:10px">✓</span>':'') + '</div>';
+          specsSection += '<span style="font-size:12px;color:#7A849E">No serial number visible</span></div></div>';
+        } else if (cond.type === 'yesno') {
+          specsSection += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+          specsSection += '<div style="display:flex;gap:6px">';
+          specsSection += '<div onclick="invSetSpecificData(\'' + cond.id + '\',\'yes\')" style="flex:1;padding:8px;text-align:center;border-radius:6px;border:2px solid ' + (val==='yes'?'#00C875':'#E3E7F0') + ';background:' + (val==='yes'?'#E6FFF5':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (val==='yes'?'#00A86B':'#7A849E') + '">Yes</div>';
+          specsSection += '<div onclick="invSetSpecificData(\'' + cond.id + '\',\'no\')" style="flex:1;padding:8px;text-align:center;border-radius:6px;border:2px solid ' + (val==='no'?'#E44258':'#E3E7F0') + ';background:' + (val==='no'?'#FFF0F0':'transparent') + ';cursor:pointer;font-size:12px;font-weight:700;color:' + (val==='no'?'#E44258':'#7A849E') + '">No</div>';
+          specsSection += '</div></div>';
+        } else if (cond.type === 'yesonly') {
+          // Single "Yes" button — only one option
+          specsSection += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+          specsSection += '<div onclick="invSetSpecificData(\'' + cond.id + '\',\'yes\')" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:6px;border:2px solid ' + (val==='yes'?'#00C875':'#E3E7F0') + ';background:' + (val==='yes'?'#E6FFF5':'transparent') + ';cursor:pointer">';
+          specsSection += '<div style="width:18px;height:18px;border-radius:4px;border:2px solid ' + (val==='yes'?'#00C875':'#C8C5BE') + ';background:' + (val==='yes'?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center">' + (val==='yes'?'<span style="color:#fff;font-size:10px">✓</span>':'') + '</div>';
+          specsSection += '<span style="font-size:12px;font-weight:700;color:' + (val==='yes'?'#00A86B':'#7A849E') + '">Yes</span></div></div>';
+        } else if (cond.type === 'yesnoonly') {
+          // Yes-only with different label treatment (battery handed to client)
+          specsSection += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+          specsSection += '<div onclick="invSetSpecificData(\'' + cond.id + '\',val===\'yes\'?\'\':\' yes\')" style="display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:6px;border:2px solid ' + (val==='yes'?'#00C875':'#E3E7F0') + ';background:' + (val==='yes'?'#E6FFF5':'transparent') + ';cursor:pointer">';
+          specsSection += '<div style="width:18px;height:18px;border-radius:4px;border:2px solid ' + (val==='yes'?'#00C875':'#C8C5BE') + ';background:' + (val==='yes'?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center">' + (val==='yes'?'<span style="color:#fff;font-size:10px">✓</span>':'') + '</div>';
+          specsSection += '<span style="font-size:12px;font-weight:700;color:' + (val==='yes'?'#00A86B':'#7A849E') + '">Yes — handed to client</span></div></div>';
+        } else if (cond.type === 'select') {
+          specsSection += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+          specsSection += '<select onchange="invSetSpecificData(\'' + cond.id + '\',this.value)" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;font-family:inherit">';
+          specsSection += '<option value="">Select…</option>';
+          (cond.options||[]).forEach(function(opt){
+            specsSection += '<option' + (val===opt?' selected':'') + '>' + esc(opt) + '</option>';
+          });
+          specsSection += '</select></div>';
+        } else if (cond.type === 'text') {
+          specsSection += '<div style="margin-bottom:8px"><div style="font-size:12px;color:#1C2333;margin-bottom:4px">' + cond.label + '</div>';
+          specsSection += '<input value="' + esc(val) + '" placeholder="' + esc(cond.placeholder||'') + '" onchange="invSetSpecificData(\'' + cond.id + '\',this.value)" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;font-family:inherit;box-sizing:border-box">';
+          specsSection += '</div>';
+        }
       });
-      h += '<input id="inv-dmg-photo-' + dc.code + '" type="file" accept="image/*" capture="environment" style="display:none" onchange="invAddDamagePhoto(this,\'' + dc.code + '\')">';
-      h += '<button onclick="el(\'inv-dmg-photo-' + dc.code + '\').click()" style="width:56px;height:56px;border:2px dashed #E44258;border-radius:6px;background:#FFF5F5;cursor:pointer;font-size:20px;color:#E44258">+</button>';
-      h += '</div></div>';
+      specsSection += '</div>';
     });
+    if (specsDone) {
+      specsSection += '<button onclick="window._invExpanded_specifics=false;invRenderAddForm(\'' + jobId + '\')" style="width:100%;margin-top:8px;background:#F7F6F2;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;color:#7A849E;cursor:pointer">Done ✓</button>';
+    }
+    specsSection += '</div>';
   }
-  h += '</div>';
+  addSection(specsDone, specsSection);
+
+  // ── 6. PACK CODE ──────────────────────────────────────────────────
+  var pcObj = d.packCode ? INV_PACK_CODES.filter(function(p){return p.id===d.packCode;})[0] : null;
+  var pcLabel = pcObj ? pcObj.label : '';
+  var pcInner = invSelectGrid(INV_PACK_CODES.map(function(p){return p.label;}), pcLabel, 'invSetPackCode', 2);
+  addSection(!!pcLabel, invSection('Pack Code', pcLabel||null, '_invExpanded_invSetPackCode',
+    'invRenderAddForm(\'' + jobId + '\')', pcInner));
+
+  // ── 7. DAMAGES ────────────────────────────────────────────────────
+  var noDmg    = d.damages.noDamage;
+  var hasDmgCodes = !noDmg && d.damages.codes && d.damages.codes.length > 0;
+  var dmgDone  = noDmg || hasDmgCodes;
+  var dmgSummary = noDmg ? 'No pre-existing damage' :
+    (hasDmgCodes ? d.damages.codes.map(function(c){return c.code;}).join(', ') + ' noted' : '');
+
+  var dmgExpanded = !dmgDone || !!window._invExpanded_damages;
+  var dmgSection = '';
+  if (!dmgExpanded && dmgDone) {
+    var dmgColBg  = noDmg ? '#E6FFF5' : '#FFF0F0';
+    var dmgColBdr = noDmg ? '#D1FAE5' : '#FECACA';
+    var dmgColTxt = noDmg ? '#00A86B' : '#E44258';
+    var dmgTick   = noDmg ? '✓' : '⚠';
+    dmgSection = '<div onclick="window._invExpanded_damages=true;invRenderAddForm(\'' + jobId + '\')" ' +
+      'style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:10px;border:2px solid ' + dmgColBdr + ';background:' + dmgColBg + ';cursor:pointer;margin-bottom:8px">' +
+      '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;color:' + dmgColTxt + '">' + dmgTick + '</span>' +
+      '<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;color:' + dmgColTxt + ';letter-spacing:.4px">Pre-Existing Damage</div>' +
+      '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(dmgSummary) + '</div></div></div>' +
+      '<span style="font-size:11px;color:' + dmgColTxt + ';opacity:.7">Edit ▾</span></div>';
+  } else {
+    dmgSection = '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:8px">';
+    dmgSection += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">Pre-Existing Damage</div>';
+    if (d.aiData && d.aiData.condition && d.aiData.condition !== 'Good') {
+      dmgSection += '<div style="background:#FFF5E0;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#9A5600">⚠ AI detected: ' + esc(d.aiData.conditionNotes||d.aiData.condition) + '</div>';
+    }
+    dmgSection += '<div onclick="invToggleNoDamage()" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border:2px solid ' + (noDmg?'#00C875':'#E3E7F0') + ';border-radius:10px;background:' + (noDmg?'#E6FFF5':'transparent') + ';cursor:pointer;margin-bottom:8px">';
+    dmgSection += '<div style="width:22px;height:22px;border-radius:6px;border:2px solid ' + (noDmg?'#00C875':'#C8C5BE') + ';background:' + (noDmg?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center">' + (noDmg?'<span style="color:#fff;font-size:12px">✓</span>':'') + '</div>';
+    dmgSection += '<div style="font-size:13px;font-weight:700;color:' + (noDmg?'#00A86B':'#1C2333') + '">No pre-existing damage</div></div>';
+    if (!noDmg) {
+      dmgSection += '<div style="font-size:11px;color:#7A849E;margin-bottom:8px">Select damage code(s) then photograph each:</div>';
+      dmgSection += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
+      INV_DAMAGE_CODES.forEach(function(dc) {
+        var active = d.damages.codes.some(function(c){return c.code===dc.id;});
+        dmgSection += '<div onclick="invToggleDamageCode(\'' + dc.id + '\')" style="padding:6px 10px;border-radius:8px;border:2px solid ' + (active?'#E44258':'#E3E7F0') + ';background:' + (active?'#FFF0F0':'transparent') + ';cursor:pointer">';
+        dmgSection += '<div style="font-size:12px;font-weight:700;color:' + (active?'#E44258':'#1C2333') + '">' + esc(dc.label) + '</div>';
+        dmgSection += '<div style="font-size:10px;color:#7A849E">' + esc(dc.desc) + '</div></div>';
+      });
+      dmgSection += '</div>';
+      d.damages.codes.forEach(function(dc) {
+        var photos = (d.damagePhotos && d.damagePhotos[dc.code]) || [];
+        dmgSection += '<div style="background:#FFF0F0;border-radius:8px;padding:10px 12px;margin-bottom:8px">';
+        dmgSection += '<div style="font-size:11px;font-weight:700;color:#E44258;margin-bottom:6px">Code ' + dc.code + ' — ' + esc(INV_DAMAGE_CODES.filter(function(x){return x.id===dc.code;})[0].label) + '</div>';
+        dmgSection += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
+        photos.forEach(function(p){ dmgSection += '<img src="' + p + '" style="width:56px;height:56px;object-fit:cover;border-radius:6px;border:2px solid #E44258">'; });
+        dmgSection += '<input id="inv-dmg-photo-' + dc.code + '" type="file" accept="image/*" capture="environment" style="display:none" onchange="invAddDamagePhoto(this,\'' + dc.code + '\')">';
+        dmgSection += '<button onclick="el(\'inv-dmg-photo-' + dc.code + '\').click()" style="width:56px;height:56px;border:2px dashed #E44258;border-radius:6px;background:#FFF5F5;cursor:pointer;font-size:20px;color:#E44258">+</button>';
+        dmgSection += '</div></div>';
+      });
+    }
+    if (dmgDone) {
+      dmgSection += '<button onclick="window._invExpanded_damages=false;invRenderAddForm(\'' + jobId + '\')" style="width:100%;margin-top:4px;background:#F7F6F2;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;color:#7A849E;cursor:pointer">Done ✓</button>';
+    }
+    dmgSection += '</div>';
+  }
+  addSection(dmgDone, dmgSection);
+
+  // ── ASSEMBLE: pending on top, done collapsed at bottom ────────────
+  pendingSections.forEach(function(s){ h += s; });
+  if (doneSections.length) {
+    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#B0BEC5;margin:10px 0 6px">Completed</div>';
+    doneSections.forEach(function(s){ h += s; });
+  }
 
   // ── SAVE BUTTON ───────────────────────────────────────────────────
   var canSave = !!(d.pieceName && d.room && d.packType && d.packCode);
-  var missingFields = [];
-  if (!d.pieceName) missingFields.push('Item name');
-  if (!d.room)      missingFields.push('Room');
-  if (!d.packType)  missingFields.push('Pack type');
-  if (!d.packCode)  missingFields.push('Pack code');
-
-  if (missingFields.length && missingFields.length < 4) {
-    h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#9A5600">Still needed: ' + missingFields.join(', ') + '</div>';
+  var missing = [];
+  if (!d.pieceName) missing.push('Item name');
+  if (!d.room)      missing.push('Room');
+  if (!d.packType)  missing.push('Pack type');
+  if (!d.packCode)  missing.push('Pack code');
+  if (missing.length && missing.length < 4) {
+    h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:#9A5600">Still needed: ' + missing.join(', ') + '</div>';
   }
-
-  h += '<button onclick="invSaveDraft(\'' + jobId + '\')" ' + (canSave?'':'disabled ') + 'style="width:100%;background:' + (canSave?'#0073EA':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:' + (canSave?'pointer':'not-allowed') + '">Add to Inventory</button>';
+  var saveLabel = isEdit ? 'Save Changes' : 'Add to Inventory';
+  h += '<button onclick="invSaveDraft(\'' + jobId + '\')" ' + (canSave?'':'disabled ') +
+    'style="width:100%;background:' + (canSave?'#0073EA':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:' + (canSave?'pointer':'not-allowed') + '">' + saveLabel + '</button>';
   h += '</div>';
 
   el('dv-inv-add-body').innerHTML = h;
 }
 
-// ── ADD FORM HELPERS ──────────────────────────────────────────────────
+// ── HELPERS ────────────────────────────────────────────────────────────
 
-function invFieldCard(label, content, isDone) {
-  var doneIndicator = isDone
-    ? '<span style="background:#E6FFF5;color:#00A86B;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px">✓ ' + isDone + '</span>'
-    : '';
-  return '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">' +
-    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:' + (isDone?'0':'10px') + ';display:flex;align-items:center">' +
-    label + doneIndicator + '</div>' +
-    (isDone ? '' : content) + '</div>';
+// Collapsed done pill (green, matches damage pill style)
+function invDonePill(label, value, expandFn) {
+  return '<div onclick="' + expandFn + '" ' +
+    'style="display:flex;align-items:center;justify-content:space-between;' +
+    'padding:10px 14px;border-radius:10px;border:2px solid #D1FAE5;background:#E6FFF5;cursor:pointer;margin-bottom:8px">' +
+    '<div style="display:flex;align-items:center;gap:8px">' +
+    '<span style="font-size:14px;color:#00A86B">✓</span>' +
+    '<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#00A86B;letter-spacing:.4px">' + label + '</div>' +
+    '<div style="font-size:13px;font-weight:700;color:#1C2333">' + esc(value) + '</div></div>' +
+    '</div><span style="font-size:11px;color:#00A86B;opacity:.7">Edit ▾</span></div>';
 }
 
-// Single-select grid: collapses to a single "selected" pill once a choice is made.
-// Tap the pill to expand and change.
-function invSelectGrid(options, current, fn, cols, expandedKey) {
-  // expandedKey: unique key stored on window to track if this grid is expanded
-  var wkey = '_invExpanded_' + fn;
-  var isExpanded = !!window[wkey];
-
-  if (current && !isExpanded) {
-    // Collapsed — show just the selected option as a tappable pill
-    return '<div onclick="window[\'' + wkey + '\']=true;invRenderAddForm(_invJobId)" ' +
-      'style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:10px;border:2px solid #0073EA;background:#EBF4FF;cursor:pointer;margin-top:8px">' +
-      '<span style="font-size:13px;font-weight:700;color:#0073EA">' + esc(current) + '</span>' +
-      '<span style="font-size:11px;color:#0073EA;opacity:.7">Change ▾</span>' +
-      '</div>';
+function invSection(titleLabel, doneValue, expandKey, renderFn, innerHtml) {
+  var isExpanded = !doneValue || !!window[expandKey];
+  if (!isExpanded) {
+    return invDonePill(titleLabel, doneValue, expandKey + '=true;' + renderFn);
   }
+  var h = '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:8px">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px">' + titleLabel + '</div>';
+  h += innerHtml;
+  if (doneValue) {
+    h += '<button onclick="' + expandKey + '=false;' + renderFn + '" style="width:100%;margin-top:8px;background:#F7F6F2;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:700;color:#7A849E;cursor:pointer">Done ✓</button>';
+  }
+  h += '</div>';
+  return h;
+}
 
-  // Expanded — full grid
-  var h = '<div style="display:grid;grid-template-columns:repeat(' + (cols||2) + ',1fr);gap:6px;margin-top:8px">';
+// Single-select grid — collapses after selection
+function invSelectGrid(options, current, fn, cols) {
+  var h = '<div style="display:grid;grid-template-columns:repeat(' + (cols||2) + ',1fr);gap:6px">';
   options.forEach(function(opt, i) {
     var active = opt === current;
-    h += '<div onclick="window[\'' + wkey + '\']=false;' + fn + '(' + i + ')" ' +
+    h += '<div onclick="window[\'_invExpanded_' + fn + '\']=false;' + fn + '(' + i + ')" ' +
       'style="padding:9px 8px;border-radius:8px;border:2px solid ' + (active?'#0073EA':'#E3E7F0') + ';' +
       'background:' + (active?'#EBF4FF':'transparent') + ';cursor:pointer;text-align:center;' +
       'font-size:12px;font-weight:' + (active?'700':'500') + ';color:' + (active?'#0073EA':'#4A5568') + '">' +
@@ -13923,6 +14125,7 @@ function invSelectGrid(options, current, fn, cols, expandedKey) {
   h += '</div>';
   return h;
 }
+
 
 function invNameInput(val) {
   if (!_invDraft) return;
@@ -14149,7 +14352,7 @@ async function invTryAiIdentify(jobId) {
       processedAt:    new Date().toISOString(),
     };
 
-    if (!_invDraft.pieceName && ai.description) _invDraft.pieceName = ai.description;
+    if (!_invDraft.pieceName && ai.description) _invDraft.pieceName = invFormatAiName(ai.description);
 
     // ISO match
     if (ai.isoName) {
@@ -14200,32 +14403,37 @@ function invSaveDraft(jobId) {
   if (!j.crewData) j.crewData = {};
   if (!j.crewData.inventory) j.crewData.inventory = {items:[]};
 
-  // Merge damage photos into damage codes
   var d = _invDraft;
   d.damages.codes.forEach(function(dc){
     dc.photos = (d.damagePhotos && d.damagePhotos[dc.code]) || [];
   });
 
-  j.crewData.inventory.items.push(d);
+  var isEdit = d._editIdx !== undefined;
+  if (isEdit) {
+    var editIdx = d._editIdx;
+    delete d._editIdx;
+    j.crewData.inventory.items[editIdx] = d;
+    toast('✓ #' + d.pieceNo + ' ' + d.pieceName + ' updated');
+  } else {
+    j.crewData.inventory.items.push(d);
+    if (j.crewData.inventory.items.length === 1 &&
+        j.status !== 'On Site' && j.status !== 'Loading' && j.status !== 'Loaded') {
+      dvTriggerStatus(jobId, 'On Site');
+    }
+    toast('✓ #' + d.pieceNo + ' ' + (d.pieceCode||'') + ' ' + d.pieceName + ' added');
+  }
   saveData('job', j.id, j);
 
-  // Status trigger on first item
-  if (j.crewData.inventory.items.length === 1 &&
-      j.status !== 'On Site' && j.status !== 'Loading' && j.status !== 'Loaded') {
-    dvTriggerStatus(jobId, 'On Site');
-  }
-
-  toast('✓ #' + d.pieceNo + ' ' + (d.pieceCode||'') + ' ' + d.pieceName + ' added');
   var savedItem = d;
   var savedJobId = jobId;
   _invDraft    = null;
   _invPhotoB64 = null;
-  // Clear expanded state for next item
-  ['_invExpanded_invSetRoom','_invExpanded_invSetPackType','_invExpanded_invSetPackCode'].forEach(function(k){ window[k]=false; });
+  ['_invExpanded_invSetRoom','_invExpanded_invSetPackType','_invExpanded_invSetPackCode',
+   '_invExpanded_specifics','_invExpanded_damages','_invExpanded_photo','_invExpanded_name'].forEach(function(k){ window[k]=false; });
   dvOpenInventory(jobId);
-  // Offer label print
-  setTimeout(function(){ invOfferLabelPrint(savedItem, savedJobId); }, 300);
+  if (!isEdit) setTimeout(function(){ invOfferLabelPrint(savedItem, savedJobId); }, 300);
 }
+
 
 // ── DELETE ITEM ───────────────────────────────────────────────────────
 // ── HIGH VALUE VIDEO CAPTURE ──────────────────────────────────────────
