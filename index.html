@@ -5048,7 +5048,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v87 — 5 Mar 2026';
+var APP_VERSION = 'v88 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -9273,147 +9273,20 @@ function showGenericModal(title, body, actions) {
 // Each cell has locNo e.g. A1-01, A2-07, B3-15
 // Loose/oversized row: L01–L31 (16th row, full width)
 
-var WH_ROWS_PER_SIDE = 4;
-var WH_COLS = 15;
-var WH_LOOSE_CELLS = 31; // full width including across runway
-
-// Build container registry: cno 100–399 mapped to location
-// Side A: rows A1..A4, cols 01..15 → containers 100–159
-// Side B: rows B1..B4, cols 01..15 → containers 160–219
-// Additional containers 220–399 are unplaced / spare
-function whBuildContainerRegistry() {
-  var reg = {};
-  var cno = 100;
-  for (var r = 1; r <= WH_ROWS_PER_SIDE; r++) {
-    for (var c = 1; c <= WH_COLS; c++) {
-      var locNo = 'A' + r + '-' + String(c).padStart(2,'0');
-      reg['C' + cno] = {containerNo:'C'+cno, locNo:locNo, side:'A', row:r, col:c, type:'standard'};
-      cno++;
-    }
-  }
-  for (var r2 = 1; r2 <= WH_ROWS_PER_SIDE; r2++) {
-    for (var c2 = 1; c2 <= WH_COLS; c2++) {
-      var locNo2 = 'B' + r2 + '-' + String(c2).padStart(2,'0');
-      reg['C' + cno] = {containerNo:'C'+cno, locNo:locNo2, side:'B', row:r2, col:c2, type:'standard'};
-      cno++;
-    }
-  }
-  // Remaining 220–399 are spare / off-floor
-  return reg;
-}
-var WH_CONTAINER_REG = whBuildContainerRegistry();
-
-// Loose row locations L01–L31
-var WH_LOOSE_LOCS = [];
-for (var _i = 1; _i <= WH_LOOSE_CELLS; _i++) {
-  WH_LOOSE_LOCS.push('L' + String(_i).padStart(2,'0'));
-}
-
-// Warehouse activities — non-job entries
-var WH_ACTIVITIES = [
-  {id:'WA001', date:'2026-03-02', type:'3rd-party-in', direction:'in', status:'completed',
-   client:'Hamilton Associates', clientRef:'EXT-001', brand:'SIRVA',
-   description:'3rd party goods delivered — awaiting storage assignment', vol:320, volUnit:'ft',
-   eventualDest:'Manchester', storageId:'', containers:[], jobId:'', crew:[],
-   notes:'Arrived 09:30. Fork lift required.', createdAt:'2026-03-02T08:00:00'},
-  {id:'WA002', date:'2026-03-02', type:'3rd-party-out', direction:'out', status:'completed',
-   client:'NAQVI', clientRef:'', brand:'SIRVA',
-   description:'3rd party collection — LCL case direct pickup', vol:80, volUnit:'ft',
-   eventualDest:'', storageId:'S001', containers:['C127'], jobId:'', crew:[],
-   notes:'Collected by ABC Freight. No handling required.', createdAt:'2026-03-02T07:45:00'},
-  {id:'WA003', date:'2026-03-04', type:'activity', direction:'in', status:'completed',
-   client:'', clientRef:'', brand:'',
-   description:'Container audit — checking all A-row positions', vol:0, volUnit:'ft',
-   eventualDest:'', storageId:'', containers:[], jobId:'', crew:['DAVE'],
-   notes:'Annual position audit.', createdAt:'2026-03-04T06:00:00'},
-  {id:'WA004', date:'2026-03-06', type:'3rd-party-in', direction:'in', status:'pending',
-   client:'Okafor Family', clientRef:'EXT-002', brand:'EMS',
-   description:'Air LCL case delivered from airport — 2 cases', vol:95, volUnit:'ft',
-   eventualDest:'Leeds, LS9', storageId:'', containers:[], jobId:'', crew:[],
-   notes:'2× LCL cases ref OKA-220.', createdAt:'2026-03-06T10:00:00'},
-  {id:'WA005', date:'2026-02-25', type:'3rd-party-in', direction:'in', status:'pending',
-   client:'Sterling Client TBC', clientRef:'EXT-003', brand:'STERLING',
-   description:'Inbound container expected — awaiting arrival confirmation', vol:480, volUnit:'ft',
-   eventualDest:'York, YO30', storageId:'', containers:[], jobId:'', crew:[],
-   notes:'ETA 25 Feb. Call driver on arrival.', createdAt:'2026-02-22T09:00:00'},
-];
-var whActivitySeq = 5;
-
-// Non-client usage (amber) — warehouse spaces used for non-client purposes
-var WH_NON_CLIENT = {
-  'A1-01': {desc:'Workshop tools / racking', type:'facility'},
-  'A1-02': {desc:'Workshop tools / racking', type:'facility'},
-  'B4-14': {desc:'Staff storage / equipment', type:'facility'},
-  'B4-15': {desc:'Staff storage / equipment', type:'facility'},
-  'L08':   {desc:'Forklift parking', type:'facility'},
-  'L09':   {desc:'Forklift parking', type:'facility'},
-};
-
-// ── State ──────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// WAREHOUSE MODULE — state vars & navigation
+// ═══════════════════════════════════════════════════════════════════
 var whDate = new Date();
-var whTab = 'movements';
-var whCellDetail = null; // currently selected cell locNo
-var whGridZoom = 1; // 0.75 | 1 | 1.25
+var whTab  = 'movements';
 
-// ── Utility ───────────────────────────────────────────────────────────
-function whDateStr(d) {
-  d = d || whDate;
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
-
+function d2s(d) { return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function whDateStr()  { return d2s(whDate); }
 function whFmtDate(d) {
-  var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  return days[d.getDay()] + ' ' + d.getDate() + ' ' + MS[d.getMonth()] + ' ' + d.getFullYear();
+  if (!d) return '—';
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return d.getDate() + ' ' + months[d.getMonth()] + ' ' + d.getFullYear();
 }
 
-// Get all movement entries for a given date string
-// Includes: jobs (IN to/FROM INT STORE), activities
-function whGetEntriesForDate(ds) {
-  var entries = [];
-
-  // From jobs array — inbound (dest=INT STORE) or outbound (origin contains EX STORE)
-  for (var ji=0; ji<jobs.length; ji++) {
-    var j = jobs[ji];
-    if (j.start > ds || j.end < ds) continue;
-    if (j.dest === 'INT STORE') {
-      entries.push({source:'job', dir:'in', job:j, id:j.id,
-        client:j.client, detail:j.jobType + ' — ' + j.origin + ' → INT STORE',
-        vol:j.vol, containers:[], badge:'job', crew:(j.drivers||[]).concat(j.porters||[]),
-        storageId:j.storageId, containersInfo: whGetContainersForJob(j)});
-    } else if (j.origin && j.origin.indexOf('EX STORE') === 0) {
-      entries.push({source:'job', dir:'out', job:j, id:j.id,
-        client:j.client, detail:j.jobType + ' — EX STORE → ' + j.dest,
-        vol:j.vol, badge:'job', crew:(j.drivers||[]).concat(j.porters||[]),
-        storageId:j.storageId, containersInfo: j.containersToRemove||[]});
-    } else if (j.storageDirection === 'in') {
-      entries.push({source:'job', dir:'in', job:j, id:j.id,
-        client:j.client, detail:j.jobType + ' — ' + j.origin + ' (storage in)',
-        vol:j.vol, badge:'job', crew:(j.drivers||[]).concat(j.porters||[]),
-        storageId:j.storageId});
-    }
-  }
-
-  // From WH_ACTIVITIES
-  var acts = WH_ACTIVITIES.filter(function(a){ return a.date === ds; });
-  for (var ai=0; ai<acts.length; ai++) {
-    var a = acts[ai];
-    entries.push({source:'activity', dir:a.direction, activity:a, id:a.id,
-      client:a.client||'Warehouse Activity', detail:a.description,
-      vol:a.vol, badge: a.type === '3rd-party-in' || a.type === '3rd-party-out' ? 'thirdparty' : 'manual',
-      crew:a.crew||[], storageId:a.storageId, type:a.type, containers:a.containers||[]});
-  }
-
-  return entries;
-}
-
-function whGetContainersForJob(j) {
-  if (!j.storageId) return [];
-  var rec = STORAGE_RECORDS.filter(function(s){return s.id===j.storageId;})[0];
-  if (!rec || !rec.containers) return [];
-  return rec.containers.map(function(c){return c.containerNo;});
-}
-
-// ── Module entry ───────────────────────────────────────────────────────
 function renderWarehouse() {
   whDate = whDate || new Date();
   var ds = whDateStr();
@@ -9421,25 +9294,289 @@ function renderWarehouse() {
   el('wh-cnav').style.display = whTab === 'movements' ? 'flex' : 'none';
   el('wh-tb-r').style.display = whTab === 'grid' ? 'none' : 'flex';
 
-  // Refresh badge
-  var todayActs = WH_ACTIVITIES.filter(function(a){return a.date===whDateStr();}).length;
+  var todayActs = WH_ACTIVITIES.filter(function(a){ return a.date === ds; }).length;
   setBadge('wh-badge', todayActs);
 
-  if (whTab === 'movements') renderWhMovements();
-  else if (whTab === 'records')  renderWhRecords();
-  else if (whTab === 'grid')     renderWhGrid();
+  if      (whTab === 'movements') renderWhMovements();
+  else if (whTab === 'records')   renderWhRecords();
+  else if (whTab === 'grid')      renderWhGrid();
 }
 
 function whSetTab(tab, btn) {
   whTab = tab;
-  document.querySelectorAll('#wh-tabs .vt').forEach(function(b){b.classList.remove('on');});
-  btn.classList.add('on');
+  document.querySelectorAll('.wh-tabs .vt').forEach(function(b){ b.classList.remove('on'); });
+  if (btn) btn.classList.add('on');
   renderWarehouse();
 }
 
-function whNavPrev() { whDate = addDays(whDate, -1); renderWarehouse(); }
-function whNavNext() { whDate = addDays(whDate,  1); renderWarehouse(); }
-function whGoToday() { whDate = new Date(); renderWarehouse(); }
+function whNavPrev()  { whDate = new Date(whDate.getTime() - 86400000); renderWarehouse(); }
+function whNavNext()  { whDate = new Date(whDate.getTime() + 86400000); renderWarehouse(); }
+function whGoToday()  { whDate = new Date(); renderWarehouse(); }
+
+// renderWhGrid writes to wh-out — ensure the container exists
+function ensureWhGridBody() {
+  var out = el('wh-out');
+  if (!out) return;
+  if (!el('wh-grid-body')) {
+    out.innerHTML = '<div id="wh-grid-body" style="padding-bottom:40px"></div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WAREHOUSE AUDIT DATA — March 2026
+// Aisle A: columns A1-A15, 5 deep, lower/upper stacking
+// Aisle B: columns B0-B15, 5 deep, lower/upper stacking
+// ═══════════════════════════════════════════════════════════════════
+
+var WH_CLIENT_COLOURS = {
+  "ALETHIA CUNNINGHAM": "#E44258",
+  "ARROWSMITH": "#FF9F1A",
+  "ASHWORTH": "#9B59B6",
+  "BAXTERS": "#0073EA",
+  "BOLTON": "#00A86B",
+  "BROADHURST": "#2DC4B2",
+  "BURKE": "#E91E8C",
+  "BURKE  227": "#FF6B35",
+  "CHRIS": "#3F51B5",
+  "CHRIS JONES": "#009688",
+  "CRAIG...": "#FF5722",
+  "CRATES": "#607D8B",
+  "CURVED DESK": "#795548",
+  "DB": "#8BC34A",
+  "DHILLION": "#03A9F4",
+  "FORHOUSING": "#673AB7",
+  "GARNER": "#F06292",
+  "GILESAN": "#4CAF50",
+  "GUZVIC": "#FF7043",
+  "HACKING": "#26C6DA",
+  "HENERY": "#AB47BC",
+  "HIGHFIELD": "#66BB6A",
+  "HIGHLEA": "#FFA726",
+  "JANICE ANDREWS": "#29B6F6",
+  "KELLY BRADSHAW": "#EC407A",
+  "KINGSHILL": "#26A69A",
+  "KITCHEN": "#5C6BC0",
+  "LORD": "#D4E157",
+  "MARK CHADWICK": "#8D6E63",
+  "MARTIN": "#78909C",
+  "MOLLOY": "#EF5350",
+  "MORLEY": "#42A5F5",
+  "MPOFU": "#26C6DA",
+  "NEILSON": "#7E57C2",
+  "NOBBS": "#FFCA28",
+  "OFFICE": "#26A69A",
+  "OLD OFFICE PRINTER": "#FF7043",
+  "OLD PHOTOCOPIERS": "#789262",
+  "PARKER": "#AE6DBF",
+  "PARKER (WINE)": "#00897B",
+  "PERCY": "#E44258",
+  "PIANO": "#FF9F1A",
+  "PLANT": "#9B59B6",
+  "PORT": "#0073EA",
+  "PREMEX": "#00A86B",
+  "PULSIRVIONG": "#2DC4B2",
+  "RECYLING BOXES": "#E91E8C",
+  "S5": "#FF6B35",
+  "SAMUTALLY": "#3F51B5",
+  "SLACK": "#009688",
+  "SONYA/LEO SARWIJ": "#FF5722",
+  "SYLVIA WOODS": "#607D8B",
+  "TONY DALEY": "#795548",
+  "TRAVIS": "#8BC34A",
+  "TRISH JONES": "#03A9F4",
+  "WARBURTON": "#673AB7",
+  "WARD": "#F06292",
+  "WHITTON": "#4CAF50",
+  "WILLIAMSON": "#FF7043",
+  "WINSTANLEY": "#26C6DA",
+  "X": "#AB47BC",
+};
+
+var WH_BRAND_COLOURS = {
+  "DOREE BONNER": "#0073EA",
+  "STERLING": "#9B59B6",
+  "EMS": "#E44258",
+  "SOLARIS": "#FF6B35",
+  "BAXTERS": "#00A86B",
+  "BTR": "#2DC4B2",
+  "MOVESQUAD": "#1a4f7a",
+};
+
+var WH_LOCATIONS = [
+  {id:"A1-D1",aisle:"A",col:"A1",colIdx:0,depth:1,lower:{type:"OCCUPIED",client:"WINSTANLEY",container:"2150",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WINSTANLEY",container:"S12",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A1-D2",aisle:"A",col:"A1",colIdx:0,depth:2,lower:{type:"OCCUPIED",client:"WINSTANLEY",container:"X13",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PARKER (WINE)",container:"S0",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A1-D3",aisle:"A",col:"A1",colIdx:0,depth:3,lower:{type:"EMPTY",client:"EMPTY",container:"XX00288",brand:"DOREE BONNER",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"XX00163",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A1-D4",aisle:"A",col:"A1",colIdx:0,depth:4,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"A1-D5",aisle:"A",col:"A1",colIdx:0,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"A2-D1",aisle:"A",col:"A2",colIdx:1,depth:1,lower:{type:"OCCUPIED",client:"PERCY",container:"183",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"XX02067",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A2-D2",aisle:"A",col:"A2",colIdx:1,depth:2,lower:{type:"OCCUPIED",client:"PERCY",container:"XX00574",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"XX00279",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A2-D3",aisle:"A",col:"A2",colIdx:1,depth:3,lower:{type:"OCCUPIED",client:"PERCY",container:"XX00076",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"230",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A2-D4",aisle:"A",col:"A2",colIdx:1,depth:4,lower:{type:"OCCUPIED",client:"PERCY",container:"XX00223",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"XX00149",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A2-D5",aisle:"A",col:"A2",colIdx:1,depth:5,lower:{type:"EMPTY",client:"EMPTY",container:"LDS18",brand:"STERLING",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"251",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A3-D1",aisle:"A",col:"A3",colIdx:2,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"6050",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"OLD PHOTOCOPIERS",container:"S7",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A3-D2",aisle:"A",col:"A3",colIdx:2,depth:2,lower:{type:"EMPTY",client:"EMPTY",container:"110",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"2024",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A3-D3",aisle:"A",col:"A3",colIdx:2,depth:3,lower:{type:"EMPTY",client:"EMPTY",container:"S8",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"111",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A3-D4",aisle:"A",col:"A3",colIdx:2,depth:4,lower:{type:"EMPTY",client:"EMPTY",container:"3004",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"2350",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A3-D5",aisle:"A",col:"A3",colIdx:2,depth:5,lower:{type:"EMPTY",client:"EMPTY",container:"64",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"XX02459",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A4-D1",aisle:"A",col:"A4",colIdx:3,depth:1,lower:{type:"OCCUPIED",client:"CURVED DESK",container:"337",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"CHRIS JONES",container:"LDS147",brand:"STERLING",notes:""},third:null},
+  {id:"A4-D2",aisle:"A",col:"A4",colIdx:3,depth:2,lower:{type:"OCCUPIED",client:"DB",container:"XX0053",brand:"DOREE BONNER",notes:"BILLINGHAM"},upper:{type:"OCCUPIED",client:"MORLEY",container:"235",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A4-D3",aisle:"A",col:"A4",colIdx:3,depth:3,lower:{type:"OCCUPIED",client:"ASHWORTH",container:"541",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"ASHWORTH",container:"TAM362",brand:"BTR",notes:""},third:null},
+  {id:"A4-D4",aisle:"A",col:"A4",colIdx:3,depth:4,lower:{type:"OCCUPIED",client:"ASHWORTH",container:"2127",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"ASHWORTH",container:"2223",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A4-D5",aisle:"A",col:"A4",colIdx:3,depth:5,lower:{type:"OCCUPIED",client:"ASHWORTH",container:"X14",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"ASHWORTH",container:"77",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A5-D1",aisle:"A",col:"A5",colIdx:4,depth:1,lower:{type:"OCCUPIED",client:"BOLTON",container:"75",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PULSIRVIONG",container:"XX02031",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A5-D2",aisle:"A",col:"A5",colIdx:4,depth:2,lower:{type:"OCCUPIED",client:"PULSIRVIONG",container:"XX00224",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"PULSIRVIONG",container:"XX02032",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A5-D3",aisle:"A",col:"A5",colIdx:4,depth:3,lower:{type:"OCCUPIED",client:"LORD",container:"XXOO102",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"KITCHEN",container:"XX00583",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A5-D4",aisle:"A",col:"A5",colIdx:4,depth:4,lower:{type:"EMPTY",client:"EMPTY",container:"XX02207",brand:"DOREE BONNER",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"503",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A5-D5",aisle:"A",col:"A5",colIdx:4,depth:5,lower:{type:"EMPTY",client:"EMPTY",container:"3569",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"136",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A6-D1",aisle:"A",col:"A6",colIdx:5,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"2193",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"TONY DALEY",container:"229",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A6-D2",aisle:"A",col:"A6",colIdx:5,depth:2,lower:{type:"OCCUPIED",client:"ALETHIA CUNNINGHAM",container:"2222",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"OLD OFFICE PRINTER",container:"?",brand:"UNKNOWN",notes:""},third:null},
+  {id:"A6-D3",aisle:"A",col:"A6",colIdx:5,depth:3,lower:{type:"EMPTY",client:"EMPTY",container:"302",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"XX00064",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A6-D4",aisle:"A",col:"A6",colIdx:5,depth:4,lower:{type:"OCCUPIED",client:"TONY DALEY",container:"07A",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"JANICE ANDREWS",container:"59",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A6-D5",aisle:"A",col:"A6",colIdx:5,depth:5,lower:{type:"OCCUPIED",client:"JANICE ANDREWS",container:"996",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"ALETHIA CUNNINGHAM",container:"171",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A7-D1",aisle:"A",col:"A7",colIdx:6,depth:1,lower:{type:"GAP"},upper:{type:"OCCUPIED",client:"NOBBS",container:"?",brand:"UNKNOWN",notes:""},third:null},
+  {id:"A7-D2",aisle:"A",col:"A7",colIdx:6,depth:2,lower:{type:"OCCUPIED",client:"NOBBS",container:"5019",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"NOBBS",container:"43",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A7-D3",aisle:"A",col:"A7",colIdx:6,depth:3,lower:{type:"OCCUPIED",client:"SYLVIA WOODS",container:"66",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"SYLVIA WOODS",container:"305",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A7-D4",aisle:"A",col:"A7",colIdx:6,depth:4,lower:{type:"OCCUPIED",client:"KELLY BRADSHAW",container:"134",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WHITTON",container:"63",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A7-D5",aisle:"A",col:"A7",colIdx:6,depth:5,lower:{type:"OCCUPIED",client:"FORHOUSING",container:"5693",brand:"MOVESQUAD",notes:"SHAW"},upper:{type:"OCCUPIED",client:"CHRIS JONES",container:"17",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A8-D1",aisle:"A",col:"A8",colIdx:7,depth:1,lower:{type:"OCCUPIED",client:"BURKE",container:"S7",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"BURKE",container:"3939",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A8-D2",aisle:"A",col:"A8",colIdx:7,depth:2,lower:{type:"OCCUPIED",client:"BURKE  227",container:"",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"BURKE",container:"155",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A8-D3",aisle:"A",col:"A8",colIdx:7,depth:3,lower:{type:"OCCUPIED",client:"BURKE",container:"XX00113",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"BURKE",container:"DBI 197",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A8-D4",aisle:"A",col:"A8",colIdx:7,depth:4,lower:{type:"OCCUPIED",client:"BURKE",container:"DD15",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"4379",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A8-D5",aisle:"A",col:"A8",colIdx:7,depth:5,lower:{type:"EMPTY",client:"EMPTY",container:"244",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"XX00422",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A9-D1",aisle:"A",col:"A9",colIdx:8,depth:1,lower:{type:"TIP",client:"TIP",container:"236",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"TRISH JONES",container:"215",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A9-D2",aisle:"A",col:"A9",colIdx:8,depth:2,lower:{type:"OCCUPIED",client:"MARTIN",container:"EB10",brand:"EMS",notes:""},upper:{type:"OCCUPIED",client:"MARTIN",container:"218",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A9-D3",aisle:"A",col:"A9",colIdx:8,depth:3,lower:{type:"EMPTY",client:"EMPTY",container:"XX00025",brand:"DOREE BONNER",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"126",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A9-D4",aisle:"A",col:"A9",colIdx:8,depth:4,lower:{type:"EMPTY",client:"EMPTY",container:"309",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"1164",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A9-D5",aisle:"A",col:"A9",colIdx:8,depth:5,lower:{type:"EMPTY",client:"EMPTY",container:"X4",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"S13",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A10-D1",aisle:"A",col:"A10",colIdx:9,depth:1,lower:{type:"GAP"},upper:{type:"OCCUPIED",client:"WILLIAMSON",container:"SS085",brand:"SOLARIS",notes:"KENLEY"},third:null},
+  {id:"A10-D2",aisle:"A",col:"A10",colIdx:9,depth:2,lower:{type:"OCCUPIED",client:"MORLEY",container:"145",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"MORLEY",container:"15",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A10-D3",aisle:"A",col:"A10",colIdx:9,depth:3,lower:{type:"EMPTY",client:"EMPTY",container:"787",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"NEILSON",container:"XX00428",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A10-D4",aisle:"A",col:"A10",colIdx:9,depth:4,lower:{type:"OCCUPIED",client:"DHILLION",container:"709",brand:"MOVESQUAD",notes:"NOT SHIPPED"},upper:{type:"OCCUPIED",client:"BAXTERS",container:"4007",brand:"MOVESQUAD",notes:"COLBY"},third:null},
+  {id:"A10-D5",aisle:"A",col:"A10",colIdx:9,depth:5,lower:{type:"OCCUPIED",client:"BAXTERS",container:"KC13",brand:"BAXTERS",notes:"COLBY"},upper:{type:"OCCUPIED",client:"BAXTERS",container:"3005",brand:"MOVESQUAD",notes:"COLBY"},third:null},
+  {id:"A11-D1",aisle:"A",col:"A11",colIdx:10,depth:1,lower:{type:"OCCUPIED",client:"HIGHLEA",container:"1378",brand:"MOVESQUAD",notes:""},upper:{type:"TIP",client:"TIP",container:"NO #",brand:"UNKNOWN",notes:""},third:null},
+  {id:"A11-D2",aisle:"A",col:"A11",colIdx:10,depth:2,lower:{type:"OCCUPIED",client:"SAMUTALLY",container:"XX00175",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"SAMUTALLY",container:"XX00298",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"A11-D3",aisle:"A",col:"A11",colIdx:10,depth:3,lower:{type:"OCCUPIED",client:"SAMUTALLY",container:"X8",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"SAMUTALLY",container:"2048",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A11-D4",aisle:"A",col:"A11",colIdx:10,depth:4,lower:{type:"OCCUPIED",client:"SAMUTALLY",container:"XX00063",brand:"DOREE BONNER",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"2096",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A11-D5",aisle:"A",col:"A11",colIdx:10,depth:5,lower:{type:"OCCUPIED",client:"DHILLION",container:"1516",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"DHILLION",container:"LDS265",brand:"STERLING",notes:""},third:null},
+  {id:"A12-D1",aisle:"A",col:"A12",colIdx:11,depth:1,lower:{type:"OCCUPIED",client:"WARBURTON",container:"138",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WARBURTON",container:"661",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A12-D2",aisle:"A",col:"A12",colIdx:11,depth:2,lower:{type:"OCCUPIED",client:"WARBURTON",container:"10",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WARBURTON",container:"945",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A12-D3",aisle:"A",col:"A12",colIdx:11,depth:3,lower:{type:"OCCUPIED",client:"WARBURTON",container:"1950",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WARBURTON",container:"162",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A12-D4",aisle:"A",col:"A12",colIdx:11,depth:4,lower:{type:"OCCUPIED",client:"WARBURTON",container:"132",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WARBURTON",container:"95",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A12-D5",aisle:"A",col:"A12",colIdx:11,depth:5,lower:{type:"OCCUPIED",client:"WARBURTON",container:"4015",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WARBURTON",container:"95",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A13-D1",aisle:"A",col:"A13",colIdx:12,depth:1,lower:{type:"TIP",client:"TIP",container:"940",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"HIGHFIELD",container:"LDS20",brand:"STERLING",notes:""},third:null},
+  {id:"A13-D2",aisle:"A",col:"A13",colIdx:12,depth:2,lower:{type:"OCCUPIED",client:"MPOFU",container:"010",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"MPOFU",container:"716",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A13-D3",aisle:"A",col:"A13",colIdx:12,depth:3,lower:{type:"OCCUPIED",client:"OFFICE",container:"040",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"152",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A13-D4",aisle:"A",col:"A13",colIdx:12,depth:4,lower:{type:"OCCUPIED",client:"MOLLOY",container:"BIR59",brand:"BTR",notes:""},upper:{type:"OCCUPIED",client:"SLACK",container:"S14",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A13-D5",aisle:"A",col:"A13",colIdx:12,depth:5,lower:{type:"EMPTY",client:"EMPTY",container:"531",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"CRATES",container:"316",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A14-D1",aisle:"A",col:"A14",colIdx:13,depth:1,lower:{type:"GAP"},upper:{type:"OCCUPIED",client:"MORLEY",container:"305",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A14-D2",aisle:"A",col:"A14",colIdx:13,depth:2,lower:{type:"OCCUPIED",client:"HIGHFIELD",container:"EB11",brand:"EMS",notes:""},upper:{type:"OCCUPIED",client:"KINGSHILL",container:"007",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A14-D3",aisle:"A",col:"A14",colIdx:13,depth:3,lower:{type:"TIP",client:"TIP",container:"0951",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"2129",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A14-D4",aisle:"A",col:"A14",colIdx:13,depth:4,lower:{type:"EMPTY",client:"EMPTY",container:"S11",brand:"MOVESQUAD",notes:""},upper:{type:"GAP"},third:null},
+  {id:"A14-D5",aisle:"A",col:"A14",colIdx:13,depth:5,lower:{type:"OCCUPIED",client:"OFFICE",container:"947",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"PALLETBASE",brand:"UNKNOWN",notes:""},third:null},
+  {id:"A15-D1",aisle:"A",col:"A15",colIdx:14,depth:1,lower:{type:"OCCUPIED",client:"PIANO",container:"413",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"HENERY",container:"1770",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A15-D2",aisle:"A",col:"A15",colIdx:14,depth:2,lower:{type:"OCCUPIED",client:"HENERY",container:"685",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"HENERY",container:"018",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A15-D3",aisle:"A",col:"A15",colIdx:14,depth:3,lower:{type:"OCCUPIED",client:"HENERY",container:"163",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"HENERY",container:"949",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"A15-D4",aisle:"A",col:"A15",colIdx:14,depth:4,lower:{type:"OCCUPIED",client:"PULSIRVIONG",container:"LDS313",brand:"STERLING",notes:"OVERHANG"},upper:{type:"GAP"},third:null},
+  {id:"A15-D5",aisle:"A",col:"A15",colIdx:14,depth:5,lower:{type:"OCCUPIED",client:"PARKER",container:"322",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PARKER",container:"131",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B0-D1",aisle:"B",col:"B0",colIdx:0,depth:1,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B0-D2",aisle:"B",col:"B0",colIdx:0,depth:2,lower:{type:"OCCUPIED",client:"PERCY",container:"XX00105",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"XX00128",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B0-D3",aisle:"B",col:"B0",colIdx:0,depth:3,lower:{type:"OCCUPIED",client:"PERCY",container:"XX00297",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"XX0248",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B0-D4",aisle:"B",col:"B0",colIdx:0,depth:4,lower:{type:"OCCUPIED",client:"PERCY",container:"XX002068",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"XX02068",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B0-D5",aisle:"B",col:"B0",colIdx:0,depth:5,lower:{type:"OCCUPIED",client:"TONY DALEY",container:"293",brand:"MOVESQUAD",notes:""},upper:{type:"GAP"},third:null},
+  {id:"B1-D1",aisle:"B",col:"B1",colIdx:1,depth:1,lower:{type:"GAP"},upper:{type:"OCCUPIED",client:"RECYLING BOXES",container:"S8",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B1-D2",aisle:"B",col:"B1",colIdx:1,depth:2,lower:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"521",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"409",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B1-D3",aisle:"B",col:"B1",colIdx:1,depth:3,lower:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"750",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"256",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B1-D4",aisle:"B",col:"B1",colIdx:1,depth:4,lower:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"XX00108",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"XX001492",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B1-D5",aisle:"B",col:"B1",colIdx:1,depth:5,lower:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"LDS31",brand:"STERLING",notes:""},upper:{type:"GAP"},third:null},
+  {id:"B2-D1",aisle:"B",col:"B2",colIdx:2,depth:1,lower:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"38",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"XX00057",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B2-D2",aisle:"B",col:"B2",colIdx:2,depth:2,lower:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"BAR1",brand:"BAXTERS",notes:""},upper:{type:"OCCUPIED",client:"SONYA/LEO SARWIJ",container:"XX00248",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B2-D3",aisle:"B",col:"B2",colIdx:2,depth:3,lower:{type:"OCCUPIED",client:"GILESAN",container:"B4",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"GILESAN",container:"149",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B2-D4",aisle:"B",col:"B2",colIdx:2,depth:4,lower:{type:"TIP",client:"TIP",container:"688",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"CHRIS JONES",container:"292",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B2-D5",aisle:"B",col:"B2",colIdx:2,depth:5,lower:{type:"TIP",client:"TIP",container:"65",brand:"MOVESQUAD",notes:""},upper:{type:"GAP"},third:null},
+  {id:"B3-D1",aisle:"B",col:"B3",colIdx:3,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"2001",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"X10",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B3-D2",aisle:"B",col:"B3",colIdx:3,depth:2,lower:{type:"OCCUPIED",client:"PLANT",container:"LDS052",brand:"STERLING",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"6052",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B3-D3",aisle:"B",col:"B3",colIdx:3,depth:3,lower:{type:"OCCUPIED",client:"PLANT",container:"NO #",brand:"UNKNOWN",notes:""},upper:{type:"OCCUPIED",client:"PLANT",container:"957",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B3-D4",aisle:"B",col:"B3",colIdx:3,depth:4,lower:{type:"OCCUPIED",client:"S5",container:"STORE BLANKETS",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"TONY DALEY",container:"S11",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B3-D5",aisle:"B",col:"B3",colIdx:3,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B4-D1",aisle:"B",col:"B4",colIdx:4,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"EB3",brand:"EMS",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"76",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B4-D2",aisle:"B",col:"B4",colIdx:4,depth:2,lower:{type:"EMPTY",client:"EMPTY",container:"6045",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"LDS403",brand:"STERLING",notes:""},third:null},
+  {id:"B4-D3",aisle:"B",col:"B4",colIdx:4,depth:3,lower:{type:"EMPTY",client:"EMPTY",container:"NO NUMBER",brand:"UNKNOWN",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"292",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B4-D4",aisle:"B",col:"B4",colIdx:4,depth:4,lower:{type:"EMPTY",client:"EMPTY",container:"116",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"446",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B4-D5",aisle:"B",col:"B4",colIdx:4,depth:5,lower:{type:"EMPTY",client:"EMPTY",container:"DB12",brand:"DOREE BONNER",notes:""},upper:{type:"GAP"},third:null},
+  {id:"B5-D1",aisle:"B",col:"B5",colIdx:5,depth:1,lower:{type:"OCCUPIED",client:"HACKING",container:"1472",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WARD",container:"6002",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B5-D2",aisle:"B",col:"B5",colIdx:5,depth:2,lower:{type:"OCCUPIED",client:"WARD",container:"316",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WARD",container:"260",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B5-D3",aisle:"B",col:"B5",colIdx:5,depth:3,lower:{type:"OCCUPIED",client:"WARD",container:"128",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"WARD",container:"222",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B5-D4",aisle:"B",col:"B5",colIdx:5,depth:4,lower:{type:"OCCUPIED",client:"ARROWSMITH",container:"J14",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PORT",container:"1520",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B5-D5",aisle:"B",col:"B5",colIdx:5,depth:5,lower:{type:"OCCUPIED",client:"ARROWSMITH",container:"247",brand:"MOVESQUAD",notes:""},upper:{type:"GAP"},third:null},
+  {id:"B6-D1",aisle:"B",col:"B6",colIdx:6,depth:1,lower:{type:"OCCUPIED",client:"GILESAN",container:"88",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"GILESAN",container:"X15",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B6-D2",aisle:"B",col:"B6",colIdx:6,depth:2,lower:{type:"OCCUPIED",client:"GILESAN",container:"8",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"GILESAN",container:"EB16",brand:"EMS",notes:""},third:null},
+  {id:"B6-D3",aisle:"B",col:"B6",colIdx:6,depth:3,lower:{type:"OCCUPIED",client:"GILESAN",container:"2008",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"GILESAN",container:"292",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B6-D4",aisle:"B",col:"B6",colIdx:6,depth:4,lower:{type:"EMPTY",client:"EMPTY",container:"S4",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PARKER",container:"A7",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B6-D5",aisle:"B",col:"B6",colIdx:6,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B7-D1",aisle:"B",col:"B7",colIdx:7,depth:1,lower:{type:"OCCUPIED",client:"KITCHEN",container:"026",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"KITCHEN",container:"J10",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B7-D2",aisle:"B",col:"B7",colIdx:7,depth:2,lower:{type:"OCCUPIED",client:"KITCHEN",container:"284",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"KITCHEN",container:"56",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B7-D3",aisle:"B",col:"B7",colIdx:7,depth:3,lower:{type:"OCCUPIED",client:"KITCHEN",container:"171",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"KITCHEN",container:"403",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B7-D4",aisle:"B",col:"B7",colIdx:7,depth:4,lower:{type:"OCCUPIED",client:"CHRIS JONES",container:"1231",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"KITCHEN",container:"410",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B7-D5",aisle:"B",col:"B7",colIdx:7,depth:5,lower:{type:"GAP"},upper:{type:"OCCUPIED",client:"CHRIS JONES",container:"XX00146",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B8-D1",aisle:"B",col:"B8",colIdx:8,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"XX00251",brand:"DOREE BONNER",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"XX00109",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B8-D2",aisle:"B",col:"B8",colIdx:8,depth:2,lower:{type:"EMPTY",client:"EMPTY",container:"XX00111",brand:"DOREE BONNER",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"3433",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B8-D3",aisle:"B",col:"B8",colIdx:8,depth:3,lower:{type:"OCCUPIED",client:"TRAVIS",container:"509",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"CHRIS JONES",container:"X3",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B8-D4",aisle:"B",col:"B8",colIdx:8,depth:4,lower:{type:"OCCUPIED",client:"MARK CHADWICK",container:"164",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PREMEX",container:"500",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B8-D5",aisle:"B",col:"B8",colIdx:8,depth:5,lower:{type:"OCCUPIED",client:"TONY DALEY",container:"683",brand:"MOVESQUAD",notes:""},upper:{type:"GAP"},third:null},
+  {id:"B9-D1",aisle:"B",col:"B9",colIdx:9,depth:1,lower:{type:"OCCUPIED",client:"GARNER",container:"69",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"692",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B9-D2",aisle:"B",col:"B9",colIdx:9,depth:2,lower:{type:"OCCUPIED",client:"GARNER",container:"65",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"GARNER",container:"4002",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B9-D3",aisle:"B",col:"B9",colIdx:9,depth:3,lower:{type:"OCCUPIED",client:"GARNER",container:"670",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"GARNER",container:"315",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B9-D4",aisle:"B",col:"B9",colIdx:9,depth:4,lower:{type:"OCCUPIED",client:"GARNER",container:"90",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"GARNER",container:"228",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B9-D5",aisle:"B",col:"B9",colIdx:9,depth:5,lower:{type:"GAP"},upper:{type:"OCCUPIED",client:"MORLEY",container:"13",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B10-D1",aisle:"B",col:"B10",colIdx:10,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"1160",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"X6",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B10-D2",aisle:"B",col:"B10",colIdx:10,depth:2,lower:{type:"EMPTY",client:"EMPTY",container:"015",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"XX00025",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B10-D3",aisle:"B",col:"B10",colIdx:10,depth:3,lower:{type:"EMPTY",client:"EMPTY",container:"3006",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"2160",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B10-D4",aisle:"B",col:"B10",colIdx:10,depth:4,lower:{type:"EMPTY",client:"EMPTY",container:"S3",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"CRAIG...",container:"1513",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B10-D5",aisle:"B",col:"B10",colIdx:10,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B11-D1",aisle:"B",col:"B11",colIdx:11,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"XX00045",brand:"DOREE BONNER",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"LEO45",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B11-D2",aisle:"B",col:"B11",colIdx:11,depth:2,lower:{type:"EMPTY",client:"EMPTY",container:"1466",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"X5",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B11-D3",aisle:"B",col:"B11",colIdx:11,depth:3,lower:{type:"EMPTY",client:"EMPTY",container:"502",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"CHRIS JONES",container:"188",brand:"MOVESQUAD",notes:"DESKS"},third:null},
+  {id:"B11-D4",aisle:"B",col:"B11",colIdx:11,depth:4,lower:{type:"OCCUPIED",client:"CHRIS JONES",container:"CD19",brand:"MOVESQUAD",notes:""},upper:{type:"TIP",client:"TIP",container:"306",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B11-D5",aisle:"B",col:"B11",colIdx:11,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B12-D1",aisle:"B",col:"B12",colIdx:12,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"1981",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"88",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B12-D2",aisle:"B",col:"B12",colIdx:12,depth:2,lower:{type:"OCCUPIED",client:"CHRIS JONES",container:"S6",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"CHRIS JONES",container:"S28",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B12-D3",aisle:"B",col:"B12",colIdx:12,depth:3,lower:{type:"OCCUPIED",client:"CHRIS JONES",container:"297",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"GUZVIC",container:"998",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B12-D4",aisle:"B",col:"B12",colIdx:12,depth:4,lower:{type:"OCCUPIED",client:"CHRIS",container:"146",brand:"MOVESQUAD",notes:""},upper:{type:"GAP"},third:null},
+  {id:"B12-D5",aisle:"B",col:"B12",colIdx:12,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B13-D1",aisle:"B",col:"B13",colIdx:13,depth:1,lower:{type:"EMPTY",client:"EMPTY",container:"701",brand:"MOVESQUAD",notes:""},upper:{type:"EMPTY",client:"EMPTY",container:"1516",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B13-D2",aisle:"B",col:"B13",colIdx:13,depth:2,lower:{type:"OCCUPIED",client:"TRISH JONES",container:"4645",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"TRISH JONES",container:"1053",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B13-D3",aisle:"B",col:"B13",colIdx:13,depth:3,lower:{type:"OCCUPIED",client:"TRISH JONES",container:"NO #",brand:"UNKNOWN",notes:""},upper:{type:"OCCUPIED",client:"TRISH JONES",container:"84",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B13-D4",aisle:"B",col:"B13",colIdx:13,depth:4,lower:{type:"OCCUPIED",client:"CHRIS JONES",container:"NO #",brand:"UNKNOWN",notes:""},upper:{type:"OCCUPIED",client:"TRAVIS",container:"248",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B13-D5",aisle:"B",col:"B13",colIdx:13,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B14-D1",aisle:"B",col:"B14",colIdx:14,depth:1,lower:{type:"OCCUPIED",client:"PERCY",container:"NO CONTAINER",brand:"MOVESQUAD",notes:"PIANOS"},upper:{type:"GAP"},third:null},
+  {id:"B14-D2",aisle:"B",col:"B14",colIdx:14,depth:2,lower:{type:"EMPTY",client:"EMPTY",container:"991",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"BROADHURST",container:"034",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B14-D3",aisle:"B",col:"B14",colIdx:14,depth:3,lower:{type:"OCCUPIED",client:"TRAVIS",container:"S7",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"X",container:"4718",brand:"MOVESQUAD",notes:"RAY CRATES"},third:null},
+  {id:"B14-D4",aisle:"B",col:"B14",colIdx:14,depth:4,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B14-D5",aisle:"B",col:"B14",colIdx:14,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+  {id:"B15-D1",aisle:"B",col:"B15",colIdx:15,depth:1,lower:{type:"OCCUPIED",client:"PERCY",container:"278",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"LDS278",brand:"STERLING",notes:""},third:null},
+  {id:"B15-D2",aisle:"B",col:"B15",colIdx:15,depth:2,lower:{type:"OCCUPIED",client:"PERCY",container:"1602",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"592",brand:"MOVESQUAD",notes:""},third:null},
+  {id:"B15-D3",aisle:"B",col:"B15",colIdx:15,depth:3,lower:{type:"OCCUPIED",client:"PERCY",container:"X7",brand:"MOVESQUAD",notes:""},upper:{type:"OCCUPIED",client:"PERCY",container:"XX00300",brand:"DOREE BONNER",notes:""},third:null},
+  {id:"B15-D4",aisle:"B",col:"B15",colIdx:15,depth:4,lower:{type:"OCCUPIED",client:"PERCY",container:"XX002847",brand:"DOREE BONNER",notes:""},upper:{type:"OCCUPIED",client:"TONY DALEY",container:"EB13",brand:"EMS",notes:""},third:null},
+  {id:"B15-D5",aisle:"B",col:"B15",colIdx:15,depth:5,lower:{type:"GAP"},upper:{type:"GAP"},third:null},
+];
+
+// Lookup helpers
+function whGetLoc(id) {
+  return WH_LOCATIONS.filter(function(l){ return l.id===id; })[0] || null;
+}
+function whClientColour(client) {
+  return WH_CLIENT_COLOURS[client] || '#B0BEC5';
+}
+function whSlotColour(slot) {
+  if (!slot || slot.type==='GAP')   return 'gap';
+  if (slot.type==='EMPTY')          return 'empty';
+  if (slot.type==='TIP')            return 'tip';
+  return whClientColour(slot.client);
+}
+
+// Column IDs
+var WH_AISLE_A_COLS = ['A1','A2','A3','A4','A5','A6','A7','A8','A9','A10','A11','A12','A13','A14','A15'];
+var WH_AISLE_B_COLS = ['B0','B1','B2','B3','B4','B5','B6','B7','B8','B9','B10','B11','B12','B13','B14','B15'];
 
 // ══ TAB 1: DAILY MOVEMENTS ═════════════════════════════════════════════
 function renderWhMovements() {
@@ -9648,296 +9785,235 @@ function whRenderRecordsInner(f) {
 }
 
 // ══ TAB 3: WAREHOUSE GRID ══════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// WAREHOUSE GRID RENDER — Audit-based layout
+// ═══════════════════════════════════════════════════════════════════
+
+var whZoomLevel  = 1;   // 0=compact 1=normal 2=large
+var whFilter     = '';  // client filter string
+var whSearchTerm = '';
+
 function renderWhGrid() {
   var h = '';
 
-  // Legend
-  h += '<div class="wh-grid-legend">';
-  h += '<span style="font-size:12px;font-weight:700;color:var(--t2);margin-right:4px">Key:</span>';
-  h += '<div class="wh-legend-item"><div class="wh-legend-dot client"></div> Client storage (occupied)</div>';
-  h += '<div class="wh-legend-item"><div class="wh-legend-dot nonclient"></div> Non-client use (facility/staff)</div>';
-  h += '<div class="wh-legend-item"><div class="wh-legend-dot empty"></div> Empty — available for assignment</div>';
-  h += '<div class="wh-legend-item"><div class="wh-legend-dot pending"></div> Pending / provisioned (no containers yet)</div>';
-  h += '<div style="margin-left:auto;display:flex;gap:6px">';
-  h += '<button class="wh-zoom-btn" onclick="whZoom(-1)">&#8722;</button>';
-  h += '<span style="font-size:11px;font-weight:600;color:var(--t3);width:34px;text-align:center" id="wh-zoom-lbl">100%</span>';
-  h += '<button class="wh-zoom-btn" onclick="whZoom(1)">+</button>';
-  h += '</div>';
+  // ── Toolbar ──────────────────────────────────────────────────────
+  h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+  h += '<input id="wh-search" value="' + escH(whSearchTerm) + '" oninput="whSearchTerm=this.value;renderWhGrid()" placeholder="Search client or container…" style="border:1.5px solid var(--b1);border-radius:8px;padding:6px 10px;font-size:13px;flex:1;min-width:160px">';
+  h += '<button onclick="whZoom(-1)" style="' + whZoomBtnStyle() + '">−</button>';
+  h += '<button onclick="whZoom(1)"  style="' + whZoomBtnStyle() + '">+</button>';
+  h += '<button onclick="whSearchTerm=\'\';whFilter=\'\';renderWhGrid()" style="' + whZoomBtnStyle() + '">Clear</button>';
   h += '</div>';
 
-  // Build cell state map: locNo → {status, client, storageId, containerNo, desc}
-  var cellMap = whBuildCellMap();
-
-  h += '<div class="wh-grid-wrap"><div id="wh-grid-inner" style="transform-origin:top left;transform:scale('+whGridZoom+')">';
-
-  // Column headers
-  h += '<div style="display:flex;gap:2px;margin-left:38px;margin-bottom:4px">';
-  for (var c=1; c<=WH_COLS; c++) h += '<div class="wh-col-hdr">'+String(c).padStart(2,'0')+'</div>';
+  // ── Legend ────────────────────────────────────────────────────────
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;align-items:center">';
+  h += '<span style="font-size:11px;font-weight:700;color:var(--t3)">KEY:</span>';
+  [['#E8F0F8','Occupied'],['#F0F4F8','Empty container'],['diagonal','GAP — structural'],['#FFF3E0','TIP']].forEach(function(k){
+    var bg = k[0]==='diagonal'
+      ? 'repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px)'
+      : k[0];
+    h += '<div style="display:flex;align-items:center;gap:4px">';
+    h += '<div style="width:14px;height:14px;border-radius:3px;background:' + bg + ';border:1px solid #DDE8F0"></div>';
+    h += '<span style="font-size:11px;color:var(--t3)">' + k[1] + '</span></div>';
+  });
   h += '</div>';
 
-  // Side A
-  h += '<div class="wh-side-label">◀ SIDE A</div>';
-  for (var r=1; r<=WH_ROWS_PER_SIDE; r++) {
-    h += '<div class="wh-grid-row">';
-    h += '<div class="wh-grid-rowlbl">A'+r+'</div>';
-    for (var c2=1; c2<=WH_COLS; c2++) {
-      var loc = 'A'+r+'-'+String(c2).padStart(2,'0');
-      h += whGridCell(loc, cellMap);
+  var cellW = [48, 64, 84][whZoomLevel];
+  var cellH = [28, 36, 48][whZoomLevel];
+  var fontSize = [9, 11, 13][whZoomLevel];
+
+  // ── Render one aisle ──────────────────────────────────────────────
+  function renderAisle(aisleLabel, cols) {
+    var ah = '';
+    ah += '<div style="margin-bottom:20px">';
+    ah += '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#2872A1;margin-bottom:6px">Aisle ' + aisleLabel + '</div>';
+    ah += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
+    ah += '<table style="border-collapse:collapse;white-space:nowrap">';
+
+    // Column header row
+    ah += '<tr>';
+    ah += '<td style="font-size:9px;font-weight:700;color:var(--t3);padding:2px 6px 2px 0;text-align:right;white-space:nowrap">Depth</td>';
+    cols.forEach(function(colId){
+      ah += '<td colspan="1" style="font-size:10px;font-weight:800;color:#2872A1;text-align:center;padding:2px 1px;min-width:' + (cellW) + 'px">' + colId + '</td>';
+    });
+    ah += '</tr>';
+
+    // Depth rows 1-5 (front to back)
+    for (var depth = 1; depth <= 5; depth++) {
+      ah += '<tr>';
+      ah += '<td style="font-size:9px;color:var(--t3);padding:1px 6px 1px 0;text-align:right;vertical-align:middle">D' + depth + '</td>';
+      cols.forEach(function(colId){
+        var locId = colId + '-D' + depth;
+        var loc = whGetLoc(locId);
+        ah += renderWhCell(loc, colId, depth, cellW, cellH, fontSize);
+      });
+      ah += '</tr>';
     }
-    h += '</div>';
+    ah += '</table></div></div>';
+    return ah;
   }
 
-  // Runway
-  h += '<div style="display:flex;gap:2px;margin-left:38px;margin:6px 0">';
-  for (var rc=1; rc<=WH_COLS; rc++) {
-    h += '<div style="width:52px;height:18px;background:var(--s2);border-radius:2px;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:700;color:var(--t4);letter-spacing:.6px;flex-shrink:0">';
-    if (rc===7) h += '◀ FORKLIFT RUNWAY ▶';
-    h += '</div>';
-  }
-  h += '</div>';
+  h += renderAisle('A', WH_AISLE_A_COLS);
+  h += renderAisle('B', WH_AISLE_B_COLS);
 
-  // Side B
-  h += '<div class="wh-side-label">◀ SIDE B</div>';
-  for (var r3=1; r3<=WH_ROWS_PER_SIDE; r3++) {
-    h += '<div class="wh-grid-row">';
-    h += '<div class="wh-grid-rowlbl">B'+r3+'</div>';
-    for (var c3=1; c3<=WH_COLS; c3++) {
-      var loc3 = 'B'+r3+'-'+String(c3).padStart(2,'0');
-      h += whGridCell(loc3, cellMap);
+  // ── Client index ──────────────────────────────────────────────────
+  h += renderWhClientIndex();
+
+  var _out=el('wh-out');if(_out)_out.innerHTML='<div id="wh-grid-body" style="padding-bottom:40px">'+h+'</div>';
+}
+
+function renderWhCell(loc, colId, depth, cellW, cellH, fontSize) {
+  if (!loc) {
+    return '<td style="width:' + cellW + 'px;padding:1px"><div style="width:' + cellW + 'px;height:' + (cellH*2+2) + 'px;background:#F8FAFC;border:1px solid #EEF2F6;border-radius:4px"></div></td>';
+  }
+
+  var lower = loc.lower;
+  var upper = loc.upper;
+
+  // Both GAP
+  if (lower && lower.type==='GAP' && upper && upper.type==='GAP') {
+    return '<td style="width:' + cellW + 'px;padding:1px"><div style="width:' + cellW + 'px;height:' + (cellH*2+2) + 'px;background:repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px);border:1px solid #DDE8F0;border-radius:4px;display:flex;align-items:center;justify-content:center"><span style="font-size:9px;color:#B0BEC5;font-weight:700">GAP</span></div></td>';
+  }
+
+  var locId = loc.id;
+  var openId = 'whOpenLoc(\'' + locId + '\')';
+
+  var search = whSearchTerm.toLowerCase();
+  function slotMatch(slot) {
+    if (!slot || !search) return true;
+    return (slot.client||'').toLowerCase().includes(search) ||
+           (slot.container||'').toLowerCase().includes(search);
+  }
+  var anyMatch = !search || slotMatch(lower) || slotMatch(upper);
+  var opacity = anyMatch ? '1' : '0.18';
+
+  var html = '<td style="width:' + cellW + 'px;padding:1px;opacity:' + opacity + '">';
+  html += '<div onclick="' + openId + '" style="cursor:pointer;display:flex;flex-direction:column;gap:1px">';
+
+  // Render each level
+  [['upper', upper], ['lower', lower]].forEach(function(pair) {
+    var level = pair[0], slot = pair[1];
+    var bg, textCol, label;
+
+    if (!slot) {
+      bg = '#F8FAFC'; textCol = '#ccc'; label = '';
+    } else if (slot.type === 'GAP') {
+      bg = 'repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px)';
+      textCol = '#B0BEC5'; label = 'GAP';
+    } else if (slot.type === 'EMPTY') {
+      bg = '#F0F4F8'; textCol = '#B0BEC5'; label = slot.container || 'EMPTY';
+    } else if (slot.type === 'TIP') {
+      bg = '#FFF3E0'; textCol = '#FF6B00'; label = 'TIP ' + (slot.container||'');
+    } else {
+      var col = whClientColour(slot.client);
+      bg = col + '22';
+      textCol = col;
+      label = slot.client || '';
     }
-    h += '</div>';
-  }
 
-  // Loose / Air / LCL row
-  h += '<div style="border-top:2px dashed var(--b2);margin:10px 0 6px;padding-top:10px">';
-  h += '<div class="wh-side-label">▼ LOOSE / OVERSIZED / AIR / LCL / PALLET ROW (L01–L31)</div>';
-  h += '<div style="display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;padding:4px 2px 8px;margin-left:38px">';
-  for (var li=1; li<=WH_LOOSE_CELLS; li++) {
-    var lloc = 'L'+String(li).padStart(2,'0');
-    h += whLooseCell(lloc, cellMap);
-  }
+    html += '<div style="width:' + cellW + 'px;height:' + cellH + 'px;background:' + bg + ';border:1px solid ' + (slot&&slot.type==='OCCUPIED'?whClientColour(slot.client)+'44':'#DDE8F0') + ';border-radius:3px;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:1px 3px;box-sizing:border-box">';
+    html += '<div style="font-size:' + (fontSize-1) + 'px;font-weight:700;color:' + textCol + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.1">' + escH(label) + '</div>';
+    if (slot && slot.container && slot.type!=='GAP' && fontSize >= 11) {
+      html += '<div style="font-size:' + (fontSize-3) + 'px;color:' + textCol + ';opacity:.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escH(slot.container) + '</div>';
+    }
+    html += '</div>';
+  });
+
+  html += '</div></td>';
+  return html;
+}
+
+function renderWhClientIndex() {
+  // Count containers per client
+  var counts = {};
+  WH_LOCATIONS.forEach(function(loc) {
+    [loc.lower, loc.upper, loc.third].forEach(function(slot) {
+      if (slot && slot.type==='OCCUPIED' && slot.client) {
+        counts[slot.client] = (counts[slot.client]||0) + 1;
+      }
+    });
+  });
+  var sorted = Object.keys(counts).sort(function(a,b){ return counts[b]-counts[a]; });
+
+  var h = '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--b1)">';
+  h += '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--t3);margin-bottom:10px">Client Index (' + sorted.length + ' clients, ' + Object.values(counts).reduce(function(a,b){return a+b;},0) + ' containers)</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+  sorted.forEach(function(client) {
+    var col = whClientColour(client);
+    h += '<div onclick="whSearchTerm=\'' + escH(client) + '\';renderWhGrid()" style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:20px;border:1.5px solid ' + col + ';background:' + col + '15;cursor:pointer">';
+    h += '<div style="width:8px;height:8px;border-radius:50%;background:' + col + ';flex-shrink:0"></div>';
+    h += '<span style="font-size:12px;font-weight:700;color:' + col + '">' + escH(client) + '</span>';
+    h += '<span style="font-size:11px;color:var(--t3)">' + counts[client] + '</span>';
+    h += '</div>';
+  });
   h += '</div></div>';
-
-  h += '</div></div>'; // wh-grid-inner, wh-grid-wrap
-
-  // Cell detail panel (if selected)
-  if (whCellDetail) {
-    h += whRenderCellDetail(whCellDetail, cellMap);
-  }
-
-  setH('wh-out', h);
+  return h;
 }
 
-function whBuildCellMap() {
-  var map = {};
+// ── LOCATION DETAIL MODAL ─────────────────────────────────────────────
+function whOpenLoc(locId) {
+  var loc = whGetLoc(locId);
+  if (!loc) return;
 
-  // Place containers from storage records
-  for (var si=0; si<STORAGE_RECORDS.length; si++) {
-    var s = STORAGE_RECORDS[si];
-    var ctrs = s.containers || [];
-    for (var ci=0; ci<ctrs.length; ci++) {
-      var ct = ctrs[ci];
-      var loc = ct.locNo;
-      map[loc] = {
-        status: s.status==='active' ? 'client' : s.status==='pending' ? 'pending' : 'client',
-        client: s.client,
-        storageId: s.id,
-        containerNo: ct.containerNo,
-        type: ct.type,
-        volFt: ct.volFt,
-        maxFt: ct.maxFt,
-        desc: s.client + ' (' + ct.type + ', ' + ct.volFt + 'ft³)',
-      };
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+
+  function slotHtml(slot, levelLabel) {
+    if (!slot) return '';
+    var sh = '<div style="padding:10px 0;border-bottom:1px solid #F0F4F8">';
+    sh += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;letter-spacing:.5px;margin-bottom:4px">' + levelLabel + '</div>';
+    if (slot.type==='GAP') {
+      sh += '<div style="font-size:13px;color:#B0BEC5;font-weight:700">⛔ Structural GAP — unusable</div>';
+    } else if (slot.type==='EMPTY') {
+      sh += '<div style="font-size:13px;font-weight:700;color:#7A849E">Empty container</div>';
+      if (slot.container) sh += '<div style="font-size:12px;color:#B0BEC5">Ref: ' + escH(slot.container) + '</div>';
+      if (slot.brand)     sh += '<div style="font-size:11px;color:#B0BEC5">Brand: ' + escH(slot.brand) + '</div>';
+    } else if (slot.type==='TIP') {
+      sh += '<div style="font-size:13px;font-weight:700;color:#FF6B00">🗑 TIP — dispose</div>';
+      if (slot.container) sh += '<div style="font-size:12px;color:#B0BEC5">Ref: ' + escH(slot.container) + '</div>';
+    } else {
+      var col = whClientColour(slot.client);
+      sh += '<div style="font-size:15px;font-weight:800;color:' + col + '">' + escH(slot.client) + '</div>';
+      if (slot.container) sh += '<div style="font-size:12px;color:#7A849E;margin-top:2px">Container: <strong>' + escH(slot.container) + '</strong></div>';
+      if (slot.brand)     sh += '<div style="font-size:11px;color:#B0BEC5;margin-top:1px">Brand: ' + escH(slot.brand) + '</div>';
+      if (slot.notes)     sh += '<div style="font-size:11px;color:#FF9F1A;margin-top:3px;background:#FFF3E0;border-radius:6px;padding:3px 8px">⚠ ' + escH(slot.notes) + '</div>';
     }
+    sh += '</div>';
+    return sh;
   }
 
-  // Non-client (facility/staff)
-  for (var loc2 in WH_NON_CLIENT) {
-    if (!map[loc2]) {
-      map[loc2] = {status:'nonclient', desc:WH_NON_CLIENT[loc2].desc, type:WH_NON_CLIENT[loc2].type};
-    }
-  }
+  var bh = '<div style="background:#fff;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;box-sizing:border-box;max-height:80vh;overflow-y:auto">';
+  bh += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
+  bh += '<div>';
+  bh += '<div style="font-size:18px;font-weight:800;color:#1C2333">Location ' + escH(loc.id) + '</div>';
+  bh += '<div style="font-size:12px;color:#7A849E">Aisle ' + loc.aisle + ' · Column ' + loc.col + ' · Depth ' + loc.depth + '</div>';
+  bh += '</div>';
+  bh += '<button onclick="this.closest(\'[style*=fixed]\').remove()" style="background:#F0F4F8;border:none;border-radius:8px;width:32px;height:32px;font-size:18px;cursor:pointer;color:#7A849E">×</button>';
+  bh += '</div>';
+  bh += slotHtml(loc.upper, 'Upper container');
+  bh += slotHtml(loc.lower, 'Lower container');
+  if (loc.third) bh += slotHtml(loc.third, 'Third level (small containers)');
+  bh += '<button onclick="this.closest(\'[style*=fixed]\').remove()" style="width:100%;background:#F0F4F8;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#7A849E;cursor:pointer;margin-top:14px">Close</button>';
+  bh += '</div>';
 
-  return map;
-}
-
-function whGridCell(loc, cellMap) {
-  var info = cellMap[loc];
-  var cno  = '';
-  var status = 'empty';
-  var icon = '🔴';
-  var tipText = loc + ' — Empty';
-
-  if (info) {
-    status = info.status;
-    cno = info.containerNo || '';
-    if (status === 'client') { icon = '🟢'; tipText = loc + (cno?' ['+cno+']':'')+' — '+esc(info.client||'')+(info.volFt?' '+info.volFt+'ft³':''); }
-    else if (status === 'nonclient') { icon = '🟡'; tipText = loc + ' — ' + esc(info.desc||'Non-client'); }
-    else if (status === 'pending') { icon = '⬜'; tipText = loc + ' — Pending: ' + esc(info.client||''); }
-    else { icon = '🔴'; tipText = loc + ' — Empty'; }
-  }
-
-  var h = '<div class="wh-cell '+status+'" onclick="whSelectCell(\''+loc+'\')" title="'+tipText+'">';
-  h += '<div class="wh-cell-tooltip">'+tipText+'</div>';
-  if (cno) h += '<div class="wh-cell-cno">'+esc(cno)+'</div>';
-  h += '<div class="wh-cell-icon">'+icon+'</div>';
-  if (!cno) h += '<div class="wh-cell-loc" style="font-size:7px;color:var(--t4)">'+esc(loc)+'</div>';
-  h += '</div>';
-  return h;
-}
-
-function whLooseCell(loc, cellMap) {
-  var info = cellMap[loc];
-  var occupied = !!info;
-  var icon = info ? (info.type==='loose'?'🛋':info.type==='pallet'?'🪵':info.type==='lcl'?'✈️':'📦') : '+';
-  var cls = occupied ? 'occupied' : 'empty';
-  var h = '<div class="wh-loose-cell '+cls+'" onclick="whSelectCell(\''+loc+'\')" title="'+loc+(info?' — '+esc(info.desc||info.client||''):'— empty')+'">';
-  h += '<div class="wh-loose-cell-icon">'+icon+'</div>';
-  h += '<div class="wh-loose-cell-id">'+esc(loc)+'</div>';
-  if (info) h += '<div class="wh-loose-cell-lbl" style="font-size:7px;max-width:76px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((info.client||info.desc||'').substring(0,14))+'</div>';
-  h += '</div>';
-  return h;
-}
-
-function whSelectCell(loc) {
-  whCellDetail = (whCellDetail === loc) ? null : loc;
-  renderWhGrid();
-}
-
-function whRenderCellDetail(loc, cellMap) {
-  var info = cellMap[loc];
-  var h = '<div class="wh-cell-detail" style="margin-top:18px">';
-  h += '<div class="wh-cd-head">';
-  h += '<div class="wh-cd-cno">'+esc(loc)+'</div>';
-  if (info && info.containerNo) h += '<div class="wh-cd-loc">'+esc(info.containerNo)+'</div>';
-  var stCls = !info?'background:#FFECEF;color:#E44258':info.status==='client'?'background:#E6FFF5;color:#007048':info.status==='nonclient'?'background:#FFF5E0;color:#9A5600':'background:#F5F4EF;color:#7A849E';
-  h += '<span class="wh-cd-status" style="'+stCls+'">'+(!info?'Empty':info.status==='client'?'Client Storage':info.status==='nonclient'?'Non-Client Use':'Pending')+'</span>';
-  h += '<button class="btn btn-g btn-sm" style="margin-left:auto" onclick="whCellDetail=null;renderWhGrid()">✕ Close</button>';
-  h += '</div>';
-
-  if (!info) {
-    h += '<div style="font-size:12px;color:var(--t3);margin-bottom:12px">This location is empty and available for assignment.</div>';
-    h += '<div style="display:flex;gap:8px">';
-    h += '<button class="btn btn-p btn-sm" onclick="whAssignContainer(\''+loc+'\')">Assign Container Here</button>';
-    h += '<button class="btn btn-s btn-sm" onclick="whMarkNonClient(\''+loc+'\')">Mark as Facility Use</button>';
-    h += '</div>';
-  } else if (info.status === 'client') {
-    var rec = STORAGE_RECORDS.filter(function(s){return s.id===info.storageId;})[0];
-    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">';
-    h += '<div class="di"><div class="dlbl">Client</div><div class="dval" style="font-weight:700">'+esc(info.client)+'</div></div>';
-    h += '<div class="di"><div class="dlbl">Storage Ref</div><div class="dval" style="font-family:monospace;color:var(--blue)">'+esc(info.storageId)+'</div></div>';
-    h += '<div class="di"><div class="dlbl">Container</div><div class="dval" style="font-family:monospace;font-weight:700">'+esc(info.containerNo||'—')+'</div></div>';
-    h += '<div class="di"><div class="dlbl">Type</div><div class="dval">'+esc(info.type||'standard')+'</div></div>';
-    h += '<div class="di"><div class="dlbl">Volume</div><div class="dval">'+esc(String(info.volFt||0))+' ft³'+(info.maxFt?' / max '+info.maxFt+' ft³':'')+'</div></div>';
-    if (rec) h += '<div class="di"><div class="dlbl">Record Status</div><div class="dval" style="font-weight:700;color:var(--green)">'+rec.status.toUpperCase()+'</div></div>';
-    h += '</div>';
-    h += '<div style="display:flex;gap:8px">';
-    if (rec) h += '<button class="btn btn-p btn-sm" onclick="viewStorage(\''+esc(info.storageId)+'\')">Open Storage Record</button>';
-    h += '<button class="btn btn-s btn-sm" onclick="whMoveContainer(\''+loc+'\')">Move to Different Location</button>';
-    h += '</div>';
-  } else if (info.status === 'nonclient') {
-    h += '<div style="font-size:12.5px;color:var(--t2);margin-bottom:12px">'+esc(info.desc||'Facility use')+'</div>';
-    h += '<button class="btn btn-s btn-sm" onclick="whClearNonClient(\''+loc+'\')">Clear Facility Marking</button>';
-  }
-  h += '</div>';
-  return h;
+  overlay.innerHTML = bh;
+  document.body.appendChild(overlay);
+  overlay.onclick = function(e){ if(e.target===overlay) overlay.remove(); };
 }
 
 function whZoom(dir) {
-  var steps = [0.65, 0.8, 1, 1.2, 1.5];
-  var idx = steps.indexOf(whGridZoom);
-  if (idx < 0) idx = 2;
-  idx = Math.max(0, Math.min(steps.length-1, idx+dir));
-  whGridZoom = steps[idx];
-  var inner = el('wh-grid-inner');
-  if (inner) inner.style.transform = 'scale('+whGridZoom+')';
-  var lbl = el('wh-zoom-lbl');
-  if (lbl) lbl.textContent = Math.round(whGridZoom*100)+'%';
-}
-
-function whAssignContainer(loc) {
-  // Find unassigned containers from STORAGE_RECORDS that have no locNo yet
-  var unassigned = [];
-  for (var si=0; si<STORAGE_RECORDS.length; si++) {
-    var s = STORAGE_RECORDS[si];
-    var ctrs = s.containers || [];
-    for (var ci=0; ci<ctrs.length; ci++) {
-      if (!ctrs[ci].locNo) unassigned.push({cno:ctrs[ci].containerNo, client:s.client, sid:s.id, ci:ci});
-    }
-  }
-  // Build a simple selector
-  if (!unassigned.length) {
-    alert('No unassigned containers found. Add containers via the Storage Record first.');
-    return;
-  }
-  var opts = unassigned.map(function(u){return u.cno + ' — ' + u.client;}).join('\n');
-  var pick = prompt('Enter container number to assign to location ' + loc + ':\n\nUnassigned containers:\n' + opts);
-  if (!pick) return;
-  pick = pick.trim().toUpperCase();
-  for (var si2=0; si2<STORAGE_RECORDS.length; si2++) {
-    var s2 = STORAGE_RECORDS[si2];
-    var ctrs2 = s2.containers || [];
-    for (var ci2=0; ci2<ctrs2.length; ci2++) {
-      if (ctrs2[ci2].containerNo === pick) {
-        ctrs2[ci2].locNo = loc;
-        // Log it
-        if (!s2.accessLog) s2.accessLog = [];
-        s2.accessLog.push({ts:new Date().toISOString(), date:whDateStr(), type:'container-assign',
-          note:'Container '+pick+' assigned to location '+loc+'.'});
-        toast('Container ' + pick + ' assigned to ' + loc); saveData('storage', rec.id, rec);
-        whCellDetail = loc;
-        renderWhGrid();
-        return;
-      }
-    }
-  }
-  toast('Container ' + pick + ' not found');
-}
-
-function whMoveContainer(fromLoc) {
-  var toLoc = prompt('Move container from ' + fromLoc + ' to location (e.g. A2-05, L12):');
-  if (!toLoc) return;
-  toLoc = toLoc.trim().toUpperCase();
-  var moved = false;
-  for (var si=0; si<STORAGE_RECORDS.length; si++) {
-    var s = STORAGE_RECORDS[si];
-    var ctrs = s.containers || [];
-    for (var ci=0; ci<ctrs.length; ci++) {
-      if (ctrs[ci].locNo === fromLoc) {
-        ctrs[ci].locNo = toLoc;
-        if (!s.accessLog) s.accessLog = [];
-        s.accessLog.push({ts:new Date().toISOString(), date:whDateStr(), type:'container-move',
-          note:'Container '+ctrs[ci].containerNo+' moved from '+fromLoc+' to '+toLoc+'.'});
-        toast('Moved ' + ctrs[ci].containerNo + ' → ' + toLoc);
-        moved = true;
-        break;
-      }
-    }
-    if (moved) break;
-  }
-  whCellDetail = toLoc;
+  whZoomLevel = Math.max(0, Math.min(2, whZoomLevel + dir));
   renderWhGrid();
 }
 
-function whMarkNonClient(loc) {
-  var desc = prompt('Description for this location (e.g. "Workshop tools", "Forklift parking"):');
-  if (!desc) return;
-  WH_NON_CLIENT[loc] = {desc:desc, type:'facility'};
-  toast(loc + ' marked as facility use');
-  renderWhGrid();
+function whZoomBtnStyle() {
+  return 'background:#F0F4F8;border:1px solid var(--b1);border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;color:var(--t2)';
 }
 
-function whClearNonClient(loc) {
-  delete WH_NON_CLIENT[loc];
-  whCellDetail = null;
-  toast(loc + ' cleared');
-  renderWhGrid();
+function escH(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
-
-// ══ 3RD PARTY FLOWS ════════════════════════════════════════════════════
-
-// Storage method state (persists while panel open)
-var _tpStorageMethod = 'container'; // 'air'|'lcl'|'pallet'|'loose'|'container'
 
 function wh3rdPartyIn(prefill) {
   prefill = prefill || {};
