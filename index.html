@@ -5040,7 +5040,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v82 — 5 Mar 2026';
+var APP_VERSION = 'v83 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -12339,6 +12339,24 @@ function w3wNavButton(words) {
 }
 
 
+// ── CREW PORTAL FUNCTION REGISTRY ─────────────────────────────────────
+// Avoids all onclick/escaping issues. dvRegFn stores a function, _dvRun calls it.
+var _dvFns = {};
+var _dvFnCounter = 0;
+function dvRegFn(fn) {
+  // fn can be a function or a string (legacy) - normalise to function
+  var id = ++_dvFnCounter;
+  if (typeof fn === 'function') {
+    _dvFns[id] = fn;
+  } else {
+    _dvFns[id] = new Function(fn);
+  }
+  return id;
+}
+function _dvRun(id) {
+  if (_dvFns[id]) { try { _dvFns[id](); } catch(e) { console.error('_dvRun error:', e); } }
+}
+
 function activateDriverView() {
   var sb = document.querySelector('.sidebar');
   var mn = document.querySelector('.main');
@@ -12561,9 +12579,11 @@ function renderDriverView() {
 
   // Morning loading list button — shown at top when crew has jobs today
   var matBtn = '';
-  if (myJobs.length) {
-    var hasMaterials = myJobs.some(function(j){ return j.materials && j.materials.length; });
-    matBtn = '<div data-fn="dvOpenMaterials()" style="background:linear-gradient(135deg,#0073EA,#0058C7);border-radius:14px;padding:16px 18px;margin-bottom:16px;cursor:pointer;display:flex;align-items:center;gap:14px">'
+  if (myJobs.length || upcoming.length) {
+    var allJobs = myJobs.concat(upcoming);
+    var hasMaterials = allJobs.some(function(j){ return j.materials && j.materials.length; });
+    var matId = dvRegFn(function(){ dvOpenMaterials(); });
+    matBtn = '<div onclick="_dvRun(' + matId + ')" style="background:linear-gradient(135deg,#0073EA,#0058C7);border-radius:14px;padding:16px 18px;margin-bottom:16px;cursor:pointer;display:flex;align-items:center;gap:14px">'
       + '<div style="width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">📦</div>'
       + '<div style="flex:1">'
       + '<div style="font-size:15px;font-weight:800;color:#fff">Morning Loading List</div>'
@@ -12573,14 +12593,7 @@ function renderDriverView() {
       + '</div>';
   }
   el('dv-jobs').innerHTML = matBtn + h;
-  // Delegated click for data-fn on home screen
-  el('dv-jobs').onclick = function(e) {
-    var t = e.target;
-    while (t && t !== this) {
-      if (t.dataset && t.dataset.fn) { try { eval(t.dataset.fn); } catch(err) { console.error('dv fn error:', err); } return; }
-      t = t.parentElement;
-    }
-  };
+  // onclick handled by _dvRun registry
 }
 
 function dvJourneyCard(jrn, jrnJobs) {
@@ -12776,7 +12789,7 @@ function dvRenderJobDetail(jobId) {
     label: 'Job Sheet', sub: 'Full briefing — all job details', icon: '📄',
     status: (cd.jobSheetViewed ? 'Viewed' : 'Tap to open'),
     done: !!cd.jobSheetViewed,
-    fn: 'dvOpenJobSheet("' + j.id + '")'
+    fn: function(){ dvOpenJobSheet(j.id); }
   });
 
   // 2. Pre-job checklist (always)
@@ -12785,7 +12798,7 @@ function dvRenderJobDetail(jobId) {
     label: 'Pre-Job Checklist', sub: 'Vehicle walk-round, PPE, load', icon: '🔍',
     status: cl.completedAt ? ('Done · ' + (cl.completedBy||'')) : 'Not started',
     done: !!cl.completedAt,
-    fn: 'dvOpenPrecheck("' + j.id + '")'
+    fn: function(){ dvOpenPrecheck(j.id); }
   });
 
   // 2b. Property walkaround (origin jobs only)
@@ -12796,7 +12809,7 @@ function dvRenderJobDetail(jobId) {
       label: 'Property Walkaround', sub: 'Record pre-existing damage to property on arrival', icon: '🏠',
       status: wa.completedAt ? (waDmgCount + ' item' + (waDmgCount===1?'':'s') + ' noted · Done') : (waDmgCount ? waDmgCount + ' recorded — not complete' : 'Not started'),
       done: !!wa.completedAt,
-      fn: 'dvOpenWalkaround("' + j.id + '")'
+      fn: function(){ dvOpenWalkaround(j.id); }
     });
   }
 
@@ -12806,7 +12819,7 @@ function dvRenderJobDetail(jobId) {
       label: 'Warehouse Loading Sheet', sub: 'Items to collect — reverse load order', icon: '🏭',
       status: (cd.warehouseLoaded ? 'Confirmed loaded' : 'Required before departure'),
       done: !!cd.warehouseLoaded,
-      fn: 'dvOpenWarehouseLoad("' + j.id + '")'
+      fn: function(){ dvOpenWarehouseLoad(j.id); }
     });
   }
 
@@ -12822,7 +12835,7 @@ function dvRenderJobDetail(jobId) {
       label: 'Inventory / Condition Report', sub: 'Record items with condition at collection', icon: '📋',
       status: inv.completedAt ? (itemCount + ' items · Signed') : (itemCount ? itemCount + ' items added — not complete' : 'Not started'),
       done: !!inv.completedAt,
-      fn: 'dvOpenInventory("' + j.id + '")'
+      fn: function(){ dvOpenInventory(j.id); }
     });
   }
 
@@ -12833,7 +12846,7 @@ function dvRenderJobDetail(jobId) {
       label: 'Delivery Sign-Off', sub: 'Confirm delivery, client signature', icon: '✍',
       status: del.completedAt ? ('Signed — ' + (del.signedBy||'client')) : 'Not started',
       done: !!del.completedAt,
-      fn: 'dvOpenDelivery("' + j.id + '")'
+      fn: function(){ dvOpenDelivery(j.id); }
     });
   }
 
@@ -12843,11 +12856,20 @@ function dvRenderJobDetail(jobId) {
     label: 'Job Sign-Off', sub: 'Final crew + client sign-off to close job', icon: '✅',
     status: so.completedAt ? ('Completed · ' + (so.signedBy||'')) : 'Not started',
     done: !!so.completedAt,
-    fn: 'dvOpenSignoff("' + j.id + '")'
+    fn: function(){ dvOpenSignoff(j.id); }
+  });
+
+  // Risk Assessment (always present)
+  var ra = cd.riskAssessment || {};
+  formDefs.push({
+    label: 'Risk Assessment', sub: 'Property access, hazards & crew briefing', icon: '⚠️',
+    status: ra.completedAt ? ('Completed · ' + (ra.completedBy||'')) : (ra.started ? 'In progress' : 'Required before work begins'),
+    done: !!ra.completedAt,
+    fn: function(){ dvOpenRiskAssessment(j.id); }
   });
 
   // Forms library button (always shown as action, not in formDefs)
-  var formsActionHtml = dvActionButton('📝 Forms Library', 'Damage waiver, long walk, specialist forms', 'dvOpenFormsLibrary("' + j.id + '")', '#9B59B6');
+  var formsActionHtml = dvActionButton('📝 Forms Library', 'Damage waiver, long walk, specialist forms', function(){ dvOpenFormsLibrary(j.id); }, '#9B59B6');
 
   // Completed forms sink to bottom, pending stay at top
   var pendingForms = formDefs.filter(function(f){ return !f.done; });
@@ -12862,13 +12884,7 @@ function dvRenderJobDetail(jobId) {
   h += '</div>';
   el('dv-job-detail-body').innerHTML = h;
   // Delegated click handler for data-fn buttons (avoids quote-escaping issues)
-  el('dv-job-detail-body').onclick = function(e) {
-    var t = e.target;
-    while (t && t !== this) {
-      if (t.dataset && t.dataset.fn) { try { eval(t.dataset.fn); } catch(err) { console.error('dvFormCard fn error:', err); } return; }
-      t = t.parentElement;
-    }
-  };
+  // onclick handled by _dvRun registry
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -15481,7 +15497,8 @@ function dvAddressCard(label, address, col, icon, collapseKey) {
 }
 
 function dvFormCard(title, sub, icon, status, done, fn) {
-  return '<div data-fn="' + fn.replace(/"/g,'&quot;') + '" style="background:#fff;border-radius:12px;margin-bottom:10px;padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:14px;border:2px solid ' + (done?'#D1FAE5':'#DDE8F0') + '">' +
+  var id = dvRegFn(fn);
+  return '<div onclick="_dvRun(' + id + ')" style="background:#fff;border-radius:12px;margin-bottom:10px;padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:14px;border:2px solid ' + (done?'#D1FAE5':'#DDE8F0') + '">' +
     '<div style="width:42px;height:42px;border-radius:10px;background:' + (done?'#E6FFF5':'#EEF4F9') + ';display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">' + icon + '</div>' +
     '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1C2333">' + title + '</div>' +
     '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + sub + '</div>' +
@@ -15490,9 +15507,10 @@ function dvFormCard(title, sub, icon, status, done, fn) {
 }
 
 function dvActionButton(label, sub, fn, col) {
-  return '<div data-fn="' + fn.replace(/"/g,'&quot;') + '" style="background:#fff;border-radius:12px;margin-bottom:10px;padding:13px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;border-left:4px solid ' + col + '">' +
+  var id = dvRegFn(fn);
+  return '<div onclick="_dvRun(' + id + ')" style="background:#fff;border-radius:12px;margin-bottom:10px;padding:13px 16px;cursor:pointer;display:flex;align-items:center;gap:12px;border-left:4px solid ' + col + '">' +
     '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1C2333">' + label + '</div>' +
-    '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + sub + '</div></div>' +
+    '<div style="font-size:12px;color:#7A849E;margin-top:2px">' + sub + '</div></div>' +
     '<div style="font-size:18px;color:#C8C5BE">›</div></div>';
 }
 
@@ -16392,6 +16410,13 @@ function whSelectOptions(selectedId) {
     <div id="dv-screen-forms" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
       <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
         <div id="dv-forms-body"></div>
+      </div>
+    </div>
+
+    <!-- SCREEN: RISK ASSESSMENT -->
+    <div id="dv-screen-risk" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
+        <div id="dv-risk-body"></div>
       </div>
     </div>
 
@@ -19202,6 +19227,124 @@ function dvInvConfirmPrompt(jobId, idx) {
 // ══════════════════════════════════════════════════════════════════════
 // FORMS LIBRARY
 // ══════════════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════════════
+// RISK ASSESSMENT
+// ══════════════════════════════════════════════════════════════════════
+
+var DV_RISK_SECTIONS = [
+  { id: 'access', label: 'Access & Parking', icon: '🚐', items: [
+    { id: 'parking_clear',   label: 'Safe parking / loading zone confirmed' },
+    { id: 'path_clear',      label: 'Access path clear of obstructions' },
+    { id: 'stairs_assessed', label: 'Stairs / lifts assessed' },
+    { id: 'narrow_access',   label: 'Narrow corridors or doorways noted' },
+  ]},
+  { id: 'hazards', label: 'Property Hazards', icon: '⚠️', items: [
+    { id: 'trip_hazards',    label: 'Trip hazards identified and avoided' },
+    { id: 'fragile_items',   label: 'Fragile / high-value items noted' },
+    { id: 'pets_secured',    label: 'Pets secured by client' },
+    { id: 'children_clear',  label: 'Children kept clear of work areas' },
+    { id: 'floor_protection',label: 'Floor protection in place' },
+  ]},
+  { id: 'equipment', label: 'Equipment & PPE', icon: '🦺', items: [
+    { id: 'ppe_worn',        label: 'PPE worn by all crew (gloves, boots)' },
+    { id: 'trolleys_ok',     label: 'Trolleys and straps in good condition' },
+    { id: 'vehicle_safe',    label: 'Vehicle doors and ramp secure' },
+  ]},
+  { id: 'crew', label: 'Crew Briefing', icon: '👥', items: [
+    { id: 'hazards_briefed', label: 'Hazards briefed to all crew' },
+    { id: 'plan_agreed',     label: 'Loading / route plan agreed' },
+    { id: 'emergency_exit',  label: 'Emergency exits located' },
+  ]},
+];
+
+function dvOpenRiskAssessment(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-risk');
+  dvRenderRiskAssessment(jobId);
+}
+
+function dvRenderRiskAssessment(jobId) {
+  var j  = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.riskAssessment) j.crewData.riskAssessment = { items: {} };
+  var ra    = j.crewData.riskAssessment;
+  var items = ra.items || {};
+  var done  = !!ra.completedAt;
+
+  var totalItems = DV_RISK_SECTIONS.reduce(function(n,s){ return n + s.items.length; }, 0);
+  var checkedCount = DV_RISK_SECTIONS.reduce(function(n,s){
+    return n + s.items.filter(function(i){ return !!items[i.id]; }).length;
+  }, 0);
+  var pct = Math.round(checkedCount / totalItems * 100);
+
+  var backId = dvRegFn(function(){ dvShowScreen('dv-screen-job'); dvRenderJobDetail(jobId); });
+  var h = dvDarkHeader('Risk Assessment', j.client, '_dvRun(' + backId + ')');
+  h += '<div style="padding:14px 16px">';
+
+  if (done) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Completed ' + fmtNice(ra.completedAt.slice(0,10)) + ' by ' + esc(ra.completedBy||'') + '</div>';
+  }
+
+  // Progress bar
+  h += '<div style="background:#EEF4F9;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;gap:12px">';
+  h += '<div style="flex:1;background:#E3E7F0;border-radius:20px;height:8px"><div style="background:' + (pct===100?'#00C875':'#FF9F1A') + ';border-radius:20px;height:8px;width:' + pct + '%"></div></div>';
+  h += '<div style="font-size:13px;font-weight:800;color:#1C2333;min-width:50px;text-align:right">' + checkedCount + '/' + totalItems + '</div>';
+  h += '</div>';
+
+  DV_RISK_SECTIONS.forEach(function(section) {
+    h += '<div style="margin-bottom:14px">';
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#7A849E;margin-bottom:8px">' + section.icon + ' ' + section.label + '</div>';
+    h += '<div style="background:#fff;border-radius:12px;overflow:hidden">';
+    section.items.forEach(function(item, idx) {
+      var checked = !!items[item.id];
+      var toggleId = dvRegFn(function(){ dvToggleRisk(jobId, item.id); });
+      var border = idx < section.items.length-1 ? 'border-bottom:1px solid #DDE8F0;' : '';
+      h += '<div onclick="_dvRun(' + toggleId + ')" style="display:flex;align-items:center;gap:14px;padding:13px 16px;' + border + 'cursor:pointer;opacity:' + (checked?.65:1) + '">';
+      h += '<div style="width:24px;height:24px;border-radius:6px;border:2px solid ' + (checked?'#00C875':'#C8C5BE') + ';background:' + (checked?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">';
+      if (checked) h += '<span style="color:#fff;font-size:14px">✓</span>';
+      h += '</div>';
+      h += '<div style="font-size:13.5px;font-weight:600;color:#1C2333;flex:1">' + esc(item.label) + '</div>';
+      h += '</div>';
+    });
+    h += '</div></div>';
+  });
+
+  // Notes
+  h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Additional Hazards / Notes</div>';
+  h += '<textarea id="dv-risk-notes" rows="3" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" placeholder="Note any additional hazards...">' + esc(ra.notes||'') + '</textarea></div>';
+
+  if (!done) {
+    var completeId = dvRegFn(function(){ dvCompleteRisk(jobId); });
+    h += '<button onclick="_dvRun(' + completeId + ')" ' + (pct===100?'':'disabled ') + 'style="width:100%;background:' + (pct===100?'#FF9F1A':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:' + (pct===100?'pointer':'not-allowed') + '">⚠️ Complete Risk Assessment</button>';
+  }
+  h += '</div>';
+  el('dv-risk-body').innerHTML = h;
+}
+
+function dvToggleRisk(jobId, itemId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.riskAssessment) j.crewData.riskAssessment = { items: {} };
+  if (!j.crewData.riskAssessment.items) j.crewData.riskAssessment.items = {};
+  j.crewData.riskAssessment.items[itemId] = !j.crewData.riskAssessment.items[itemId];
+  j.crewData.riskAssessment.started = true;
+  saveData('job', j.id, j);
+  dvRenderRiskAssessment(jobId);
+}
+
+function dvCompleteRisk(jobId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j || !j.crewData || !j.crewData.riskAssessment) return;
+  j.crewData.riskAssessment.notes       = (el('dv-risk-notes')||{}).value || '';
+  j.crewData.riskAssessment.completedAt  = new Date().toISOString();
+  j.crewData.riskAssessment.completedBy  = window._driverName || 'Crew';
+  saveData('job', j.id, j);
+  dvRenderRiskAssessment(jobId);
+}
+
 
 function dvOpenFormsLibrary(jobId) {
   dvCurrentJobId = jobId;
