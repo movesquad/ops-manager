@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>OPS MANAGER</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <!-- Microsoft Authentication Library v2 — jsDelivr CDN -->
@@ -1242,7 +1245,7 @@ textarea.fi{resize:vertical;min-height:60px}
   <div id="msal-wall-msg" style="color:rgba(255,255,255,.85);font-size:14px;letter-spacing:.3px">
     Signing you in with Microsoft…
   </div>
-  <div style="margin-top:20px;width:36px;height:36px;border:3px solid rgba(255,255,255,.25);
+  <div id="msal-spinner" style="margin-top:20px;width:36px;height:36px;border:3px solid rgba(255,255,255,.25);
     border-top-color:#fff;border-radius:50%;animation:msalSpin .8s linear infinite"></div>
   <div id="msal-wall-error" style="display:none;margin-top:20px;padding:12px 20px;
     background:rgba(255,255,255,.12);border-radius:8px;color:#fff;font-size:13px;
@@ -5038,7 +5041,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v62 — 5 Mar 2026';
+var APP_VERSION = 'v64 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18684,231 +18687,201 @@ document.addEventListener('keydown', function(e) {
 </script>
 <script>
 // ══════════════════════════════════════════════════════════════════
-// MICROSOFT 365 AUTHENTICATION  —  MSAL.js v2  (minimal/robust)
+// MICROSOFT 365 AUTHENTICATION  —  MSAL.js v2  POPUP mode
+// Popup avoids all redirect loop issues entirely.
+// Microsoft login opens in a popup, returns token directly.
 // ══════════════════════════════════════════════════════════════════
 
-var MSAL_CLIENT_ID  = '8c6c6e1d-3d50-4fa5-8700-49989764860f';
-var MSAL_TENANT_ID  = '52c88d8a-2382-40ad-afef-c6cb5d98820e';
-var MSAL_SP_OBJ_ID  = 'cdcdfdaf-dc23-4c22-a86c-02002eccfc42';
-var GRAPH_SCOPES    = ['User.Read', 'User.ReadBasic.All', 'Directory.Read.All'];
-
-// redirectUri MUST match exactly what is in Entra → Authentication → Redirect URIs
-// If your app is at https://foo.github.io/bar/ use that full path.
-// We use the full href minus any hash/query so it stays stable.
-var MSAL_REDIRECT_URI = window.location.origin; // origin never has trailing slash
+var MSAL_CLIENT_ID = '8c6c6e1d-3d50-4fa5-8700-49989764860f';
+var MSAL_TENANT_ID = '52c88d8a-2382-40ad-afef-c6cb5d98820e';
+var MSAL_SP_OBJ_ID = 'cdcdfdaf-dc23-4c22-a86c-02002eccfc42';
+var GRAPH_SCOPES   = ['User.Read', 'User.ReadBasic.All', 'Directory.Read.All'];
 
 var _msalApp  = null;
-var _msalBusy = false;   // prevent double-boot
+var _msalBusy = false;
 
 function msalWallMsg(msg) {
-  var el = document.getElementById('msal-wall-msg');
-  if (el) el.textContent = msg;
+  var e = document.getElementById('msal-wall-msg');
+  if (e) e.textContent = msg;
 }
-function msalShowError(msg) {
-  console.error('MSAL:', msg);
-  document.getElementById('msal-wall-error').style.display  = 'block';
-  document.getElementById('msal-wall-error').textContent    = msg;
-  document.getElementById('msal-retry-btn').style.display   = 'block';
-  var sp = document.querySelector('#msal-login-wall div[style*="msalSpin"]');
+
+function msalShowError(msg, showBtn) {
+  console.error('[MSAL] Error:', msg);
+  var e  = document.getElementById('msal-wall-error');
+  var b  = document.getElementById('msal-retry-btn');
+  var sp = document.getElementById('msal-spinner');
+  if (e)  { e.style.display = 'block'; e.textContent = msg; }
+  if (b && showBtn !== false)  b.style.display = 'block';
   if (sp) sp.style.display = 'none';
 }
 
-function msalLogin() {
+function msalHideWall() {
+  var wall = document.getElementById('msal-login-wall');
+  if (wall) wall.style.display = 'none';
+}
+
+// Called by the "Sign In" button and on first load if no session found
+async function msalLogin() {
   if (typeof msal === 'undefined') {
-    msalShowError('MSAL library not loaded — check internet connection and refresh.');
+    msalShowError('Microsoft sign-in library failed to load. Please refresh the page.');
     return;
   }
   try {
-    var app = _msalApp || new msal.PublicClientApplication({
-      auth: { clientId: MSAL_CLIENT_ID, authority: 'https://login.microsoftonline.com/' + MSAL_TENANT_ID, redirectUri: MSAL_REDIRECT_URI },
-      cache: { cacheLocation: 'sessionStorage' }
+    msalWallMsg('Opening Microsoft sign-in…');
+    var tokenResp = await _msalApp.acquireTokenPopup({ scopes: GRAPH_SCOPES });
+    await msalHandleToken(tokenResp);
+  } catch(e) {
+    console.warn('[MSAL] Popup failed:', e.name, e.message);
+    if (e.name === 'BrowserAuthError' && e.message.indexOf('popup_window_error') >= 0) {
+      msalShowError('Popup was blocked. Please allow popups for this site in your browser settings, then click Sign In again.');
+    } else if (e.name === 'UserCancelledError' || (e.message && e.message.indexOf('user_cancelled') >= 0)) {
+      msalShowError('Sign-in was cancelled. Click Sign In to try again.');
+    } else {
+      msalShowError('Sign-in failed: ' + (e.message || e.name));
+    }
+  }
+}
+
+// Process a token response and boot the app
+async function msalHandleToken(tokenResp) {
+  var claims = tokenResp.idTokenClaims || {};
+  window.msalUser = {
+    name:        claims.name || tokenResp.account.name || tokenResp.account.username || 'User',
+    email:       tokenResp.account.username || '',
+    oid:         claims.oid  || '',
+    roles:       claims.roles || [],
+    accessToken: tokenResp.accessToken,
+  };
+  console.log('[MSAL] Signed in:', window.msalUser.email, '| roles:', window.msalUser.roles);
+
+  // Load Graph profile + avatar (non-blocking)
+  msalLoadGraphProfile(tokenResp.accessToken).catch(function(e) {
+    console.warn('[MSAL] Graph load failed (non-fatal):', e.message);
+  });
+
+  // Apply UI
+  if (typeof updateSidebarLogo     === 'function') updateSidebarLogo();
+  if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
+  if (typeof initAdminRole         === 'function') initAdminRole();
+  if (typeof applyRoleGating       === 'function') applyRoleGating();
+
+  // Wire logout button
+  var logoutBtn = document.querySelector('.sb-logout');
+  if (logoutBtn) {
+    logoutBtn.onclick = function() {
+      _msalApp.logoutPopup().then(function() {
+        window.msalUser = null;
+        window.location.reload();
+      }).catch(function() { window.location.reload(); });
+    };
+  }
+
+  msalHideWall();
+
+  // Background crew sync
+  var r = window.msalUser.roles || [];
+  if (r.indexOf('Admin') >= 0 || r.indexOf('Manager') >= 0) {
+    msalSyncCrew(tokenResp.accessToken).catch(function(e) {
+      console.warn('[MSAL] Crew sync skipped:', e.message);
     });
-    app.loginRedirect({ scopes: GRAPH_SCOPES });
-  } catch(e) { msalShowError('Login failed: ' + e.message); }
+  }
 }
 
 async function msalBoot() {
-  if (_msalBusy) { console.log('[MSAL] Boot already running, skipping.'); return; }
+  if (_msalBusy) return;
   _msalBusy = true;
-  console.log('[MSAL] Boot started. redirectUri:', MSAL_REDIRECT_URI);
 
-  // Show logo on wall
   var li = document.getElementById('msal-wall-logo');
-  if (li) li.src = (typeof APP_DEFAULT_LOGO !== 'undefined') ? APP_DEFAULT_LOGO : '';
+  if (li && typeof APP_DEFAULT_LOGO !== 'undefined') li.src = APP_DEFAULT_LOGO;
 
   if (typeof msal === 'undefined') {
-    msalShowError('MSAL library not loaded. Check your connection and refresh.');
+    msalShowError('Microsoft sign-in library failed to load. Please refresh.');
     return;
   }
 
-  msalWallMsg('Connecting to Microsoft…');
+  _msalApp = new msal.PublicClientApplication({
+    auth: {
+      clientId:  MSAL_CLIENT_ID,
+      authority: 'https://login.microsoftonline.com/' + MSAL_TENANT_ID,
+      // No redirectUri needed for popup mode
+    },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
+  });
 
-  try {
-    _msalApp = new msal.PublicClientApplication({
-      auth: {
-        clientId:    MSAL_CLIENT_ID,
-        authority:   'https://login.microsoftonline.com/' + MSAL_TENANT_ID,
-        redirectUri: MSAL_REDIRECT_URI,
-      },
-      cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: true },
-    });
+  // Check for an existing cached session first (SSO — silent)
+  msalWallMsg('Checking for existing session…');
+  var accounts = _msalApp.getAllAccounts();
+  console.log('[MSAL] Cached accounts:', accounts.length);
 
-    // STEP 1: Always process any pending redirect first.
-    console.log('[MSAL] Step 1: handleRedirectPromise. URL:', window.location.href);
-    msalWallMsg('Processing sign-in…');
-    var redirectResponse = await _msalApp.handleRedirectPromise().catch(function(e) {
-      console.warn('[MSAL] handleRedirectPromise error:', e.name, e.message);
-      return null;
-    });
-    console.log('[MSAL] Step 1 result:', redirectResponse ? 'got redirect response' : 'no redirect response');
-
-    // STEP 2: Find an account
-    var account = null;
-    if (redirectResponse && redirectResponse.account) {
-      account = redirectResponse.account;
-      console.log('[MSAL] Step 2: account from redirect response:', account.username);
-    } else {
-      var accounts = _msalApp.getAllAccounts();
-      console.log('[MSAL] Step 2: accounts in cache:', accounts.length);
-      account = accounts.length > 0 ? accounts[0] : null;
-      if (account) console.log('[MSAL] Step 2: using cached account:', account.username);
-    }
-
-    // STEP 3: No account at all — go to login
-    if (!account) {
-      var hasCode = window.location.search.indexOf('code=') >= 0 || window.location.hash.indexOf('code=') >= 0;
-      console.log('[MSAL] Step 3: no account found. URL has code param:', hasCode);
-      if (hasCode) {
-        msalShowError(
-          'Sign-in redirect returned but no account found. ' +
-          'Redirect URI in Entra must be exactly: ' + MSAL_REDIRECT_URI
-        );
-        return;
-      }
-      console.log('[MSAL] Step 3: firing loginRedirect');
-      msalWallMsg('Redirecting to Microsoft sign-in…');
-      _msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
-      return;
-    }
-
-    // STEP 4: Get an access token silently
-    console.log('[MSAL] Step 4: acquireTokenSilent for', account.username);
-    msalWallMsg('Getting access token…');
-    var tokenResp = null;
+  if (accounts.length > 0) {
+    // Try to get a token silently using the cached session
     try {
-      tokenResp = await _msalApp.acquireTokenSilent({
+      msalWallMsg('Signing you in…');
+      var tokenResp = await _msalApp.acquireTokenSilent({
         scopes:  GRAPH_SCOPES,
-        account: account,
+        account: accounts[0],
       });
-      console.log('[MSAL] Step 4: token acquired. Roles:', (tokenResp.idTokenClaims||{}).roles);
+      console.log('[MSAL] Silent token OK for', accounts[0].username);
+      await msalHandleToken(tokenResp);
+      return;
     } catch(silentErr) {
-      console.warn('[MSAL] Step 4: silent token failed:', silentErr.name, silentErr.message);
-      if (silentErr.name === 'InteractionRequiredAuthError') {
-        msalWallMsg('Re-authenticating with Microsoft…');
-        _msalApp.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: account });
-        return;
-      }
-      throw silentErr;
+      console.warn('[MSAL] Silent token failed:', silentErr.name, '— falling back to popup');
+      // Silent failed — fall through to popup below
     }
-
-    // STEP 5: We have a token — build the user object
-    var claims = (tokenResp.idTokenClaims || {});
-    window.msalUser = {
-      name:        claims.name || account.name || account.username || 'User',
-      email:       account.username || '',
-      oid:         claims.oid || '',
-      roles:       claims.roles || [],
-      accessToken: tokenResp.accessToken,
-    };
-
-    // STEP 6: Load Graph profile + avatar (non-blocking — app works without it)
-    msalWallMsg('Loading your profile…');
-    msalLoadGraphProfile(tokenResp.accessToken).catch(function(e) {
-      console.warn('Graph profile load failed (non-fatal):', e.message);
-    });
-
-    // STEP 7: Apply everything to the UI
-    if (typeof updateSidebarLogo    === 'function') updateSidebarLogo();
-    if (typeof msalUpdateSidebarUser=== 'function') msalUpdateSidebarUser();
-    if (typeof initAdminRole        === 'function') initAdminRole();
-    if (typeof applyRoleGating      === 'function') applyRoleGating();
-
-    // Wire logout
-    var logoutBtn = document.querySelector('.sb-logout');
-    if (logoutBtn) {
-      logoutBtn.onclick = function() {
-        _msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin });
-      };
-    }
-
-    // STEP 8: Dismiss login wall — user is in
-    var wall = document.getElementById('msal-login-wall');
-    if (wall) wall.style.display = 'none';
-
-    // STEP 9: Background crew sync for admin/manager
-    var r = window.msalUser.roles || [];
-    if (r.indexOf('Admin') >= 0 || r.indexOf('Manager') >= 0) {
-      msalSyncCrew(tokenResp.accessToken).catch(function(e) {
-        console.warn('Crew sync skipped:', e.message);
-      });
-    }
-
-  } catch(err) {
-    console.error('MSAL boot failed:', err);
-    msalShowError('Sign-in error: ' + (err.message || String(err)));
   }
+
+  // No cached session or silent failed — show Sign In button
+  msalWallMsg('Please sign in with your Microsoft 365 account');
+  var btn = document.getElementById('msal-retry-btn');
+  var sp  = document.getElementById('msal-spinner');
+  if (btn) { btn.style.display = 'block'; btn.textContent = 'Sign In with Microsoft'; }
+  if (sp)  sp.style.display = 'none';
 }
 
-// ── Load Microsoft Graph profile + photo ──────────────────────────
+// ── Graph profile + avatar ─────────────────────────────────────────
 async function msalLoadGraphProfile(token) {
   var h = { 'Authorization': 'Bearer ' + token };
   try {
-    var p = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName,jobTitle,department', { headers: h }).then(function(r){ return r.json(); });
+    var p = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName,jobTitle', { headers: h }).then(function(r) { return r.json(); });
     if (window.msalUser) {
       window.msalUser.displayName = p.displayName || window.msalUser.name;
       window.msalUser.email       = p.mail || p.userPrincipalName || window.msalUser.email;
       window.msalUser.jobTitle    = p.jobTitle || '';
     }
     if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
-  } catch(e) { console.warn('Graph profile:', e); }
-
+  } catch(e) { console.warn('[MSAL] Profile fetch:', e); }
   try {
     var pr = await fetch('https://graph.microsoft.com/v1.0/me/photos/96x96/$value', { headers: h });
     if (pr.ok) {
       var blob = await pr.blob();
-      var uri  = await new Promise(function(res) {
-        var rd = new FileReader();
-        rd.onload = function(e) { res(e.target.result); };
-        rd.readAsDataURL(blob);
-      });
+      var uri  = await new Promise(function(res) { var rd = new FileReader(); rd.onload = function(e) { res(e.target.result); }; rd.readAsDataURL(blob); });
       if (window.msalUser) window.msalUser.avatarDataUri = uri;
       if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
     }
-  } catch(e) { console.warn('Graph photo:', e); }
+  } catch(e) { console.warn('[MSAL] Photo fetch:', e); }
 }
 
-// ── Update sidebar name / avatar ───────────────────────────────────
+// ── Sidebar user card ─────────────────────────────────────────────
 function msalUpdateSidebarUser() {
-  var u = window.msalUser;
-  if (!u) return;
+  var u = window.msalUser; if (!u) return;
   var name = u.displayName || u.name || 'User';
   var role = (u.roles && u.roles[0]) || u.jobTitle || 'Staff';
-  var nameEl = document.getElementById('sb-uname-display');
-  var roleEl = document.getElementById('sb-urole-display');
-  var avEl   = document.getElementById('sb-av-initials');
-  if (nameEl) nameEl.textContent = name;
-  if (roleEl) roleEl.textContent = role;
-  if (avEl) {
+  var ne = document.getElementById('sb-uname-display');
+  var re = document.getElementById('sb-urole-display');
+  var ae = document.getElementById('sb-av-initials');
+  if (ne) ne.textContent = name;
+  if (re) re.textContent = role;
+  if (ae) {
     if (u.avatarDataUri) {
-      avEl.innerHTML = '<img src="' + u.avatarDataUri + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block">';
-      avEl.style.background = 'none';
+      ae.innerHTML = '<img src="' + u.avatarDataUri + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block">';
+      ae.style.background = 'none';
     } else {
-      avEl.textContent = name.split(' ').map(function(n){return n[0]||'';} ).join('').slice(0,2).toUpperCase();
+      ae.textContent = name.split(' ').map(function(n) { return n[0] || ''; }).join('').slice(0, 2).toUpperCase();
     }
   }
 }
 
-// ── Role-gated navigation ─────────────────────────────────────────
+// ── Role gating ───────────────────────────────────────────────────
 function applyRoleGating() {
   var roles = (window.msalUser && window.msalUser.roles) || [];
   var has = function(r) { return roles.indexOf(r) >= 0; };
@@ -18918,42 +18891,41 @@ function applyRoleGating() {
   var isFinance  = has('Finance')     || isManager;
   var isSurveyor = has('Surveyor')    || isCoord;
   var isCrew     = has('Driver')      || has('Porter');
-  // DEV FALLBACK: no roles in token = full access (remove once confirmed working)
-  if (roles.length === 0) { isAdmin=isManager=isCoord=isFinance=isSurveyor=true; }
-  function gate(id, show) { var e=document.getElementById(id); if(e) e.style.display=show?'':'none'; }
+  if (roles.length === 0) { isAdmin=isManager=isCoord=isFinance=isSurveyor=true; console.warn('[MSAL] No roles in token — full access granted (dev fallback)'); }
+  function gate(id, show) { var e = document.getElementById(id); if (e) e.style.display = show ? '' : 'none'; }
   gate('nb-dashboard', isCoord);  gate('nb-calendar',  isCoord);
   gate('nb-bookings',  isCoord);  gate('nb-crew',      isManager);
   gate('nb-warehouse', isCoord);  gate('nb-finance',   isFinance);
   gate('nb-surveys',   isSurveyor); gate('nb-storage', isCoord);
   gate('nb-settings',  isManager); gate('stab-admin',  isAdmin);
-  if (isCrew && !isCoord) { if(typeof dvShowCrewPicker==='function') dvShowCrewPicker(); }
+  if (isCrew && !isCoord) { if (typeof dvShowCrewPicker === 'function') dvShowCrewPicker(); }
 }
 
-// ── Crew sync from Entra ───────────────────────────────────────────
+// ── Crew sync ─────────────────────────────────────────────────────
 async function msalSyncCrew(token) {
   var h = { 'Authorization': 'Bearer ' + token };
-  var resp = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '/appRoleAssignedTo', { headers: h }).then(function(r){ return r.json(); });
+  var resp   = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '/appRoleAssignedTo', { headers: h }).then(function(r) { return r.json(); });
   if (!resp || !resp.value) return;
-  var spResp = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '?$select=appRoles', { headers: h }).then(function(r){ return r.json(); });
+  var spResp = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '?$select=appRoles', { headers: h }).then(function(r) { return r.json(); });
   var roleMap = {};
-  ((spResp && spResp.appRoles)||[]).forEach(function(r){ roleMap[r.id]=r.value; });
-  var crewAssignments = resp.value.filter(function(a){ var rn=roleMap[a.appRoleId]||''; return rn==='Driver'||rn==='Porter'; });
-  if (!crewAssignments.length) return;
-  var crewFromEntra = await Promise.all(crewAssignments.map(async function(a) {
-    var uid=a.principalId, rn=roleMap[a.appRoleId];
-    var u = await fetch('https://graph.microsoft.com/v1.0/users/'+uid+'?$select=displayName,mail,userPrincipalName', {headers:h}).then(function(r){return r.json();}).catch(function(){return {};});
-    var photo='';
-    try { var pr=await fetch('https://graph.microsoft.com/v1.0/users/'+uid+'/photos/96x96/$value',{headers:h}); if(pr.ok){ var b=await pr.blob(); photo=await new Promise(function(res){var rd=new FileReader();rd.onload=function(e){res(e.target.result);};rd.readAsDataURL(b);});} } catch(e){}
-    var stored=(APP_SETTINGS.crewRates&&APP_SETTINGS.crewRates[uid])||{};
-    return {oid:uid,name:(u.displayName||a.principalDisplayName||'Unknown').toUpperCase(),role:rn,email:u.mail||u.userPrincipalName||'',photo:photo,col:stored.col||'#0073EA',employed:stored.employed!==undefined?stored.employed:true,chargeRate:stored.chargeRate||220,rate:stored.rate||175,ni:stored.ni||13.8,pension:stored.pension||3,holiday:stored.holiday||12.07};
+  ((spResp && spResp.appRoles) || []).forEach(function(r) { roleMap[r.id] = r.value; });
+  var crewList = resp.value.filter(function(a) { var rn = roleMap[a.appRoleId] || ''; return rn === 'Driver' || rn === 'Porter'; });
+  if (!crewList.length) return;
+  var crewFromEntra = await Promise.all(crewList.map(async function(a) {
+    var uid = a.principalId, rn = roleMap[a.appRoleId];
+    var u = await fetch('https://graph.microsoft.com/v1.0/users/' + uid + '?$select=displayName,mail,userPrincipalName', { headers: h }).then(function(r) { return r.json(); }).catch(function() { return {}; });
+    var photo = '';
+    try { var pr = await fetch('https://graph.microsoft.com/v1.0/users/' + uid + '/photos/96x96/$value', { headers: h }); if (pr.ok) { var b = await pr.blob(); photo = await new Promise(function(res) { var rd = new FileReader(); rd.onload = function(e) { res(e.target.result); }; rd.readAsDataURL(b); }); } } catch(e) {}
+    var stored = (APP_SETTINGS.crewRates && APP_SETTINGS.crewRates[uid]) || {};
+    return { oid: uid, name: (u.displayName || a.principalDisplayName || 'Unknown').toUpperCase(), role: rn, email: u.mail || u.userPrincipalName || '', photo: photo, col: stored.col || '#0073EA', employed: stored.employed !== undefined ? stored.employed : true, chargeRate: stored.chargeRate || 220, rate: stored.rate || 175, ni: stored.ni || 13.8, pension: stored.pension || 3, holiday: stored.holiday || 12.07 };
   }));
-  var entraOids=crewFromEntra.map(function(c){return c.oid;});
-  CREW=crewFromEntra.concat(CREW.filter(function(c){return !c.oid||entraOids.indexOf(c.oid)<0;}));
-  console.log('Crew synced:',crewFromEntra.length,'members');
-  if(typeof renderSettingsCrew==='function') renderSettingsCrew();
+  var entraOids = crewFromEntra.map(function(c) { return c.oid; });
+  CREW = crewFromEntra.concat(CREW.filter(function(c) { return !c.oid || entraOids.indexOf(c.oid) < 0; }));
+  console.log('[MSAL] Crew synced:', crewFromEntra.length, 'members');
+  if (typeof renderSettingsCrew === 'function') renderSettingsCrew();
 }
 
-// ── Boot ───────────────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', msalBoot);
 } else {
