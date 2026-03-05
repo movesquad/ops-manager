@@ -5040,7 +5040,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v81 — 5 Mar 2026';
+var APP_VERSION = 'v82 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -7388,8 +7388,10 @@ function cfgAddBline(ji) {
 function cfgCollectJobs() {
   for (var ji = 0; ji < CFG.jobs.length; ji++) {
     var jb = CFG.jobs[ji];
-    jb.origin = (el('jcfg-origin-'+ji)||{}).value || jb.origin;
-    jb.dest   = (el('jcfg-dest-'+ji)||{}).value   || jb.dest;
+    jb.origin    = (el('jcfg-origin-'+ji)||{}).value || jb.origin;
+    jb.dest      = (el('jcfg-dest-'+ji)||{}).value   || jb.dest;
+    var w3wOrig  = el('w3w-origin-'+ji); if (w3wOrig && w3wOrig.value) { jb.originW3W = w3wOrig.value; jb.originLat = parseFloat(w3wOrig.dataset.lat)||null; jb.originLng = parseFloat(w3wOrig.dataset.lng)||null; }
+    var w3wDest  = el('w3w-dest-'+ji);   if (w3wDest && w3wDest.value)  { jb.destW3W   = w3wDest.value;   jb.destLat   = parseFloat(w3wDest.dataset.lat)||null;   jb.destLng   = parseFloat(w3wDest.dataset.lng)||null; }
     var volEl = el('jcfg-vol-'+ji);
     if (volEl) { if (jb.volUnit === 'cbm') jb.volCbm = volEl.value; else jb.volFt = volEl.value; }
     var stEl = el('jcfg-store-'+ji); if (stEl) jb.storageRequired = stEl.checked;
@@ -12169,6 +12171,174 @@ function dvGoToday() {
 }
 
 // ── ENTRY POINT: activateDriverView gated by SOD ──────────────────────
+
+// ══════════════════════════════════════════════════════════════════════
+// WHAT3WORDS INTEGRATION
+// API key: PYMHKXTD  |  Free tier: 1,000 calls/month
+// Features:
+//   1. w3w input on job origin/dest in configurator (convert to coords)
+//   2. "Navigate to exact spot" button in crew job sheet
+//   3. w3w location tag on damage walkaround photos
+// ══════════════════════════════════════════════════════════════════════
+
+var W3W_API_KEY = 'PYMHKXTD';
+var W3W_RE = /^\/\/\/[a-z]+\.[a-z]+\.[a-z]+$|^[a-z]+\.[a-z]+\.[a-z]+$/;
+
+// Convert a 3-word address to lat/lng + nearest street address
+async function w3wToCoords(words) {
+  var w = words.replace(/^\/\/\//, '').trim().toLowerCase();
+  var url = 'https://api.what3words.com/v3/convert-to-coordinates?words='
+    + encodeURIComponent(w) + '&key=' + W3W_API_KEY;
+  var r = await fetch(url);
+  if (!r.ok) throw new Error('w3w API error ' + r.status);
+  var d = await r.json();
+  if (d.error) throw new Error(d.error.message || 'Invalid w3w address');
+  return {
+    words:   '///' + d.words,
+    lat:     d.coordinates.lat,
+    lng:     d.coordinates.lng,
+    address: d.nearestPlace || '',
+    mapUrl:  'https://what3words.com/' + d.words,
+  };
+}
+
+// Get the w3w address for a lat/lng (used in walkaround)
+async function w3wFromCoords(lat, lng) {
+  var url = 'https://api.what3words.com/v3/convert-to-3wa?coordinates='
+    + lat + '%2C' + lng + '&key=' + W3W_API_KEY;
+  var r = await fetch(url);
+  if (!r.ok) throw new Error('w3w reverse error ' + r.status);
+  var d = await r.json();
+  if (d.error) throw new Error(d.error.message || 'w3w reverse failed');
+  return '///' + d.words;
+}
+
+// AutoSuggest for partial w3w addresses (3 calls max per field interaction)
+async function w3wSuggest(partial, countryCode) {
+  var w = partial.replace(/^\/+/, '').trim();
+  if (!w || w.split('.').length < 2) return [];
+  var url = 'https://api.what3words.com/v3/autosuggest?input='
+    + encodeURIComponent(w) + '&key=' + W3W_API_KEY
+    + (countryCode ? '&clip-to-country=' + countryCode : '');
+  try {
+    var r = await fetch(url);
+    var d = await r.json();
+    return (d.suggestions || []).slice(0, 3).map(function(s) {
+      return { words: '///' + s.words, place: s.nearestPlace };
+    });
+  } catch(e) { return []; }
+}
+
+// Render a w3w input field (used in job configurator)
+// fieldId: input element id, stored value: j.originW3W or j.destW3W
+// onResolve(words, lat, lng): callback when a valid address is confirmed
+function w3wFieldHtml(fieldId, currentValue, label) {
+  var val = currentValue || '';
+  return '<div style="margin-top:8px">'
+    + '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#E11B74;margin-bottom:4px">'
+    + '///&nbsp;' + (label || 'what3words precise location') + '</div>'
+    + '<div style="position:relative">'
+    + '<input id="' + fieldId + '" value="' + esc(val) + '" placeholder="e.g. ///filled.count.soap"'
+    + ' autocomplete="off" spellcheck="false"'
+    + ' style="width:100%;border:1.5px solid #FFCCE3;border-radius:8px;padding:9px 10px 9px 28px;font-size:13px;font-family:monospace;box-sizing:border-box;color:#1C2333"'
+    + ' oninput="w3wFieldInput(\'' + fieldId + '\')"'
+    + ' onchange="w3wFieldCommit(\'' + fieldId + '\')">'
+    + '<span style="position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:13px;color:#E11B74;pointer-events:none">◎</span>'
+    + '</div>'
+    + '<div id="' + fieldId + '-suggest" style="display:none;background:#fff;border:1px solid #FFCCE3;border-radius:8px;margin-top:2px;overflow:hidden;position:absolute;z-index:999;width:100%"></div>'
+    + '<div id="' + fieldId + '-status" style="font-size:11px;margin-top:3px;color:#7A849E;min-height:14px"></div>'
+    + '</div>';
+}
+
+// Handle typing — show autosuggest after 2 dots typed
+var _w3wSuggestTimer = null;
+function w3wFieldInput(fieldId) {
+  clearTimeout(_w3wSuggestTimer);
+  var inp = document.getElementById(fieldId);
+  if (!inp) return;
+  var v = inp.value.replace(/^\/+/,'').trim();
+  var dots = (v.match(/\./g)||[]).length;
+  if (dots < 1) { w3wHideSuggest(fieldId); return; }
+  _w3wSuggestTimer = setTimeout(function() {
+    w3wSuggest(v).then(function(suggs) {
+      var box = document.getElementById(fieldId + '-suggest');
+      if (!box) return;
+      if (!suggs.length) { box.style.display = 'none'; return; }
+      box.innerHTML = suggs.map(function(s) {
+        return '<div onclick="w3wPickSuggest(\'' + fieldId + '\',\'' + s.words.replace(/'/g,"\\'") + '\')"'
+          + ' style="padding:10px 14px;cursor:pointer;border-bottom:1px solid #FFF0F7;display:flex;align-items:center;gap:10px">'
+          + '<span style="color:#E11B74;font-size:13px;font-family:monospace">' + esc(s.words) + '</span>'
+          + '<span style="font-size:11px;color:#7A849E;flex:1">' + esc(s.place) + '</span>'
+          + '</div>';
+      }).join('');
+      box.style.display = 'block';
+    });
+  }, 400);
+}
+
+function w3wPickSuggest(fieldId, words) {
+  var inp = document.getElementById(fieldId);
+  if (inp) inp.value = words;
+  w3wHideSuggest(fieldId);
+  w3wFieldCommit(fieldId);
+}
+
+function w3wHideSuggest(fieldId) {
+  var box = document.getElementById(fieldId + '-suggest');
+  if (box) box.style.display = 'none';
+}
+
+// Validate and resolve a w3w address — called on blur/change
+function w3wFieldCommit(fieldId) {
+  w3wHideSuggest(fieldId);
+  var inp    = document.getElementById(fieldId);
+  var status = document.getElementById(fieldId + '-status');
+  if (!inp) return;
+  var v = inp.value.trim();
+  if (!v) { if (status) status.textContent = ''; return; }
+  if (!W3W_RE.test(v)) {
+    if (status) { status.style.color = '#E11B74'; status.textContent = '⚠ Enter as word.word.word'; }
+    return;
+  }
+  if (status) { status.style.color = '#7A849E'; status.textContent = 'Checking…'; }
+  w3wToCoords(v).then(function(res) {
+    inp.value = res.words;
+    inp.dataset.lat = res.lat;
+    inp.dataset.lng = res.lng;
+    inp.style.borderColor = '#00C875';
+    if (status) { status.style.color = '#00A86B'; status.textContent = '✓ ' + res.address; }
+    // Dispatch change so configurator can save
+    inp.dispatchEvent(new Event('w3wresolved', { bubbles: true }));
+  }).catch(function(err) {
+    inp.style.borderColor = '#E11B74';
+    if (status) { status.style.color = '#E11B74'; status.textContent = '✗ ' + err.message; }
+  });
+}
+
+// Get current GPS position and return w3w address
+function w3wGetCurrentLocation(callback) {
+  if (!navigator.geolocation) { callback(null, 'Geolocation not supported'); return; }
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      w3wFromCoords(pos.coords.latitude, pos.coords.longitude)
+        .then(function(words) { callback({ words: words, lat: pos.coords.latitude, lng: pos.coords.longitude }); })
+        .catch(function(e) { callback(null, e.message); });
+    },
+    function(err) { callback(null, err.message); },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+}
+
+// Build the navigate-via-w3w button shown in crew job sheet
+function w3wNavButton(words) {
+  if (!words) return '';
+  var clean = words.replace(/^\/+/,'');
+  return '<a href="https://what3words.com/' + encodeURIComponent(clean) + '" target="_blank"'
+    + ' style="flex:1;background:#E11B74;color:#fff;font-weight:700;font-size:12px;padding:9px;'
+    + 'border-radius:8px;text-decoration:none;text-align:center;display:block">◎ w3w</a>';
+}
+
+
 function activateDriverView() {
   var sb = document.querySelector('.sidebar');
   var mn = document.querySelector('.main');
@@ -12773,7 +12943,10 @@ function dvRenderJobSheet(jobId) {
     h += '<div style="display:flex;gap:8px">';
     h += '<a href="https://maps.google.com/?q=' + encodeURIComponent(j.origin) + '" target="_blank" style="flex:1;background:#fff;color:#0073EA;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🗺 Maps</a>';
     h += '<a href="https://waze.com/ul?q=' + encodeURIComponent(j.origin) + '" target="_blank" style="flex:1;background:#fff;color:#00A86B;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🔵 Waze</a>';
-    h += '</div></div>';
+    if (j.originW3W) h += w3wNavButton(j.originW3W);
+    h += '</div>';
+    if (j.originW3W) h += '<div style="margin-top:8px;font-size:12px;font-family:monospace;color:#E11B74;font-weight:700">◎ ' + esc(j.originW3W) + '</div>';
+    h += '</div>';
   }
   if (hasDest) {
     h += '<div style="background:#E6FFF5;border-radius:12px;padding:14px 16px;margin-bottom:12px">';
@@ -12782,7 +12955,10 @@ function dvRenderJobSheet(jobId) {
     h += '<div style="display:flex;gap:8px">';
     h += '<a href="https://maps.google.com/?q=' + encodeURIComponent(j.dest) + '" target="_blank" style="flex:1;background:#fff;color:#0073EA;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🗺 Maps</a>';
     h += '<a href="https://waze.com/ul?q=' + encodeURIComponent(j.dest) + '" target="_blank" style="flex:1;background:#fff;color:#00A86B;font-weight:700;font-size:12px;padding:9px;border-radius:8px;text-decoration:none;text-align:center">🔵 Waze</a>';
-    h += '</div></div>';
+    if (j.destW3W) h += w3wNavButton(j.destW3W);
+    h += '</div>';
+    if (j.destW3W) h += '<div style="margin-top:8px;font-size:12px;font-family:monospace;color:#E11B74;font-weight:700">◎ ' + esc(j.destW3W) + '</div>';
+    h += '</div>';
   }
 
   // Volume & services
@@ -18103,6 +18279,7 @@ function cfgRenderBriefAddresses() {
   } else {
     h += '<div class="cfg-field"><label class="cfg-label">' + esc((_ac && _ac.originLabel) || 'Origin Address') + '</label>';
     h += '<input class="cfg-input" id="jcfg-origin-0" value="' + esc(jb.origin || '') + '" placeholder="' + (_ac && _ac.originRole === 'port' ? 'Port, airport or depot' : 'Full address or postcode') + '">';
+    h += w3wFieldHtml('w3w-origin-0', jb.originW3W || '', 'Precise pickup point');
     h += '</div>';
   }
 
@@ -18165,6 +18342,7 @@ function cfgRenderStoragePicker() {
     // Also auto-fill delivery address field
     h += '<div class="cfg-field" style="margin-top:12px"><label class="cfg-label">Delivery Address</label>';
     h += '<input class="cfg-input" id="jcfg-dest-0" value="' + esc(CFG.jobs[0].dest || '') + '" placeholder="Full address or postcode">';
+    h += w3wFieldHtml('w3w-dest-0', CFG.jobs[0].destW3W || '', 'Precise delivery point');
     h += '</div>';
   }
 
@@ -19152,6 +19330,7 @@ function dvRenderWalkaround(jobId) {
       if (dmg.location) h += '<div style="font-size:12px;color:#1C2333;margin-top:2px">📍 ' + esc(dmg.location) + '</div>';
       if (dmg.notes)    h += '<div style="font-size:12px;color:#7A849E;margin-top:2px">' + esc(dmg.notes) + '</div>';
       if (dmg.aiDesc)   h += '<div style="font-size:11px;color:#0073EA;margin-top:2px">✦ ' + esc(dmg.aiDesc) + '</div>';
+      if (dmg.w3w)       h += '<a href="https://what3words.com/' + dmg.w3w.replace(/^\/+/,'') + '" target="_blank" style="font-size:11px;font-family:monospace;color:#E11B74;font-weight:700;text-decoration:none;display:inline-block;margin-top:2px">◎ ' + esc(dmg.w3w) + '</a>';
       h += '</div>';
       if (!done) h += '<button onclick="dvWaDeleteDamage(\'' + jobId + '\',' + di + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
       h += '</div>';
@@ -19210,6 +19389,14 @@ function dvWaOpenAddDamage(jobId) {
   // Notes
   h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Description</div>';
   h += '<textarea id="wa-notes" rows="2" placeholder="Describe the damage..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box"></textarea></div>';
+
+  // w3w location tag
+  h += '<div style="margin-bottom:12px">';
+  h += '<div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">◎ Precise Location</div>';
+  h += '<div style="display:flex;align-items:center;gap:8px">';
+  h += '<div id="wa-w3w-display" style="flex:1;font-size:12px;font-family:monospace;color:#E11B74;background:#FFF0F7;border-radius:8px;padding:8px 10px;min-height:32px;line-height:1.4">' + (window._waW3W ? esc(window._waW3W) : '<span style="color:#B0BEC5">Tap to tag exact spot</span>') + '</div>';
+  h += '<button onclick="dvWaTagLocation()" style="flex-shrink:0;background:#E11B74;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer">📍 Tag</button>';
+  h += '</div></div>';
 
   // Photo + AI
   h += '<div style="margin-bottom:14px">';
