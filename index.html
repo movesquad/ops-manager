@@ -4701,7 +4701,8 @@ var STORAGE_RECORDS = [
   {id:"SR061",type:"longterm",client:"X",brand:"MOVESQUAD",volFt:200,cbm:5.7,volRemaining:200,dateIn:"2026-03-05",dateOut:"",status:"active",billingType:"monthly",billingRate:0,billingUnit:"cbm",eventualDest:"",inboundJobId:"",outboundJobId:"",containers:[{containerNo:"4718",locNo:"B14-D3",level:"upper",type:"standard",volFt:200,maxFt:250,dateIn:"2026-03-05",brand:"MOVESQUAD",notes:"RAY CRATES"}],notes:"Imported from March 2026 warehouse audit. 1 container(s).",billingHistory:[],accessLog:[]},
 ];
 var storageFilter = 'all';
-var storageSeq = 3;
+var storageSearch = '';
+var storageSeq = 62;
 var curStorageId = null;
 
 function calcStorageMonthly(s) {
@@ -4712,80 +4713,143 @@ function calcStorageMonthly(s) {
 }
 
 function renderStorage() {
-  var all = STORAGE_RECORDS;
-  var shown = all.filter(function(s) {
-    if (storageFilter === 'active')   return s.status === 'active';
-    if (storageFilter === 'inout')    return s.type === 'inout';
-    if (storageFilter === 'longterm') return s.type === 'longterm';
+  var all    = STORAGE_RECORDS;
+  var active = all.filter(function(s){return s.status==='active';});
+  var shown  = all.filter(function(s){
+    if (storageFilter==='active')   return s.status==='active';
+    if (storageFilter==='inout')    return s.type==='inout';
+    if (storageFilter==='longterm') return s.type==='longterm';
+    if (storageSearch) {
+      var q = storageSearch.toLowerCase();
+      var ok = (s.client||'').toLowerCase().includes(q) ||
+               (s.id||'').toLowerCase().includes(q) ||
+               (s.brand||'').toLowerCase().includes(q) ||
+               (s.containers||[]).some(function(c){
+                 return (c.containerNo||'').toLowerCase().includes(q) ||
+                        (c.locNo||'').toLowerCase().includes(q);
+               });
+      if (!ok) return false;
+    }
     return true;
   });
 
-  var active    = all.filter(function(s){return s.status==='active';});
-  var totalCBM  = active.reduce(function(a,s){return a+(s.cbm||0);},0);
-  var monthlyRev= active.reduce(function(a,s){return a+calcStorageMonthly(s);},0);
+  var totalCBM   = active.reduce(function(a,s){return a+(s.cbm||0);},0);
+  var monthlyRev = active.reduce(function(a,s){return a+calcStorageMonthly(s);},0);
+  var uniqueClients = [];
+  active.forEach(function(s){ if(uniqueClients.indexOf(s.client)<0) uniqueClients.push(s.client); });
 
   var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">';
   h += '<div class="fc"><div class="fc-body" style="padding:14px"><div class="fs-lbl">Active Records</div><div class="fs-num">'+active.length+'</div></div></div>';
-  h += '<div class="fc"><div class="fc-body" style="padding:14px"><div class="fs-lbl">Total CBM In</div><div class="fs-num">'+totalCBM.toFixed(1)+'</div></div></div>';
+  h += '<div class="fc"><div class="fc-body" style="padding:14px"><div class="fs-lbl">Clients in Storage</div><div class="fs-num">'+uniqueClients.length+'</div></div></div>';
+  h += '<div class="fc"><div class="fc-body" style="padding:14px"><div class="fs-lbl">Total CBM</div><div class="fs-num">'+totalCBM.toFixed(1)+'</div></div></div>';
   h += '<div class="fc"><div class="fc-body" style="padding:14px"><div class="fs-lbl">Est. Monthly Revenue</div><div class="fs-num">'+spv(fmt(monthlyRev))+'</div></div></div>';
-  h += '<div class="fc"><div class="fc-body" style="padding:14px"><div class="fs-lbl">In/Out Jobs</div><div class="fs-num">'+all.filter(function(s){return s.type==='inout';}).length+'</div></div></div>';
+  h += '</div>';
+
+  h += '<div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">';
+  h += '<input id="st-search" placeholder="Search client, container, ref or brand\u2026" oninput="storageSearch=this.value;renderStorage()" value="'+escH(storageSearch||'')+'" style="flex:1;border:1.5px solid var(--b1);border-radius:8px;padding:7px 11px;font-size:13px">';
+  h += '<span style="font-size:12px;color:var(--t3);white-space:nowrap">'+shown.length+' records</span>';
   h += '</div>';
 
   if (!shown.length) {
-    h += '<div style="text-align:center;padding:60px;color:var(--t3);font-size:14px">No storage records match this filter</div>';
+    h += '<div style="text-align:center;padding:60px;color:var(--t3);font-size:14px">No storage records match this filter.</div>';
     setH('storage-out', h);
-    setBadge('storage-badge',active.length);
+    setBadge('storage-badge', active.length);
     return;
   }
 
-  h += '<div class="fc"><div class="fc-head"><div class="fc-title">Storage Records</div></div>';
-  h += '<div style="overflow-x:auto"><table class="sc-table"><thead><tr>';
-  h += '<th>Ref</th><th>Client</th><th>Brand</th><th>Type</th><th>Containers</th><th>Vol In</th><th>Remaining</th><th>In</th><th>Out</th><th>Billing/period</th><th>Status</th><th></th>';
-  h += '</tr></thead><tbody>';
+  var clientMap = {}, clientOrder = [];
+  shown.forEach(function(s){
+    if (!clientMap[s.client]){ clientMap[s.client]=[]; clientOrder.push(s.client); }
+    clientMap[s.client].push(s);
+  });
+  clientOrder.sort();
 
-  for (var i = 0; i < shown.length; i++) {
-    var s = shown[i];
-    var stCol = s.status==='active' ? 'var(--green)' : s.status==='out' ? 'var(--t3)' : 'var(--amber)';
-    var effRate = s.billingUnit==='cbm' ? s.billingRate*(s.cbm||0) : s.billingRate;
-    var bDesc = spv(fmt(effRate)) + '/' + s.billingType.replace('ly','');
-    var sid = s.id;
-    var ctrs = s.containers || [];
-    var firstLocs = ctrs.slice(0,2).map(function(c){return c.containerNo;}).join(', ');
-    var volRem = s.volRemaining !== undefined ? s.volRemaining : (s.volFt || 0);
-    h += '<tr class="sr-row" data-sid="'+sid+'" style="cursor:pointer">';
-    h += '<td style="font-weight:700;font-family:monospace">'+esc(sid)+'</td>';
-    h += '<td style="font-weight:600">'+esc(s.client)+'</td>';
-    h += '<td>'+bbadge(s.brand)+'</td>';
-    h += '<td><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:2px 6px;border-radius:3px;background:var(--s1);border:1px solid var(--b1)">'+(s.type==='inout'?'In/Out':'Long-term')+'</span></td>';
-    h += '<td style="font-size:12px">'+(ctrs.length ? '<span style="font-family:monospace;font-weight:600">'+esc(firstLocs)+(ctrs.length>2?' +'+( ctrs.length-2)+'…':'')+'</span>' : '<span style="color:var(--t4)">TBA</span>')+'</td>';
-    h += '<td>'+spv((s.volFt||0).toLocaleString()+' ft³')+'</td>';
-    h += '<td style="font-weight:600;color:'+(volRem===0?'var(--t3)':'var(--green)')+'">'+volRem.toLocaleString()+' ft³</td>';
-    h += '<td>'+fmtNice(s.dateIn)+'</td>';
-    h += '<td>'+(s.dateOut ? fmtNice(s.dateOut) : '<span style="color:var(--green);font-size:11px;font-weight:600">In storage</span>')+'</td>';
-    h += '<td style="font-size:12px">'+s.billingType+' &bull; '+bDesc+'</td>';
-    h += '<td><span style="font-size:10.5px;font-weight:700;color:'+stCol+'">'+s.status.toUpperCase()+'</span></td>';
-    h += '<td class="sr-edit-btn" data-sid="'+sid+'"><button class="btn btn-s btn-sm">Edit</button></td>';
-    h += '</tr>';
-  }
-  h += '</tbody></table></div></div>';
+  h += '<div id="st-client-list" style="display:flex;flex-direction:column;gap:12px">';
+  clientOrder.forEach(function(client){
+    var recs  = clientMap[client];
+    var col   = whClientColour(client);
+    var cCBM  = recs.reduce(function(a,s){return a+(s.cbm||0);},0);
+    var cCtrs = recs.reduce(function(a,s){return a+(s.containers||[]).length;},0);
+
+    h += '<div class="fc" style="border-left:3px solid '+col+';overflow:hidden">';
+    h += '<div class="st-ch" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--b1);cursor:pointer">';
+    h += '<div style="display:flex;align-items:center;gap:10px">';
+    h += '<div style="width:10px;height:10px;border-radius:50%;background:'+col+';flex-shrink:0"></div>';
+    h += '<div style="font-size:14px;font-weight:800;color:'+col+'">'+escH(client)+'</div>';
+    h += '<div style="font-size:11px;color:var(--t3)">'+recs.length+' record'+(recs.length!==1?'s':'')+' &bull; '+cCtrs+' container'+(cCtrs!==1?'s':'')+' &bull; '+cCBM.toFixed(1)+' CBM</div>';
+    h += '</div>';
+    h += '<div style="display:flex;align-items:center;gap:6px">';
+    h += '<button class="btn btn-p btn-sm st-add-btn">+ Add</button>';
+    h += '<span style="font-size:12px;color:var(--t3)">&#9662;</span>';
+    h += '</div></div>';
+
+    h += '<div class="st-client-rows" style="overflow-x:auto"><table class="sc-table"><thead><tr>';
+    h += '<th>Ref</th><th>Brand</th><th>Containers</th><th>Locations</th><th>Vol ft\u00b3</th><th>Date In</th><th>Billing</th><th>Status</th><th></th>';
+    h += '</tr></thead><tbody>';
+
+    recs.forEach(function(s){
+      var stCol  = s.status==='active'?'var(--green)':s.status==='out'?'var(--t3)':'var(--amber)';
+      var ctrs   = s.containers||[];
+      var cNos   = ctrs.slice(0,2).map(function(c){return c.containerNo;}).join(', ')+(ctrs.length>2?' +'+(ctrs.length-2)+'\u2026':'');
+      var locs   = ctrs.slice(0,2).map(function(c){return c.locNo;}).join(', ')+(ctrs.length>2?' +'+(ctrs.length-2)+'\u2026':'');
+      var effRate = s.billingUnit==='cbm'?(s.billingRate*(s.cbm||0)):s.billingRate;
+      var bDesc  = effRate>0 ? (spv(fmt(effRate))+'/'+s.billingType.replace('ly','')) : '<span style="color:var(--t3);font-size:11px">TBC</span>';
+      h += '<tr class="sr-row" data-sid="'+esc(s.id)+'">';
+      h += '<td style="font-weight:700;font-family:monospace;font-size:11px">'+esc(s.id)+'</td>';
+      h += '<td>'+bbadge(s.brand)+'</td>';
+      h += '<td style="font-weight:700;text-align:center">'+ctrs.length+'<span style="font-size:10px;font-family:monospace;color:var(--t3);margin-left:4px">'+esc(cNos)+'</span></td>';
+      h += '<td style="font-size:10.5px;font-family:monospace;color:var(--t3)">'+esc(locs)+'</td>';
+      h += '<td style="font-weight:600">'+(s.volFt||0).toLocaleString()+'</td>';
+      h += '<td style="font-size:11px">'+fmtNice(s.dateIn)+'</td>';
+      h += '<td style="font-size:11px">'+bDesc+'</td>';
+      h += '<td><span style="font-size:10.5px;font-weight:700;color:'+stCol+'">'+s.status.toUpperCase()+'</span></td>';
+      h += '<td style="white-space:nowrap"><button class="btn btn-s btn-sm sr-edit-btn" data-sid="'+esc(s.id)+'" style="margin-right:3px">Edit</button>';
+      if (s.status==='active') h += '<button class="btn btn-sm sr-book-btn" data-sid="'+esc(s.id)+'" style="background:var(--green);color:#fff;border-color:var(--green);border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer">&#128230; Book out</button>';
+      h += '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+  });
+  h += '</div>';
   setH('storage-out', h);
-  setBadge('storage-badge',active.length);
+  setBadge('storage-badge', active.length);
 
-  // Attach row click events
-  var rows = document.querySelectorAll('.sr-row');
-  rows.forEach(function(row) {
-    row.addEventListener('click', function(e) {
-      if (e.target.closest && e.target.closest('.sr-edit-btn')) return;
+  // Attach events
+  document.querySelectorAll('.sr-row').forEach(function(row){
+    row.addEventListener('click', function(e){
+      if (e.target.closest && (e.target.closest('.sr-edit-btn')||e.target.closest('.sr-book-btn'))) return;
       viewStorage(row.getAttribute('data-sid'));
     });
   });
-  var editBtns = document.querySelectorAll('.sr-edit-btn');
-  editBtns.forEach(function(cell) {
-    cell.addEventListener('click', function(e) {
-      e.stopPropagation();
-      editStorage(cell.getAttribute('data-sid'));
-    });
+  document.querySelectorAll('.sr-edit-btn').forEach(function(btn){
+    btn.addEventListener('click', function(e){ e.stopPropagation(); editStorage(btn.getAttribute('data-sid')); });
   });
+  document.querySelectorAll('.sr-book-btn').forEach(function(btn){
+    btn.addEventListener('click', function(e){ e.stopPropagation(); whBookDelivery(btn.getAttribute('data-sid')); });
+  });
+  document.querySelectorAll('.st-ch').forEach(function(hdr){
+    hdr.addEventListener('click', function(){ stToggleClient(hdr); });
+  });
+  document.querySelectorAll('.st-add-btn').forEach(function(btn){
+    btn.addEventListener('click', function(e){ e.stopPropagation(); newStorageRecord(); });
+  });
+}
+
+function stToggleClient(header) {
+  var rows   = header.parentElement.querySelector('.st-client-rows');
+  var arrow  = header.querySelector('span:last-child');
+  if (!rows) return;
+  var hidden = rows.style.display === 'none';
+  rows.style.display = hidden ? '' : 'none';
+  if (arrow) arrow.innerHTML = hidden ? '&#9662;' : '&#9656;';
+}
+
+function stToggleClient(header) {
+  var rows = header.parentElement.querySelector('.st-client-rows');
+  if (!rows) return;
+  var hidden = rows.style.display === 'none';
+  rows.style.display = hidden ? '' : 'none';
+  var arrow = header.querySelector('span:last-child');
+  if (arrow) arrow.textContent = hidden ? '▾' : '▸';
 }
 
 function setStorageFilter(f, btn) {
@@ -4963,7 +5027,7 @@ function addStorageContainer(id) {
   });
 }
 
-function newStorageRecord() {
+function newStorageRecord(prefillClient) {
   var id = 'S' + String(100+storageSeq++).slice(-3);
   STORAGE_RECORDS.push({
     id:id, type:'longterm', client:'', brand:BRANDS[0]||'',
@@ -5076,7 +5140,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v90 — 5 Mar 2026';
+var APP_VERSION = 'v91 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -9761,7 +9825,7 @@ function renderWhRecords() {
   h += '</div><div class="tb-r"><button class="btn btn-p btn-sm" onclick="newStorageRecord()">+ New Storage</button></div>';
   h += '</div>';
   h += '<div style="padding:10px 14px;border-bottom:1px solid var(--b1);display:flex;gap:8px">';
-  h += '<input id="wh-rec-search" placeholder="Search client, container or brand…" oninput="whRecSearch=this.value;whRenderRecordsInner(whRecFilter)" value="'+(whRecSearch||''+'')+'" style="border:1.5px solid var(--b1);border-radius:7px;padding:6px 10px;font-size:13px;flex:1">';
+  h += '<input id="wh-rec-search" placeholder="Search client, container or brand…" oninput="whRecSearch=this.value;whRenderRecordsInner(whRecFilter)" value="'+escH(whRecSearch||'')+'" style="border:1.5px solid var(--b1);border-radius:7px;padding:6px 10px;font-size:13px;flex:1">';
   h += '<select id="wh-rec-brand" onchange="whRecBrand=this.value;whRenderRecordsInner(whRecFilter)" style="border:1.5px solid var(--b1);border-radius:7px;padding:6px 8px;font-size:12px">';
   h += '<option value="">All brands</option>';
   BRANDS.forEach(function(b){ h += '<option value="'+esc(b)+'"'+(whRecBrand===b?' selected':'')+'>'+esc(b)+'</option>'; });
@@ -9786,49 +9850,109 @@ function whStorageFilter(f, btn) {
 }
 
 function whRenderRecordsInner(f) {
-  var all = STORAGE_RECORDS;
+  var all   = STORAGE_RECORDS;
   var shown = all.filter(function(s){
     if (f==='active')   { if (s.status!=='active') return false; }
-    if (f==='inout')    { if (s.type!=='inout') return false; }
+    if (f==='inout')    { if (s.type!=='inout')    return false; }
     if (f==='longterm') { if (s.type!=='longterm') return false; }
     if (whRecBrand && s.brand !== whRecBrand) return false;
     if (whRecSearch) {
       var q = whRecSearch.toLowerCase();
-      var inClient    = (s.client||'').toLowerCase().includes(q);
-      var inBrand     = (s.brand||'').toLowerCase().includes(q);
-      var inId        = (s.id||'').toLowerCase().includes(q);
-      var inContainer = (s.containers||[]).some(function(c){ return (c.containerNo||'').toLowerCase().includes(q) || (c.locNo||'').toLowerCase().includes(q); });
-      if (!inClient && !inBrand && !inId && !inContainer) return false;
+      var ok = (s.client||'').toLowerCase().includes(q) ||
+               (s.brand||'').toLowerCase().includes(q)  ||
+               (s.id||'').toLowerCase().includes(q)     ||
+               (s.containers||[]).some(function(c){
+                 return (c.containerNo||'').toLowerCase().includes(q) ||
+                        (c.locNo||'').toLowerCase().includes(q);
+               });
+      if (!ok) return false;
     }
     return true;
   });
-  var countEl = el('wh-rec-count'); if (countEl) countEl.textContent = shown.length + ' of ' + all.length + ' records';
-  var h = '<div style="overflow-x:auto"><table class="sc-table"><thead><tr>';
-  h += '<th>Ref</th><th>Client</th><th>Brand</th><th>Containers</th><th>Locations</th><th>Vol ft³</th><th>In</th><th>Status</th><th></th>';
-  h += '</tr></thead><tbody>';
-  for (var i=0; i<shown.length; i++) {
-    var s = shown[i];
-    var stCol = s.status==='active'?'var(--green)':s.status==='out'?'var(--t3)':'var(--amber)';
-    var ctrs = s.containers || [];
-    var firstLocs = ctrs.slice(0,2).map(function(c){return c.containerNo;}).join(', ');
-    var volRem = s.volRemaining !== undefined ? s.volRemaining : (s.volFt||0);
-        var locList = ctrs.slice(0,2).map(function(c){return c.locNo;}).join(', ')+(ctrs.length>2?' +'+(ctrs.length-2)+'…':'');
-    var ctrNos  = ctrs.slice(0,2).map(function(c){return c.containerNo;}).join(', ')+(ctrs.length>2?' +'+(ctrs.length-2)+'…':'');
-    var rcol = whClientColour(s.client);
-    h += '<tr style="cursor:pointer" onclick="viewStorage(\''+s.id+'\')">';
-    h += '<td style="font-weight:700;font-family:monospace;font-size:11px">'+esc(s.id)+'</td>';
-    h += '<td style="font-weight:700"><span style="color:'+rcol+'">●</span> '+esc(s.client)+'</td>';
-    h += '<td>'+bbadge(s.brand)+'</td>';
-    h += '<td style="font-weight:700;text-align:center">'+ctrs.length+'</td>';
-    h += '<td style="font-size:10.5px;font-family:monospace;color:var(--t3)">'+esc(locList)+'</td>';
-    h += '<td style="font-weight:600">'+(s.volFt||0).toLocaleString()+'</td>';
-    h += '<td style="font-size:11px">'+fmtNice(s.dateIn)+'</td>';
-    h += '<td><span style="font-size:10.5px;font-weight:700;color:'+stCol+'">'+s.status.toUpperCase()+'</span></td>';
-    h += '</tr>';
+  var countEl = el('wh-rec-count');
+  if (countEl) countEl.textContent = shown.length + ' of ' + all.length + ' records';
+
+  if (!shown.length) {
+    var inner0 = el('wh-records-inner');
+    if (inner0) inner0.innerHTML = '<div style="text-align:center;padding:40px;color:var(--t3);font-size:13px">No records match this filter.</div>';
+    return;
   }
-  h += '</tbody></table></div>';
+
+  // Group by client
+  var clientMap = {}, clientOrder = [];
+  shown.forEach(function(s){
+    if (!clientMap[s.client]){ clientMap[s.client]=[]; clientOrder.push(s.client); }
+    clientMap[s.client].push(s);
+  });
+  clientOrder.sort();
+
+  var h = '<div style="display:flex;flex-direction:column;gap:10px">';
+  clientOrder.forEach(function(client){
+    var recs = clientMap[client];
+    var col  = whClientColour(client);
+    var cCtrs = recs.reduce(function(a,s){return a+(s.containers||[]).length;},0);
+
+    h += '<div class="fc" style="border-left:3px solid '+col+';overflow:hidden">';
+    h += '<div class="wh-st-ch" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--b1);cursor:pointer">';
+    h += '<div style="display:flex;align-items:center;gap:8px">';
+    h += '<div style="width:8px;height:8px;border-radius:50%;background:'+col+'"></div>';
+    h += '<span style="font-size:13px;font-weight:800;color:'+col+'">'+escH(client)+'</span>';
+    h += '<span style="font-size:11px;color:var(--t3)">'+recs.length+' record'+(recs.length!==1?'s':'')+' &bull; '+cCtrs+' containers</span>';
+    h += '</div><span style="font-size:11px;color:var(--t3)">&#9662;</span>';
+    h += '</div>';
+    h += '<div class="wh-st-rows" style="overflow-x:auto"><table class="sc-table" style="font-size:12px"><thead><tr>';
+    h += '<th>Ref</th><th>Brand</th><th>Containers</th><th>Locations</th><th>Vol ft&#179;</th><th>Date In</th><th>Status</th><th></th>';
+    h += '</tr></thead><tbody>';
+    recs.forEach(function(s){
+      var stCol = s.status==='active'?'var(--green)':s.status==='out'?'var(--t3)':'var(--amber)';
+      var ctrs  = s.containers||[];
+      var cNos  = ctrs.slice(0,2).map(function(c){return c.containerNo;}).join(', ')+(ctrs.length>2?' +'+(ctrs.length-2)+'\u2026':'');
+      var locs  = ctrs.slice(0,2).map(function(c){return c.locNo;}).join(', ')+(ctrs.length>2?' +'+(ctrs.length-2)+'\u2026':'');
+      h += '<tr class="wh-sr-row" data-sid="'+esc(s.id)+'">';
+      h += '<td style="font-weight:700;font-family:monospace;font-size:11px">'+esc(s.id)+'</td>';
+      h += '<td>'+bbadge(s.brand)+'</td>';
+      h += '<td style="font-weight:700">'+ctrs.length+'<span style="font-size:10px;font-family:monospace;color:var(--t3);margin-left:4px">'+esc(cNos)+'</span></td>';
+      h += '<td style="font-size:10.5px;font-family:monospace;color:var(--t3)">'+esc(locs)+'</td>';
+      h += '<td style="font-weight:600">'+(s.volFt||0).toLocaleString()+'</td>';
+      h += '<td style="font-size:11px">'+fmtNice(s.dateIn)+'</td>';
+      h += '<td><span style="font-size:10.5px;font-weight:700;color:'+stCol+'">'+s.status.toUpperCase()+'</span></td>';
+      h += '<td style="white-space:nowrap">';
+      h += '<button class="btn btn-s btn-sm wh-sr-edit" data-sid="'+esc(s.id)+'" style="margin-right:3px">Edit</button>';
+      if (s.status==='active') h += '<button class="btn btn-sm wh-sr-book" data-sid="'+esc(s.id)+'" style="background:var(--green);color:#fff;border-color:var(--green);border-radius:5px;padding:3px 8px;font-size:11px;font-weight:700;cursor:pointer">&#128230; Book</button>';
+      h += '</td></tr>';
+    });
+    h += '</tbody></table></div></div>';
+  });
+  h += '</div>';
+
   var inner = el('wh-records-inner');
-  if (inner) inner.innerHTML = h;
+  if (inner) {
+    inner.innerHTML = h;
+    inner.querySelectorAll('.wh-sr-row').forEach(function(row){
+      row.addEventListener('click', function(e){
+        if (e.target.closest('.wh-sr-edit')||e.target.closest('.wh-sr-book')) return;
+        viewStorage(row.getAttribute('data-sid'));
+      });
+    });
+    inner.querySelectorAll('.wh-sr-edit').forEach(function(btn){
+      btn.addEventListener('click',function(e){e.stopPropagation();editStorage(btn.getAttribute('data-sid'));});
+    });
+    inner.querySelectorAll('.wh-sr-book').forEach(function(btn){
+      btn.addEventListener('click',function(e){e.stopPropagation();whBookDelivery(btn.getAttribute('data-sid'));});
+    });
+    inner.querySelectorAll('.wh-st-ch').forEach(function(hdr){
+      hdr.addEventListener('click', function(){ stToggleClientWh(hdr); });
+    });
+  }
+}
+
+function stToggleClientWh(header) {
+  var rows  = header.parentElement.querySelector('.wh-st-rows');
+  var arrow = header.querySelector('span:last-child');
+  if (!rows) return;
+  var hidden = rows.style.display === 'none';
+  rows.style.display = hidden ? '' : 'none';
+  if (arrow) arrow.innerHTML = hidden ? '&#9662;' : '&#9656;';
 }
 
 // ══ TAB 3: WAREHOUSE GRID ══════════════════════════════════════════════
