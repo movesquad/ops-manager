@@ -5040,7 +5040,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v84 — 5 Mar 2026';
+var APP_VERSION = 'v86 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -16420,6 +16420,13 @@ function whSelectOptions(selectedId) {
       </div>
     </div>
 
+    <!-- SCREEN: INDIVIDUAL FORM DETAIL -->
+    <div id="dv-screen-form-detail" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
+      <div style="max-width:520px;margin:0 auto;padding:0 0 100px">
+        <div id="dv-form-detail-body"></div>
+      </div>
+    </div>
+
     <!-- SCREEN: PROPERTY WALKAROUND -->
     <div id="dv-screen-walkaround" class="dv-screen" style="display:none;height:100%;overflow-y:auto">
       <div style="max-width:520px;margin:0 auto;padding:0 0 90px">
@@ -19229,34 +19236,8 @@ function dvInvConfirmPrompt(jobId, idx) {
 // ══════════════════════════════════════════════════════════════════════
 
 // ══════════════════════════════════════════════════════════════════════
-// RISK ASSESSMENT
+// SITE SPECIFIC RISK ASSESSMENT  (matches MoveSquad paper form)
 // ══════════════════════════════════════════════════════════════════════
-
-var DV_RISK_SECTIONS = [
-  { id: 'access', label: 'Access & Parking', icon: '🚐', items: [
-    { id: 'parking_clear',   label: 'Safe parking / loading zone confirmed' },
-    { id: 'path_clear',      label: 'Access path clear of obstructions' },
-    { id: 'stairs_assessed', label: 'Stairs / lifts assessed' },
-    { id: 'narrow_access',   label: 'Narrow corridors or doorways noted' },
-  ]},
-  { id: 'hazards', label: 'Property Hazards', icon: '⚠️', items: [
-    { id: 'trip_hazards',    label: 'Trip hazards identified and avoided' },
-    { id: 'fragile_items',   label: 'Fragile / high-value items noted' },
-    { id: 'pets_secured',    label: 'Pets secured by client' },
-    { id: 'children_clear',  label: 'Children kept clear of work areas' },
-    { id: 'floor_protection',label: 'Floor protection in place' },
-  ]},
-  { id: 'equipment', label: 'Equipment & PPE', icon: '🦺', items: [
-    { id: 'ppe_worn',        label: 'PPE worn by all crew (gloves, boots)' },
-    { id: 'trolleys_ok',     label: 'Trolleys and straps in good condition' },
-    { id: 'vehicle_safe',    label: 'Vehicle doors and ramp secure' },
-  ]},
-  { id: 'crew', label: 'Crew Briefing', icon: '👥', items: [
-    { id: 'hazards_briefed', label: 'Hazards briefed to all crew' },
-    { id: 'plan_agreed',     label: 'Loading / route plan agreed' },
-    { id: 'emergency_exit',  label: 'Emergency exits located' },
-  ]},
-];
 
 function dvOpenRiskAssessment(jobId) {
   dvCurrentJobId = jobId;
@@ -19264,84 +19245,281 @@ function dvOpenRiskAssessment(jobId) {
   dvRenderRiskAssessment(jobId);
 }
 
+// Question rows — each has Yes/No + Low/Med/High risk level for Collection & Delivery
+var DV_RA_SECTIONS = [
+  {
+    id: 'environment', label: 'The Working Environment', dark: false,
+    questions: [
+      { id:'main_road',    q:'Is the vehicle parked on a main road?' },
+      { id:'busy_pave',    q:'Do you have to cross busy pavements?' },
+      { id:'signs_cones',  q:'Do you have sufficient signs / cones?' },
+      { id:'gen_public',   q:'Is there a risk to the general public?' },
+      { id:'uneven_pave',  q:'Is the pavement / access uneven?' },
+      { id:'trip_hazards', q:'Are there any trip hazards?' },
+    ]
+  },
+  {
+    id: 'hazards_present', label: 'Are the Following Hazards Present?', dark: true,
+    questions: [
+      { id:'others_work',  q:'Risk to you from the work of others?' },
+      { id:'dust',         q:'Dust?' },
+      { id:'mould',        q:'Mould?' },
+      { id:'soot',         q:'Soot?' },
+      { id:'contam_water', q:'Contact with contaminated water?' },
+      { id:'poor_light',   q:'Poor lighting?' },
+      { id:'adv_weather',  q:'Adverse weather?' },
+      { id:'falling_obj',  q:'Falling / loose objects?' },
+      { id:'floors_even',  q:'Are the floors even?' },
+      { id:'other_hazards',q:'Are there any other hazards?' },
+    ]
+  },
+  {
+    id: 'load_hazards', label: 'Are the Following Hazards Present?', dark: true,
+    questions: [
+      { id:'heavy',        q:'Heavy?' },
+      { id:'bulky',        q:'Bulky / unwieldy / unstable / unpredictable?' },
+      { id:'hard_grasp',   q:'Difficult to grasp?' },
+      { id:'fragile',      q:'Fragile?' },
+    ]
+  },
+  {
+    id: 'capability', label: 'Individual Capability — does the job', dark: true,
+    questions: [
+      { id:'spec_equip',   q:'Require specialist equipment?' },
+      { id:'extra_ppe',    q:'Require additional PPE?' },
+      { id:'more_ops',     q:'Need more than 2 operatives?' },
+      { id:'briefed',      q:'Have all operatives present been briefed?' },
+    ]
+  },
+];
+
 function dvRenderRiskAssessment(jobId) {
   var j  = jobs.filter(function(x){ return x.id === jobId; })[0];
   if (!j) return;
   if (!j.crewData) j.crewData = {};
-  if (!j.crewData.riskAssessment) j.crewData.riskAssessment = { items: {} };
-  var ra    = j.crewData.riskAssessment;
-  var items = ra.items || {};
-  var done  = !!ra.completedAt;
+  if (!j.crewData.riskAssessment) j.crewData.riskAssessment = {};
+  var ra   = j.crewData.riskAssessment;
+  var ans  = ra.answers || {};   // { qId: { colYN:'Y'|'N', colRisk:'L'|'M'|'H', delYN:'Y'|'N', delRisk:'L'|'M'|'H', comment:'' } }
+  var done = !!ra.completedAt;
 
-  var totalItems = DV_RISK_SECTIONS.reduce(function(n,s){ return n + s.items.length; }, 0);
-  var checkedCount = DV_RISK_SECTIONS.reduce(function(n,s){
-    return n + s.items.filter(function(i){ return !!items[i.id]; }).length;
-  }, 0);
-  var pct = Math.round(checkedCount / totalItems * 100);
+  // Count answered questions
+  var totalQ = DV_RA_SECTIONS.reduce(function(n,s){ return n+s.questions.length; },0);
+  var answeredQ = Object.keys(ans).filter(function(k){ return ans[k].colYN||ans[k].delYN; }).length;
+  var pct = Math.round(answeredQ/totalQ*100);
 
   var backId = dvRegFn(function(){ dvShowScreen('dv-screen-job'); dvRenderJobDetail(jobId); });
-  var h = dvDarkHeader('Risk Assessment', j.client, '_dvRun(' + backId + ')');
-  h += '<div style="padding:14px 16px">';
+  var h = dvDarkHeader('Site Risk Assessment', j.client, '_dvRun(' + backId + ')');
+  h += '<div style="padding:0 0 100px">';
 
+  // ── Header info ──────────────────────────────────────────────────────
+  h += '<div style="background:#1a4f7a;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.1)">';
+  h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:rgba(255,255,255,.6);letter-spacing:.5px;margin-bottom:8px">Job Details</div>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  h += '<div style="background:rgba(255,255,255,.1);border-radius:8px;padding:8px 10px">';
+  h += '<div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:2px">Collection Address</div>';
+  h += '<div style="font-size:12px;font-weight:700;color:#fff">' + esc(j.origin||'—') + '</div></div>';
+  h += '<div style="background:rgba(255,255,255,.1);border-radius:8px;padding:8px 10px">';
+  h += '<div style="font-size:10px;color:rgba(255,255,255,.5);margin-bottom:2px">Delivery Address</div>';
+  h += '<div style="font-size:12px;font-weight:700;color:#fff">' + esc(j.dest && j.dest!=='INT STORE' ? j.dest : '—') + '</div></div>';
+  h += '</div></div>';
+
+  // ── Completion status ────────────────────────────────────────────────
   if (done) {
-    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Completed ' + fmtNice(ra.completedAt.slice(0,10)) + ' by ' + esc(ra.completedBy||'') + '</div>';
+    h += '<div style="background:#E6FFF5;padding:10px 16px;display:flex;align-items:center;gap:10px">';
+    h += '<div style="font-size:20px">✅</div>';
+    h += '<div><div style="font-size:13px;font-weight:800;color:#00A86B">Assessment Complete</div>';
+    h += '<div style="font-size:11px;color:#065F46">' + fmtNice(ra.completedAt.slice(0,10)) + ' · Assessed by: ' + esc(ra.assessedBy||'') + '</div></div>';
+    h += '</div>';
+  } else {
+    h += '<div style="background:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px">';
+    h += '<div style="flex:1;background:#E3E7F0;border-radius:20px;height:6px"><div style="background:' + (pct===100?'#00C875':'#FF9F1A') + ';border-radius:20px;height:6px;width:' + pct + '%"></div></div>';
+    h += '<div style="font-size:12px;font-weight:800;color:#1C2333;min-width:60px;text-align:right">' + answeredQ + ' / ' + totalQ + ' answered</div>';
+    h += '</div>';
   }
 
-  // Progress bar
-  h += '<div style="background:#EEF4F9;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:flex;align-items:center;gap:12px">';
-  h += '<div style="flex:1;background:#E3E7F0;border-radius:20px;height:8px"><div style="background:' + (pct===100?'#00C875':'#FF9F1A') + ';border-radius:20px;height:8px;width:' + pct + '%"></div></div>';
-  h += '<div style="font-size:13px;font-weight:800;color:#1C2333;min-width:50px;text-align:right">' + checkedCount + '/' + totalItems + '</div>';
+  // ── Control measures banner ──────────────────────────────────────────
+  h += '<div style="background:#F0F4F8;padding:10px 16px;margin:0">';
+  h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:6px;letter-spacing:.4px">Existing Control Measures in Place</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+  ['Staff Training','PPE','Pre-Move Risk Assessment','Manual Handling Aids','Reversing Beepers','Warning Signs','Original Instruction Notes','Technician Guidance'].forEach(function(m){
+    h += '<span style="background:#fff;border:1px solid #DDE8F0;border-radius:20px;padding:4px 10px;font-size:11px;font-weight:600;color:#2872A1">' + m + '</span>';
+  });
+  h += '</div></div>';
+
+  // ── Column headers ───────────────────────────────────────────────────
+  h += '<div style="background:#2872A1;padding:8px 16px;display:grid;grid-template-columns:1fr 80px 80px 60px;gap:4px;align-items:center">';
+  h += '<div style="font-size:10px;font-weight:800;color:#fff;letter-spacing:.4px;text-transform:uppercase">Question</div>';
+  h += '<div style="font-size:10px;font-weight:800;color:#fff;text-align:center">Collection<br><span style="opacity:.7">Y/N · Risk</span></div>';
+  h += '<div style="font-size:10px;font-weight:800;color:#fff;text-align:center">Delivery<br><span style="opacity:.7">Y/N · Risk</span></div>';
+  h += '<div style="font-size:10px;font-weight:800;color:#fff;text-align:center">Notes</div>';
   h += '</div>';
 
-  DV_RISK_SECTIONS.forEach(function(section) {
-    h += '<div style="margin-bottom:14px">';
-    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#7A849E;margin-bottom:8px">' + section.icon + ' ' + section.label + '</div>';
-    h += '<div style="background:#fff;border-radius:12px;overflow:hidden">';
-    section.items.forEach(function(item, idx) {
-      var checked = !!items[item.id];
-      var toggleId = dvRegFn(function(){ dvToggleRisk(jobId, item.id); });
-      var border = idx < section.items.length-1 ? 'border-bottom:1px solid #DDE8F0;' : '';
-      h += '<div onclick="_dvRun(' + toggleId + ')" style="display:flex;align-items:center;gap:14px;padding:13px 16px;' + border + 'cursor:pointer;opacity:' + (checked?.65:1) + '">';
-      h += '<div style="width:24px;height:24px;border-radius:6px;border:2px solid ' + (checked?'#00C875':'#C8C5BE') + ';background:' + (checked?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">';
-      if (checked) h += '<span style="color:#fff;font-size:14px">✓</span>';
+  // ── Question sections ────────────────────────────────────────────────
+  DV_RA_SECTIONS.forEach(function(section) {
+    // Section header
+    h += '<div style="background:' + (section.dark?'#1C2333':'#DDE8F0') + ';padding:8px 16px">';
+    h += '<div style="font-size:11px;font-weight:800;color:' + (section.dark?'#fff':'#2872A1') + ';text-transform:uppercase;letter-spacing:.5px">' + section.label + '</div>';
+    h += '</div>';
+
+    section.questions.forEach(function(q, qi) {
+      var a   = ans[q.id] || {};
+      var bg  = qi%2===0 ? '#fff' : '#F8FAFC';
+      var openNoteId = dvRegFn(function(){ dvRaOpenComment(jobId, q.id); });
+
+      h += '<div style="background:' + bg + ';padding:8px 16px;display:grid;grid-template-columns:1fr 80px 80px 60px;gap:4px;align-items:center;border-bottom:1px solid #EEF2F6">';
+      h += '<div style="font-size:12px;color:#1C2333;line-height:1.3">' + esc(q.q) + '</div>';
+
+      // Collection Y/N + Risk
+      h += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">';
+      h += dvRaYNBtn(jobId, q.id, 'col', 'Y', a.colYN);
+      h += dvRaYNBtn(jobId, q.id, 'col', 'N', a.colYN);
+      if (a.colYN === 'Y') h += dvRaRiskBtn(jobId, q.id, 'col', a.colRisk);
       h += '</div>';
-      h += '<div style="font-size:13.5px;font-weight:600;color:#1C2333;flex:1">' + esc(item.label) + '</div>';
+
+      // Delivery Y/N + Risk
+      h += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px">';
+      h += dvRaYNBtn(jobId, q.id, 'del', 'Y', a.delYN);
+      h += dvRaYNBtn(jobId, q.id, 'del', 'N', a.delYN);
+      if (a.delYN === 'Y') h += dvRaRiskBtn(jobId, q.id, 'del', a.delRisk);
+      h += '</div>';
+
+      // Comment
+      h += '<div style="text-align:center">';
+      var hasComment = !!(a.comment && a.comment.trim());
+      h += '<div onclick="_dvRun(' + openNoteId + ')" style="width:32px;height:32px;border-radius:8px;background:' + (hasComment?'#EBF4FF':'#F0F4F8') + ';border:1.5px solid ' + (hasComment?'#0073EA':'#E3E7F0') + ';display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0 auto;font-size:14px">' + (hasComment?'✏️':'💬') + '</div>';
+      if (hasComment) h += '<div style="font-size:9px;color:#0073EA;margin-top:2px;max-width:56px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(a.comment) + '</div>';
+      h += '</div>';
+
       h += '</div>';
     });
-    h += '</div></div>';
   });
 
-  // Notes
-  h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Additional Hazards / Notes</div>';
-  h += '<textarea id="dv-risk-notes" rows="3" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" placeholder="Note any additional hazards...">' + esc(ra.notes||'') + '</textarea></div>';
-
+  // ── Sign-off section ─────────────────────────────────────────────────
   if (!done) {
-    var completeId = dvRegFn(function(){ dvCompleteRisk(jobId); });
-    h += '<button onclick="_dvRun(' + completeId + ')" ' + (pct===100?'':'disabled ') + 'style="width:100%;background:' + (pct===100?'#FF9F1A':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:' + (pct===100?'pointer':'not-allowed') + '">⚠️ Complete Risk Assessment</button>';
+    h += '<div style="padding:16px">';
+    h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:14px">';
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;letter-spacing:.4px;margin-bottom:10px">Assessed By</div>';
+    h += '<input id="dv-ra-assessor" value="' + esc(ra.assessedBy||window._driverName||'') + '" placeholder="Print full name" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;box-sizing:border-box;margin-bottom:10px">';
+    h += '<div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Signature</div>';
+    h += '<canvas id="dv-ra-sig" width="488" height="120" style="width:100%;border:2px solid #E3E7F0;border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>';
+    h += '<button onclick="dvClearCanvas(\'dv-ra-sig\')" style="margin-top:6px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:5px 12px;font-size:12px;color:#7A849E;cursor:pointer">Clear</button>';
+    h += '</div>';
+    var completeId = dvRegFn(function(){ dvCompleteRiskAssessment(jobId); });
+    var allAnswered = answeredQ >= totalQ;
+    h += '<button onclick="_dvRun(' + completeId + ')" ' + (allAnswered?'':'disabled ') + 'style="width:100%;background:' + (allAnswered?'#FF9F1A':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:' + (allAnswered?'pointer':'not-allowed') + '">✓ Complete Risk Assessment</button>';
+    h += '<div style="font-size:11px;color:#7A849E;text-align:center;margin-top:8px">If in doubt, always stop and seek advice from the office immediately.</div>';
+    h += '</div>';
+  } else {
+    // Show completed signature
+    if (ra.signature) {
+      h += '<div style="padding:16px">';
+      h += '<div style="background:#fff;border-radius:12px;padding:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end">';
+      h += '<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:6px">Assessed By</div>';
+      h += '<div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(ra.assessedBy||'') + '</div></div>';
+      h += '<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:4px">Signature</div>';
+      h += '<img src="' + ra.signature + '" style="max-width:100%;border-radius:6px;border:1px solid #E3E7F0"></div>';
+      h += '<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:4px">Date</div>';
+      h += '<div style="font-size:14px;font-weight:700;color:#1C2333">' + fmtNice(ra.completedAt.slice(0,10)) + '</div></div>';
+      h += '</div>';
+      var redoId = dvRegFn(function(){ j.crewData.riskAssessment = {}; dvRenderRiskAssessment(jobId); });
+      h += '<button onclick="_dvRun(' + redoId + ')" style="width:100%;background:none;border:2px solid #E3E7F0;color:#7A849E;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;margin-top:8px">Re-do Assessment</button>';
+      h += '</div>';
+    }
   }
+
   h += '</div>';
   el('dv-risk-body').innerHTML = h;
+  if (!done) dvInitSigPad('dv-ra-sig');
 }
 
-function dvToggleRisk(jobId, itemId) {
-  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
-  if (!j) return;
-  if (!j.crewData) j.crewData = {};
-  if (!j.crewData.riskAssessment) j.crewData.riskAssessment = { items: {} };
-  if (!j.crewData.riskAssessment.items) j.crewData.riskAssessment.items = {};
-  j.crewData.riskAssessment.items[itemId] = !j.crewData.riskAssessment.items[itemId];
-  j.crewData.riskAssessment.started = true;
+// ── Y/N TOGGLE BUTTON ─────────────────────────────────────────────────
+function dvRaYNBtn(jobId, qId, side, val, current) {
+  var active = current === val;
+  var col    = val === 'Y' ? '#E44258' : '#00A86B';
+  var togId  = dvRegFn(function(){ dvRaToggle(jobId, qId, side, val); });
+  return '<div onclick="_dvRun(' + togId + ')" style="width:28px;height:22px;border-radius:5px;border:1.5px solid ' + (active?col:'#E3E7F0') + ';background:' + (active?col:'#fff') + ';color:' + (active?'#fff':'#B0BEC5') + ';font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer">' + val + '</div>';
+}
+
+// ── L/M/H RISK DROPDOWN ───────────────────────────────────────────────
+function dvRaRiskBtn(jobId, qId, side, current) {
+  var cols = { L:'#00A86B', M:'#FF9F1A', H:'#E44258' };
+  var h = '<div style="display:flex;gap:2px">';
+  ['L','M','H'].forEach(function(r){
+    var active = current === r;
+    var rId = dvRegFn(function(){ dvRaSetRisk(jobId, qId, side, r); });
+    h += '<div onclick="_dvRun(' + rId + ')" style="width:20px;height:18px;border-radius:4px;border:1.5px solid ' + (active?cols[r]:'#E3E7F0') + ';background:' + (active?cols[r]:'#fff') + ';color:' + (active?'#fff':'#B0BEC5') + ';font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;cursor:pointer">' + r + '</div>';
+  });
+  h += '</div>';
+  return h;
+}
+
+// ── TOGGLE Y/N ────────────────────────────────────────────────────────
+function dvRaToggle(jobId, qId, side, val) {
+  var j = jobs.filter(function(x){ return x.id===jobId; })[0]; if (!j) return;
+  if (!j.crewData.riskAssessment.answers) j.crewData.riskAssessment.answers = {};
+  var a = j.crewData.riskAssessment.answers[qId] || {};
+  if (side === 'col') { a.colYN = (a.colYN===val?null:val); if (a.colYN!=='Y') a.colRisk=null; }
+  else                { a.delYN = (a.delYN===val?null:val); if (a.delYN!=='Y') a.delRisk=null; }
+  j.crewData.riskAssessment.answers[qId] = a;
   saveData('job', j.id, j);
   dvRenderRiskAssessment(jobId);
 }
 
-function dvCompleteRisk(jobId) {
-  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
-  if (!j || !j.crewData || !j.crewData.riskAssessment) return;
-  j.crewData.riskAssessment.notes       = (el('dv-risk-notes')||{}).value || '';
-  j.crewData.riskAssessment.completedAt  = new Date().toISOString();
-  j.crewData.riskAssessment.completedBy  = window._driverName || 'Crew';
+function dvRaSetRisk(jobId, qId, side, level) {
+  var j = jobs.filter(function(x){ return x.id===jobId; })[0]; if (!j) return;
+  if (!j.crewData.riskAssessment.answers) j.crewData.riskAssessment.answers = {};
+  var a = j.crewData.riskAssessment.answers[qId] || {};
+  if (side==='col') a.colRisk=level; else a.delRisk=level;
+  j.crewData.riskAssessment.answers[qId] = a;
   saveData('job', j.id, j);
+  dvRenderRiskAssessment(jobId);
+}
+
+// ── COMMENT MODAL ─────────────────────────────────────────────────────
+function dvRaOpenComment(jobId, qId) {
+  var j = jobs.filter(function(x){ return x.id===jobId; })[0]; if (!j) return;
+  var a = (j.crewData.riskAssessment.answers||{})[qId] || {};
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:flex-end';
+  var section = DV_RA_SECTIONS.reduce(function(found,s){ return found||s.questions.filter(function(q){return q.id===qId;})[0]; }, null);
+  overlay.innerHTML = '<div style="background:#fff;border-radius:16px 16px 0 0;padding:20px;width:100%;box-sizing:border-box">'
+    + '<div style="font-size:13px;font-weight:800;color:#1C2333;margin-bottom:12px">' + esc(section?section.q:'Comment') + '</div>'
+    + '<textarea id="dv-ra-comment-input" rows="3" placeholder="Add notes, e.g. \'Pavement uneven outside front door\'" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box">' + esc(a.comment||'') + '</textarea>'
+    + '<div style="display:flex;gap:8px;margin-top:12px">'
+    + '<button onclick="this.closest(\'div[style*=fixed]\').remove()" style="flex:1;background:none;border:2px solid #E3E7F0;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#7A849E;cursor:pointer">Cancel</button>'
+    + '<button id="dv-ra-comment-save" style="flex:2;background:#0073EA;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:800;cursor:pointer">Save Note</button>'
+    + '</div></div>';
+  document.body.appendChild(overlay);
+  var saveBtn = document.getElementById('dv-ra-comment-save');
+  if (saveBtn) saveBtn.onclick = function() {
+    var txt = (document.getElementById('dv-ra-comment-input')||{}).value||'';
+    if (!j.crewData.riskAssessment.answers) j.crewData.riskAssessment.answers = {};
+    var ans = j.crewData.riskAssessment.answers[qId] || {};
+    ans.comment = txt;
+    j.crewData.riskAssessment.answers[qId] = ans;
+    saveData('job', j.id, j);
+    overlay.remove();
+    dvRenderRiskAssessment(jobId);
+  };
+}
+
+// ── COMPLETE ──────────────────────────────────────────────────────────
+function dvCompleteRiskAssessment(jobId) {
+  var j = jobs.filter(function(x){ return x.id===jobId; })[0]; if (!j) return;
+  var assessorEl = el('dv-ra-assessor');
+  if (!assessorEl || !assessorEl.value.trim()) { toast('Enter assessor name'); return; }
+  var canvas = el('dv-ra-sig');
+  if (canvas) {
+    var imgData = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+    var hasSig = false;
+    for (var i=3;i<imgData.length;i+=4){ if(imgData[i]>10){hasSig=true;break;} }
+    if (!hasSig) { toast('Signature required'); return; }
+    j.crewData.riskAssessment.signature = canvas.toDataURL('image/png');
+  }
+  j.crewData.riskAssessment.assessedBy   = assessorEl.value.trim();
+  j.crewData.riskAssessment.completedAt  = new Date().toISOString();
+  saveData('job', j.id, j);
+  toast('✓ Risk assessment complete');
   dvRenderRiskAssessment(jobId);
 }
 
@@ -19353,65 +19531,325 @@ function dvOpenFormsLibrary(jobId) {
 }
 
 var DV_FORMS_LIBRARY = [
-  {
-    id: 'damage_waiver',
-    label: 'Damage Waiver',
-    icon: '🛡',
-    sub: 'Client waives liability for specific pre-existing conditions',
-    status: 'Placeholder — form coming soon',
-    col: '#E44258'
-  },
-  {
-    id: 'long_walk',
-    label: 'Long Walk / Long Carry Form',
-    icon: '🚶',
-    sub: 'Record excess distance from vehicle to property',
-    status: 'Placeholder — form coming soon',
-    col: '#FF9F1A'
-  },
-  {
-    id: 'specialist_items',
-    label: 'Specialist Items Declaration',
-    icon: '💎',
-    sub: 'High value / antique / fragile item agreement',
-    status: 'Placeholder — form coming soon',
-    col: '#9B59B6'
-  },
-  {
-    id: 'third_party',
-    label: 'Third Party Access Form',
-    icon: '🔑',
-    sub: 'Authorisation for crew to access property without client present',
-    status: 'Placeholder — form coming soon',
-    col: '#0073EA'
-  },
-  {
-    id: 'packing_exclusion',
-    label: 'Packing Exclusion Notice',
-    icon: '📦',
-    sub: 'Items client is packing themselves — liability exclusion',
-    status: 'Placeholder — form coming soon',
-    col: '#00A86B'
-  },
+  { id:'damage_waiver',     label:'Damage Waiver',               icon:'🛡',  sub:'Client waives liability for specific pre-existing conditions', col:'#E44258' },
+  { id:'long_walk',         label:'Long Walk / Long Carry',      icon:'🚶',  sub:'Record excess distance from vehicle to property',              col:'#FF9F1A' },
+  { id:'specialist_items',  label:'Specialist Items Declaration', icon:'💎',  sub:'High-value, antique or fragile item agreement',               col:'#9B59B6' },
+  { id:'third_party',       label:'Third Party Access Form',     icon:'🔑',  sub:'Authorisation for crew to access without client present',      col:'#0073EA' },
+  { id:'packing_exclusion', label:'Packing Exclusion Notice',    icon:'📦',  sub:'Items client packs themselves — liability exclusion',          col:'#00A86B' },
 ];
 
 function dvRenderFormsLibrary(jobId) {
-  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
   if (!j) return;
-  var h = dvDarkHeader('Forms Library', j.client, 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
-  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 90px">';
-  h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#9A5600">⚠ Forms are currently placeholders. Full digital form capture is coming — content for each form will be added shortly.</div>';
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.forms) j.crewData.forms = {};
+  var forms = j.crewData.forms;
+
+  var completedCount = DV_FORMS_LIBRARY.filter(function(f){ return forms[f.id] && forms[f.id].completedAt; }).length;
+  var backId = dvRegFn(function(){ dvShowScreen('dv-screen-job'); dvRenderJobDetail(jobId); });
+  var h = dvDarkHeader('Forms Library', j.client, '_dvRun(' + backId + ')', completedCount + '/' + DV_FORMS_LIBRARY.length, '#9B59B6');
+  h += '<div style="padding:14px 16px 90px">';
+
   DV_FORMS_LIBRARY.forEach(function(form) {
-    h += '<div style="background:#fff;border-radius:12px;margin-bottom:10px;padding:14px 16px;border-left:4px solid ' + form.col + ';display:flex;align-items:center;gap:14px">';
+    var saved = forms[form.id];
+    var done  = !!(saved && saved.completedAt);
+    var openId = dvRegFn(function(){ dvOpenForm(jobId, form.id); });
+    h += '<div onclick="_dvRun(' + openId + ')" style="background:#fff;border-radius:12px;margin-bottom:10px;padding:14px 16px;border-left:4px solid ' + form.col + ';display:flex;align-items:center;gap:14px;cursor:pointer">';
     h += '<div style="width:42px;height:42px;border-radius:10px;background:' + form.col + '22;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">' + form.icon + '</div>';
-    h += '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1C2333">' + form.label + '</div>';
-    h += '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + form.sub + '</div>';
-    h += '<div style="font-size:11px;font-weight:600;color:' + form.col + ';margin-top:5px">→ ' + form.status + '</div>';
-    h += '</div></div>';
+    h += '<div style="flex:1">';
+    h += '<div style="font-size:14px;font-weight:700;color:#1C2333">' + esc(form.label) + '</div>';
+    h += '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + esc(form.sub) + '</div>';
+    if (done) {
+      h += '<div style="font-size:11px;font-weight:700;color:#00A86B;margin-top:5px">✓ Signed ' + fmtNice(saved.completedAt.slice(0,10)) + ' · ' + esc(saved.clientName||'') + '</div>';
+    } else {
+      h += '<div style="font-size:11px;font-weight:600;color:' + form.col + ';margin-top:5px">→ Tap to complete</div>';
+    }
+    h += '</div><div style="font-size:18px;color:' + (done?'#00A86B':'#C8C5BE') + '">' + (done?'✓':'›') + '</div>';
+    h += '</div>';
   });
   h += '</div>';
   el('dv-forms-body').innerHTML = h;
 }
+
+// ── OPEN INDIVIDUAL FORM ───────────────────────────────────────────────
+var _dvCurrentFormId = null;
+
+function dvOpenForm(jobId, formId) {
+  dvCurrentJobId   = jobId;
+  _dvCurrentFormId = formId;
+  dvShowScreen('dv-screen-form-detail');
+  dvRenderFormDetail(jobId, formId);
+}
+
+function dvRenderFormDetail(jobId, formId) {
+  var j    = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  if (!j.crewData)        j.crewData = {};
+  if (!j.crewData.forms)  j.crewData.forms = {};
+  var saved = j.crewData.forms[formId] || {};
+  var form  = DV_FORMS_LIBRARY.filter(function(f){ return f.id === formId; })[0];
+  if (!form) return;
+
+  var backId = dvRegFn(function(){ dvShowScreen('dv-screen-forms'); dvRenderFormsLibrary(jobId); });
+  var h = dvDarkHeader(form.icon + ' ' + form.label, j.client, '_dvRun(' + backId + ')');
+  h += '<div style="padding:14px 16px 100px">';
+
+  // ── Already signed: show summary ──
+  if (saved.completedAt) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:12px 14px;margin-bottom:16px">';
+    h += '<div style="font-size:13px;font-weight:800;color:#00A86B">✓ Signed & Saved</div>';
+    h += '<div style="font-size:12px;color:#065F46;margin-top:3px">' + fmtNice(saved.completedAt.slice(0,10)) + ' · ' + esc(saved.clientName||'') + ' · ' + esc(saved.completedBy||'') + '</div>';
+    h += '</div>';
+    if (saved.signature) {
+      h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:14px;text-align:center">';
+      h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:8px;letter-spacing:.5px">Signature on File</div>';
+      h += '<img src="' + saved.signature + '" style="max-width:100%;border-radius:6px;border:1px solid #E3E7F0">';
+      h += '</div>';
+    }
+    h += dvFormDataSummary(formId, saved, form.col);
+    var redoId = dvRegFn(function(){ j.crewData.forms[formId] = {}; dvRenderFormDetail(jobId, formId); });
+    h += '<button onclick="_dvRun(' + redoId + ')" style="width:100%;background:none;border:2px solid #E3E7F0;color:#7A849E;border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;margin-top:6px">Re-do Form</button>';
+    h += '</div>';
+    el('dv-form-detail-body').innerHTML = h;
+    return;
+  }
+
+  // ── Job info banner ──
+  h += '<div style="background:#EBF4FF;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#0073EA">';
+  h += '<strong>' + esc(j.client) + '</strong>';
+  if (j.ref)   h += '&nbsp;·&nbsp;' + esc(j.ref);
+  if (j.origin) h += '<br><span style="opacity:.8">From: ' + esc(j.origin) + '</span>';
+  if (j.dest && j.dest !== 'INT STORE') h += '<span style="opacity:.8"> → ' + esc(j.dest) + '</span>';
+  h += '</div>';
+
+  // ── Form-specific fields ──
+  h += dvFormFields(formId, j, saved, form.col);
+
+  // ── Declaration ──
+  h += dvFormDeclaration(formId, form.col);
+
+  // ── Crew + client names ──
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">';
+  h += '<div><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Crew Member</div>';
+  h += '<input id="dv-form-crew" value="' + esc(window._driverName||'') + '" readonly style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;background:#F8F8F8;box-sizing:border-box"></div>';
+  h += '<div><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Client Name *</div>';
+  h += '<input id="dv-form-client-name" value="' + esc(saved.clientName||j.client||'') + '" placeholder="Print full name" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;box-sizing:border-box"></div>';
+  h += '</div>';
+
+  // ── Signature pad ──
+  h += '<div style="margin-bottom:16px">';
+  h += '<div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Client Signature *</div>';
+  h += '<canvas id="dv-form-sig-pad" width="488" height="150" style="width:100%;border:2px solid #E3E7F0;border-radius:10px;background:#fff;touch-action:none;display:block"></canvas>';
+  h += '<button onclick="dvClearCanvas(\'dv-form-sig-pad\')" style="margin-top:6px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:5px 12px;font-size:12px;color:#7A849E;cursor:pointer">Clear</button>';
+  h += '</div>';
+
+  var saveId = dvRegFn(function(){ dvSaveForm(jobId, formId); });
+  h += '<button onclick="_dvRun(' + saveId + ')" style="width:100%;background:' + form.col + ';color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">Sign & Save</button>';
+  h += '</div>';
+  el('dv-form-detail-body').innerHTML = h;
+  dvInitSigPad('dv-form-sig-pad');
+}
+
+// ── FORM-SPECIFIC INPUT FIELDS ─────────────────────────────────────────
+function dvFormFields(formId, j, saved, col) {
+  var h = '';
+
+  if (formId === 'damage_waiver') {
+    h += dvFormSectionHead('Pre-Existing Damage Items', col);
+    h += '<div style="background:#FFF5E0;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#9A5600">List each item the client confirms is pre-existing. The company bears no liability for these.</div>';
+    for (var i = 0; i < 5; i++) {
+      h += '<div style="background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;border:1.5px solid #E3E7F0">';
+      h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:6px;letter-spacing:.4px">Item ' + (i+1) + '</div>';
+      h += '<input id="dv-dw-item-' + i + '" value="' + esc(saved['item'+i]||'') + '" placeholder="Description and location, e.g. Scratch on hallway wall" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;box-sizing:border-box">';
+      h += '</div>';
+    }
+    h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px">Additional Notes</div>';
+    h += '<textarea id="dv-dw-notes" rows="2" placeholder="Any further context..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box">' + esc(saved.notes||'') + '</textarea></div>';
+  }
+
+  else if (formId === 'long_walk') {
+    h += dvFormSectionHead('Distance & Access Details', col);
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">';
+    h += '<div><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Estimated Distance</div>';
+    h += '<input id="dv-lw-dist" value="' + esc(saved.distance||'') + '" placeholder="e.g. 80m" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:14px;font-weight:700;box-sizing:border-box"></div>';
+    h += '<div><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Flights of Stairs</div>';
+    h += '<input id="dv-lw-stairs" type="number" min="0" value="' + esc(saved.stairs||'0') + '" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:14px;font-weight:700;box-sizing:border-box"></div>';
+    h += '</div>';
+    h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Route Description</div>';
+    h += '<textarea id="dv-lw-route" rows="2" placeholder="e.g. Long corridor, no lift, 3 flights of narrow stairs..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box">' + esc(saved.route||'') + '</textarea></div>';
+    h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Additional Charge Agreed (£)</div>';
+    h += '<input id="dv-lw-charge" type="number" min="0" value="' + esc(saved.charge||'') + '" placeholder="0" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:14px;font-weight:700;box-sizing:border-box"></div>';
+  }
+
+  else if (formId === 'specialist_items') {
+    h += dvFormSectionHead('Specialist / High-Value Items', col);
+    h += '<div style="background:#F5EEFF;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#6B21A8">Declare each item requiring specialist handling. Client is responsible for ensuring adequate insurance cover.</div>';
+    for (var si = 0; si < 4; si++) {
+      h += '<div style="background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;border:1.5px solid #E3E7F0">';
+      h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:8px;letter-spacing:.4px">Item ' + (si+1) + '</div>';
+      h += '<input id="dv-si-desc-' + si + '" value="' + esc(saved['siDesc'+si]||'') + '" placeholder="Item description" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:6px;box-sizing:border-box">';
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+      h += '<input id="dv-si-val-' + si + '" value="' + esc(saved['siVal'+si]||'') + '" placeholder="Est. value £" style="border:1.5px solid #E3E7F0;border-radius:8px;padding:8px 10px;font-size:13px;box-sizing:border-box">';
+      h += '<select id="dv-si-cat-' + si + '" style="border:1.5px solid #E3E7F0;border-radius:8px;padding:8px 10px;font-size:12px;color:#1C2333;background:#fff">';
+      ['— Category —','Antique','Artwork / Painting','Piano / Instrument','Electronics','Jewellery / Watch','Other High Value'].forEach(function(c){
+        h += '<option' + (saved['siCat'+si]===c?' selected':'') + '>' + c + '</option>';
+      });
+      h += '</select></div></div>';
+    }
+    h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Special Handling Instructions</div>';
+    h += '<textarea id="dv-si-notes" rows="2" placeholder="Any specific requirements..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box">' + esc(saved.siNotes||'') + '</textarea></div>';
+  }
+
+  else if (formId === 'third_party') {
+    h += dvFormSectionHead('Authorising Person Details', col);
+    h += '<div style="background:#EBF4FF;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#0058C7">Complete when the account holder is absent and a third party is granting access to the property.</div>';
+    h += '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Third Party Full Name</div>';
+    h += '<input id="dv-tp-name" value="' + esc(saved.tpName||'') + '" placeholder="Full name of person present" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;box-sizing:border-box"></div>';
+    h += '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Relationship to Account Holder</div>';
+    h += '<input id="dv-tp-relation" value="' + esc(saved.tpRelation||'') + '" placeholder="e.g. Spouse, Agent, Solicitor, Estate Agent" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;box-sizing:border-box"></div>';
+    h += '<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Contact Phone Number</div>';
+    h += '<input id="dv-tp-phone" type="tel" value="' + esc(saved.tpPhone||'') + '" placeholder="Mobile number" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;box-sizing:border-box"></div>';
+    h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:6px">Scope of Access</div>';
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px" id="dv-tp-scope-grid">';
+    ['Full property access','Origin address only','Delivery address only','Storage facility'].forEach(function(sc){
+      var active = saved.tpScope === sc;
+      h += '<div onclick="dvTpSelectScope(this,\'' + sc.replace(/'/g,"\\'") + '\')" data-scope="' + esc(sc) + '" style="padding:10px;border-radius:8px;border:1.5px solid ' + (active?'#0073EA':'#E3E7F0') + ';background:' + (active?'#EBF4FF':'#fff') + ';color:' + (active?'#0073EA':'#7A849E') + ';font-size:12px;font-weight:600;cursor:pointer;text-align:center">' + sc + '</div>';
+    });
+    h += '</div>';
+    h += '<input type="hidden" id="dv-tp-scope" value="' + esc(saved.tpScope||'') + '"></div>';
+  }
+
+  else if (formId === 'packing_exclusion') {
+    h += dvFormSectionHead('Client Self-Packed Items', col);
+    h += '<div style="background:#E6FFF5;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#065F46">List every item the client is packing themselves. The company accepts no liability for damage to these items.</div>';
+    for (var pi = 0; pi < 6; pi++) {
+      h += '<input id="dv-pe-item-' + pi + '" value="' + esc(saved['peItem'+pi]||'') + '" placeholder="Item ' + (pi+1) + ' — description" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:13px;margin-bottom:8px;box-sizing:border-box">';
+    }
+    h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Reason for Self-Packing</div>';
+    h += '<textarea id="dv-pe-reason" rows="2" placeholder="e.g. Personal items, client prefers to pack fragile items themselves..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box">' + esc(saved.peReason||'') + '</textarea></div>';
+  }
+
+  return h;
+}
+
+function dvFormSectionHead(label, col) {
+  return '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:' + col + ';margin-bottom:10px">' + label + '</div>';
+}
+
+// ── SCOPE SELECTOR (Third Party form) ─────────────────────────────────
+function dvTpSelectScope(el_clicked, scope) {
+  var grid = document.getElementById('dv-tp-scope-grid');
+  if (grid) grid.querySelectorAll('div').forEach(function(d){
+    d.style.borderColor = '#E3E7F0'; d.style.background = '#fff'; d.style.color = '#7A849E';
+  });
+  el_clicked.style.borderColor = '#0073EA';
+  el_clicked.style.background  = '#EBF4FF';
+  el_clicked.style.color       = '#0073EA';
+  var inp = document.getElementById('dv-tp-scope');
+  if (inp) inp.value = scope;
+}
+
+// ── DECLARATION TEXT ───────────────────────────────────────────────────
+function dvFormDeclaration(formId, col) {
+  var texts = {
+    damage_waiver:    'I confirm that the damage items listed above are pre-existing and were present before the removal company began work. I agree the removal company bears no liability for these conditions and that this form constitutes written acknowledgement of their pre-existing nature.',
+    long_walk:        'I confirm that the access route and distances described above were accurately recorded at the time of the move. I agree that any additional charge noted reflects the extra labour involved and was agreed verbally before work commenced.',
+    specialist_items: 'I declare the above items as specialist, high-value, antique or fragile. I agree they will be handled with extra care and I accept full responsibility for ensuring adequate insurance cover is in place. The removal company\'s liability is limited to proven negligence.',
+    third_party:      'I confirm that I am legally authorised by the account holder to grant access to the property and to oversee the removal on their behalf. I accept responsibility for any instructions given and decisions made in their absence.',
+    packing_exclusion:'I confirm that the items listed above will be packed by me personally using my own materials. I understand and accept that the removal company bears no liability for damage to self-packed items unless caused by their proven negligence during transit.',
+  };
+  return '<div style="background:#F8F8F8;border-radius:10px;padding:12px 14px;margin-bottom:14px;border-left:3px solid ' + col + '">'
+    + '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:6px;letter-spacing:.4px">Client Declaration</div>'
+    + '<div style="font-size:12px;color:#1C2333;line-height:1.65">' + (texts[formId]||'') + '</div>'
+    + '</div>';
+}
+
+// ── SIGNED SUMMARY VIEW ────────────────────────────────────────────────
+function dvFormDataSummary(formId, saved, col) {
+  var h = '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
+  h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px;letter-spacing:.4px">Recorded Data</div>';
+  if (formId === 'damage_waiver') {
+    for (var i=0;i<5;i++) if (saved['item'+i]) h += '<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #F0F4F8;color:#1C2333">🔸 ' + esc(saved['item'+i]) + '</div>';
+    if (saved.notes) h += '<div style="font-size:12px;color:#7A849E;margin-top:6px">' + esc(saved.notes) + '</div>';
+  } else if (formId === 'long_walk') {
+    if (saved.distance) h += dvSummaryRow('Distance', saved.distance);
+    if (saved.stairs)   h += dvSummaryRow('Stairs', saved.stairs + ' flights');
+    if (saved.charge)   h += dvSummaryRow('Extra charge', '£' + saved.charge);
+    if (saved.route)    h += '<div style="font-size:12px;color:#7A849E;margin-top:6px">' + esc(saved.route) + '</div>';
+  } else if (formId === 'specialist_items') {
+    for (var si=0;si<4;si++) if (saved['siDesc'+si]) h += '<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #F0F4F8">💎 ' + esc(saved['siDesc'+si]) + (saved['siVal'+si] ? ' — <strong>£' + esc(saved['siVal'+si]) + '</strong>' : '') + (saved['siCat'+si] && saved['siCat'+si]!=='— Category —' ? ' <span style="color:#9B59B6;font-size:11px">· ' + esc(saved['siCat'+si]) + '</span>' : '') + '</div>';
+    if (saved.siNotes) h += '<div style="font-size:12px;color:#7A849E;margin-top:6px">' + esc(saved.siNotes) + '</div>';
+  } else if (formId === 'third_party') {
+    if (saved.tpName)     h += dvSummaryRow('Name', saved.tpName);
+    if (saved.tpRelation) h += dvSummaryRow('Relationship', saved.tpRelation);
+    if (saved.tpPhone)    h += dvSummaryRow('Phone', saved.tpPhone);
+    if (saved.tpScope)    h += dvSummaryRow('Scope', saved.tpScope);
+  } else if (formId === 'packing_exclusion') {
+    for (var pi=0;pi<6;pi++) if (saved['peItem'+pi]) h += '<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #F0F4F8">📦 ' + esc(saved['peItem'+pi]) + '</div>';
+    if (saved.peReason) h += '<div style="font-size:12px;color:#7A849E;margin-top:6px">' + esc(saved.peReason) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function dvSummaryRow(label, value) {
+  return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #F0F4F8"><span style="font-size:12px;color:#7A849E">' + label + '</span><span style="font-size:13px;font-weight:700;color:#1C2333">' + esc(value) + '</span></div>';
+}
+
+// ── SAVE FORM ──────────────────────────────────────────────────────────
+function dvSaveForm(jobId, formId) {
+  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
+  if (!j) return;
+  var clientNameEl = el('dv-form-client-name');
+  if (!clientNameEl || !clientNameEl.value.trim()) { toast('Enter client name'); return; }
+  var canvas = el('dv-form-sig-pad');
+  if (!canvas) return;
+  var imgData = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+  var hasSig = false;
+  for (var i=3; i<imgData.length; i+=4) { if (imgData[i]>10) { hasSig=true; break; } }
+  if (!hasSig) { toast('Client signature required'); return; }
+
+  if (!j.crewData)        j.crewData = {};
+  if (!j.crewData.forms)  j.crewData.forms = {};
+
+  var data = {
+    completedAt: new Date().toISOString(),
+    completedBy: window._driverName || 'Crew',
+    clientName:  clientNameEl.value.trim(),
+    signature:   canvas.toDataURL('image/png'),
+  };
+
+  if (formId === 'damage_waiver') {
+    for (var i=0;i<5;i++) { var v=(el('dv-dw-item-'+i)||{}).value||''; if(v) data['item'+i]=v; }
+    data.notes = (el('dv-dw-notes')||{}).value||'';
+  } else if (formId === 'long_walk') {
+    data.distance = (el('dv-lw-dist')||{}).value||'';
+    data.stairs   = (el('dv-lw-stairs')||{}).value||'';
+    data.route    = (el('dv-lw-route')||{}).value||'';
+    data.charge   = (el('dv-lw-charge')||{}).value||'';
+  } else if (formId === 'specialist_items') {
+    for (var si=0;si<4;si++) {
+      data['siDesc'+si] = (el('dv-si-desc-'+si)||{}).value||'';
+      data['siVal'+si]  = (el('dv-si-val-'+si)||{}).value||'';
+      data['siCat'+si]  = (el('dv-si-cat-'+si)||{}).value||'';
+    }
+    data.siNotes = (el('dv-si-notes')||{}).value||'';
+  } else if (formId === 'third_party') {
+    data.tpName     = (el('dv-tp-name')||{}).value||'';
+    data.tpRelation = (el('dv-tp-relation')||{}).value||'';
+    data.tpPhone    = (el('dv-tp-phone')||{}).value||'';
+    data.tpScope    = (el('dv-tp-scope')||{}).value||'';
+  } else if (formId === 'packing_exclusion') {
+    for (var pi=0;pi<6;pi++) data['peItem'+pi] = (el('dv-pe-item-'+pi)||{}).value||'';
+    data.peReason = (el('dv-pe-reason')||{}).value||'';
+  }
+
+  j.crewData.forms[formId] = data;
+  saveData('job', j.id, j);
+  toast('✓ Form signed and saved');
+  dvRenderFormDetail(jobId, formId);
+}
+
 
 // ══════════════════════════════════════════════════════════════════════
 // PROPERTY WALKAROUND
