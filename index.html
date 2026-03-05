@@ -5040,7 +5040,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v77 — 5 Mar 2026';
+var APP_VERSION = 'v78 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -16293,15 +16293,10 @@ function buildEmailHtml(opts) {
   + '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:32px 16px">'
   + '<tr><td align="center">'
   + '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px">'
-  // Header — logo image if saved (white on transparent works perfectly here), else company name text
-  var logo = s.companyLogo || '';
-  var logoHtml = logo
-    ? '<img src="' + logo + '" alt="' + esc(company) + '" style="max-height:56px;max-width:220px;object-fit:contain;display:block">'
-    : '<div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.3px">' + esc(company) + '</div>';
   // Header
   + '<tr><td style="background:' + accent + ';border-radius:12px 12px 0 0;padding:28px 40px">'
-  + logoHtml
-  + '<div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:' + (logo ? '8' : '3') + 'px">' + esc(tagline) + '</div>'
+  + (s.companyLogo ? '<img src="' + s.companyLogo + '" alt="' + esc(company) + '" style="max-height:56px;max-width:220px;object-fit:contain;display:block;margin-bottom:4px">' : '<div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.3px">' + esc(company) + '</div>')
+  + '<div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:3px">' + esc(tagline) + '</div>'
   + '</td></tr>'
   // Body
   + '<tr><td style="background:#ffffff;padding:40px;border-left:1px solid #d4e4ef;border-right:1px solid #d4e4ef">'
