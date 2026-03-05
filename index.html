@@ -5041,7 +5041,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v68 — 5 Mar 2026';
+var APP_VERSION = 'v69 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18694,7 +18694,7 @@ document.addEventListener('keydown', function(e) {
 var MSAL_CLIENT_ID = '8c6c6e1d-3d50-4fa5-8700-49989764860f';
 var MSAL_TENANT_ID = '52c88d8a-2382-40ad-afef-c6cb5d98820e';
 var MSAL_SP_OBJ_ID = 'cdcdfdaf-dc23-4c22-a86c-02002eccfc42';
-var GRAPH_SCOPES   = ['User.Read', 'User.ReadBasic.All', 'Directory.Read.All'];
+var GRAPH_SCOPES   = ['openid', 'profile', 'offline_access', 'User.Read', 'User.ReadBasic.All', 'Directory.Read.All'];
 
 // Use the exact origin — no trailing slash
 var MSAL_REDIRECT  = window.location.origin;
@@ -18784,7 +18784,10 @@ async function msalBoot() {
   }
 
   console.log('[MSAL] Boot. redirectUri:', MSAL_REDIRECT);
-  console.log('[MSAL] URL:', window.location.href);
+  console.log('[MSAL] Full URL:', window.location.href);
+  console.log('[MSAL] Search:', window.location.search);
+  console.log('[MSAL] Hash:', window.location.hash);
+  console.log('[MSAL] localStorage keys:', Object.keys(localStorage));
 
   // Detect if we are returning from a Microsoft redirect
   // (hash or search will contain 'code=' or 'error=')
@@ -18818,7 +18821,18 @@ async function msalBoot() {
     } else {
       console.log('[MSAL] handleRedirectPromise: null — hasCode was:', hasCode);
       if (hasCode) {
-        console.warn('[MSAL] Had code= in URL but got no token — likely state mismatch. Storage keys:', Object.keys(localStorage).filter(function(k){return k.indexOf('msal')>=0;}));
+        // Extract error details from the URL if Microsoft sent an error back
+        var urlParams = new URLSearchParams(window.location.search || window.location.hash.replace('#','?'));
+        var errCode = urlParams.get('error') || urlParams.get('error_codes');
+        var errDesc = urlParams.get('error_description');
+        console.warn('[MSAL] Had code/error in URL but got no token.');
+        console.warn('[MSAL] Error code:', errCode);
+        console.warn('[MSAL] Error description:', errDesc);
+        console.warn('[MSAL] MSAL storage keys:', Object.keys(localStorage).filter(function(k){return k.indexOf('msal')>=0;}));
+        if (errCode) {
+          msalShowError('Microsoft sign-in error: ' + (errDesc || errCode));
+          return;
+        }
       }
     }
 
