@@ -5040,7 +5040,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v78 — 5 Mar 2026';
+var APP_VERSION = 'v79 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -16295,7 +16295,9 @@ function buildEmailHtml(opts) {
   + '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px">'
   // Header
   + '<tr><td style="background:' + accent + ';border-radius:12px 12px 0 0;padding:28px 40px">'
-  + (s.companyLogo ? '<img src="' + s.companyLogo + '" alt="' + esc(company) + '" style="max-height:56px;max-width:220px;object-fit:contain;display:block;margin-bottom:4px">' : '<div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.3px">' + esc(company) + '</div>')
+  + (s.companyLogo
+    ? '<div style="width:180px;height:52px;background-image:url(' + s.companyLogo + ');background-repeat:no-repeat;background-size:contain;background-position:left center;margin-bottom:6px"></div>'
+    : '<div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.3px">' + esc(company) + '</div>')
   + '<div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:3px">' + esc(tagline) + '</div>'
   + '</td></tr>'
   // Body
