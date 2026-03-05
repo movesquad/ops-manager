@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OPS MANAGER</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Microsoft Authentication Library v2 (UMD build — exposes window.msal) -->
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+<script>
+// Fallback: if primary CDN fails, load from jsDelivr
+if (typeof msal === 'undefined') {
+  document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></scr'+'ipt>');
+}
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size:13.5px;background:#CBDDE9;color:#1C2333}
@@ -1226,8 +1234,6 @@ textarea.fi{resize:vertical;min-height:60px}
 .dv-form-card { transition: box-shadow .1s; }
 .dv-form-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
 </style>
-<!-- Microsoft Authentication Library -->
-<script src="https://alcdn.msauth.net/browser/3.27.0/js/msal-browser.min.js"></script>
 
 <!-- Login wall — shown until MSAL auth resolves -->
 <div id="msal-login-wall" style="
@@ -5038,7 +5044,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v57 — 5 Mar 2026';
+var APP_VERSION = 'v58 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18715,9 +18721,14 @@ async function msalBoot() {
     logoImg.src = APP_DEFAULT_LOGO || '';
   }
 
+  // Guard: if MSAL didn't load, show useful error
+  if (typeof msal === 'undefined') {
+    throw new Error('Microsoft sign-in library (MSAL) failed to load. Check your internet connection and that no browser extension is blocking Microsoft scripts, then refresh.');
+  }
+
   try {
     _msalApp = new msal.PublicClientApplication(MSAL_CONFIG);
-    await _msalApp.initialize();
+    // Note: .initialize() is MSAL v3 only — v2 doesn't need it
 
     // Handle redirect response (returning from Microsoft login page)
     var response = await _msalApp.handleRedirectPromise();
@@ -18798,11 +18809,15 @@ async function msalBoot() {
 }
 
 function msalLogin() {
+  if (typeof msal === 'undefined') {
+    var errEl = document.getElementById('msal-wall-error');
+    if (errEl) { errEl.style.display='block'; errEl.textContent='Microsoft sign-in library failed to load. Please check your internet connection and refresh the page.'; }
+    return;
+  }
   if (_msalApp) {
     _msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
   } else {
-    msal.PublicClientApplication.createPublicClientApplication(MSAL_CONFIG)
-      .then(function(app) { app.loginRedirect({ scopes: GRAPH_SCOPES }); });
+    new msal.PublicClientApplication(MSAL_CONFIG).loginRedirect({ scopes: GRAPH_SCOPES });
   }
 }
 
