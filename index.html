@@ -5041,7 +5041,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v69 — 5 Mar 2026';
+var APP_VERSION = 'v70 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18740,17 +18740,22 @@ function msalClearStorage() {
 function msalMakeApp() {
   return new msal.PublicClientApplication({
     auth: {
-      clientId:    MSAL_CLIENT_ID,
-      authority:   'https://login.microsoftonline.com/' + MSAL_TENANT_ID,
-      redirectUri: MSAL_REDIRECT,
+      clientId:                  MSAL_CLIENT_ID,
+      authority:                 'https://login.microsoftonline.com/' + MSAL_TENANT_ID,
+      redirectUri:               MSAL_REDIRECT,
       navigateToLoginRequestUrl: false,
+      // postLogoutRedirectUri matches redirectUri
+      postLogoutRedirectUri:     MSAL_REDIRECT,
     },
     cache: {
       cacheLocation:          'localStorage',
-      storeAuthStateInCookie: true,  // Safari ITP fallback — uses cookies for state
+      storeAuthStateInCookie: true,
     },
     system: {
-      allowRedirectInIframe: false,
+      allowRedirectInIframe:    false,
+      windowHashTimeout:        9000,
+      iframeHashTimeout:        9000,
+      loadFrameTimeout:         9000,
     }
   });
 }
@@ -18789,10 +18794,16 @@ async function msalBoot() {
   console.log('[MSAL] Hash:', window.location.hash);
   console.log('[MSAL] localStorage keys:', Object.keys(localStorage));
 
-  // Detect if we are returning from a Microsoft redirect
-  // (hash or search will contain 'code=' or 'error=')
-  var url     = window.location.href;
-  var hasCode = url.indexOf('code=') >= 0 || url.indexOf('error=') >= 0;
+  // Detect if we are returning from a Microsoft redirect.
+  // MSAL v2 with auth code flow puts code in search (?code=)
+  // but older implicit flow and some configs put it in hash (#code=)
+  // Check both, and also check for 'state=' which MSAL always includes
+  var search  = window.location.search || '';
+  var hash    = window.location.hash   || '';
+  var hasCode = search.indexOf('code=')  >= 0 || hash.indexOf('code=')  >= 0 ||
+                search.indexOf('error=') >= 0 || hash.indexOf('error=') >= 0 ||
+                search.indexOf('state=') >= 0 || hash.indexOf('state=') >= 0;
+  console.log('[MSAL] hasCode detection — search:', search, 'hash:', hash, 'hasCode:', hasCode);
 
   if (hasCode) {
     // Returning from Microsoft with an auth code.
@@ -18830,7 +18841,18 @@ async function msalBoot() {
         console.warn('[MSAL] Error description:', errDesc);
         console.warn('[MSAL] MSAL storage keys:', Object.keys(localStorage).filter(function(k){return k.indexOf('msal')>=0;}));
         if (errCode) {
-          msalShowError('Microsoft sign-in error: ' + (errDesc || errCode));
+          var friendlyMsg = errDesc || errCode;
+          // Common Entra errors with plain-English explanations
+          if (errCode && (errCode.indexOf('53003') >= 0 || errCode.indexOf('AADSTS53003') >= 0)) {
+            friendlyMsg = 'Access blocked by Conditional Access policy. Contact your IT admin.';
+          } else if (errCode && (errCode.indexOf('50076') >= 0 || errCode.indexOf('50079') >= 0)) {
+            friendlyMsg = 'Multi-factor authentication is required. Please complete MFA and try again.';
+          } else if (errCode && errCode.indexOf('700082') >= 0) {
+            friendlyMsg = 'Your refresh token has expired. Please sign in again.';
+          } else if (errCode && errCode.indexOf('50105') >= 0) {
+            friendlyMsg = 'Your account has not been assigned access to this app. Contact your administrator.';
+          }
+          msalShowError('Sign-in blocked: ' + friendlyMsg);
           return;
         }
       }
