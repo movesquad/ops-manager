@@ -5041,7 +5041,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v65 — 5 Mar 2026';
+var APP_VERSION = 'v66 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18726,16 +18726,35 @@ async function msalLogin() {
     msalShowError('Microsoft sign-in library failed to load. Please refresh the page.');
     return;
   }
+  // Re-initialise _msalApp fresh if needed (clears any stuck interaction state)
   try {
+    localStorage.clear();
+    sessionStorage.clear();
+    // Re-load preserved app data
+    if (typeof lsLoad === 'function') lsLoad();
+  } catch(e) {}
+
+  try {
+    _msalApp = new msal.PublicClientApplication({
+      auth: {
+        clientId:  MSAL_CLIENT_ID,
+        authority: 'https://login.microsoftonline.com/' + MSAL_TENANT_ID,
+      },
+      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
+    });
+    console.log('[MSAL] Fresh app instance created for login');
     msalWallMsg('Opening Microsoft sign-in…');
     var tokenResp = await _msalApp.acquireTokenPopup({ scopes: GRAPH_SCOPES });
     await msalHandleToken(tokenResp);
   } catch(e) {
     console.warn('[MSAL] Popup failed:', e.name, e.message);
     if (e.name === 'BrowserAuthError' && e.message.indexOf('popup_window_error') >= 0) {
-      msalShowError('Popup was blocked. Please allow popups for this site in your browser settings, then click Sign In again.');
-    } else if (e.name === 'UserCancelledError' || (e.message && e.message.indexOf('user_cancelled') >= 0)) {
+      msalShowError('Popup was blocked. Please allow popups for this site, then click Sign In again.');
+    } else if (e.message && (e.message.indexOf('user_cancelled') >= 0 || e.message.indexOf('cancelled') >= 0)) {
       msalShowError('Sign-in was cancelled. Click Sign In to try again.');
+    } else if (e.message && e.message.indexOf('interaction_in_progress') >= 0) {
+      // Still stuck — tell user exactly what to do
+      msalShowError('Browser sign-in state is stuck. Please close this tab, open a new one, and try again. If the problem persists, clear your browser cache.');
     } else {
       msalShowError('Sign-in failed: ' + (e.message || e.name));
     }
@@ -18799,21 +18818,23 @@ async function msalBoot() {
     return;
   }
 
-  // Clear any stale MSAL interaction state from previous sessions/loops.
-  // This prevents the "interaction_in_progress" error after redirect loops.
+  // Wipe ALL stale MSAL state. Preserve only app data keys (opsdata, APP_*).
+  // This is the only reliable fix for "interaction_in_progress" errors.
   try {
-    var keysToRemove = [];
+    var preserve = {};
     for (var i = 0; i < localStorage.length; i++) {
       var k = localStorage.key(i);
-      if (k && (k.indexOf('msal.') === 0 || k.indexOf('msal|') >= 0 ||
-          k.indexOf('interaction.status') >= 0 || k.indexOf('request.state') >= 0 ||
-          k.indexOf('nonce.idtoken') >= 0 || k.indexOf('pkce') >= 0)) {
-        keysToRemove.push(k);
+      if (k && (k === 'opsdata' || k.indexOf('APP_') === 0)) {
+        preserve[k] = localStorage.getItem(k);
       }
     }
-    keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
-    if (keysToRemove.length) console.log('[MSAL] Cleared', keysToRemove.length, 'stale MSAL keys from localStorage');
-  } catch(e) { /* storage access blocked — ignore */ }
+    localStorage.clear();
+    sessionStorage.clear();
+    Object.keys(preserve).forEach(function(k) { localStorage.setItem(k, preserve[k]); });
+    console.log('[MSAL] Storage cleared. Preserved keys:', Object.keys(preserve));
+  } catch(e) {
+    console.warn('[MSAL] Could not clear storage:', e.message);
+  }
 
   _msalApp = new msal.PublicClientApplication({
     auth: {
