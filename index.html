@@ -5076,7 +5076,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v89 — 5 Mar 2026';
+var APP_VERSION = 'v90 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -9837,62 +9837,184 @@ function whRenderRecordsInner(f) {
 // WAREHOUSE GRID RENDER — Audit-based layout
 // ═══════════════════════════════════════════════════════════════════
 
-var whZoomLevel  = 1;   // 0=compact 1=normal 2=large
-var whFilter     = '';  // client filter string
-var whSearchTerm = '';
+// ── FILTER STATE ─────────────────────────────────────────────────────
+var whZoomLevel    = 1;       // 0=compact 1=normal 2=large
+var whSearchTerm   = '';
+var whFilterBrand  = '';      // '' = all brands
+var whFilterStatus = '';      // '' | 'occupied' | 'empty' | 'tip' | 'gap'
+var whFilterAisle  = '';      // '' | 'A' | 'B'
+var whFilterClient = '';      // '' | client name
+var whHlLoc        = '';      // loc ID to flash after history close
 
+// ── AUDIT LOG ─────────────────────────────────────────────────────────
+// Each entry: { id, ts, locId, level, containerNo, client, brand,
+//              action, fromClient, fromContainer, notes, user }
+// action: 'audit_record' | 'move_in' | 'move_out' | 'move_between'
+//         | 'client_change' | 'container_swap' | 'mark_empty'
+//         | 'mark_tip' | 'note_added'
+var WH_AUDIT_LOG = [];
+
+(function seedAudit() {
+  var ts = '2026-03-05T09:00:00';
+  WH_LOCATIONS.forEach(function(loc) {
+    [['lower', loc.lower], ['upper', loc.upper]].forEach(function(pair) {
+      var lv = pair[0], sl = pair[1];
+      if (!sl || sl.type === 'GAP') return;
+      WH_AUDIT_LOG.push({
+        id: 'AL' + String(WH_AUDIT_LOG.length + 1).padStart(5, '0'),
+        ts: ts, locId: loc.id, level: lv,
+        containerNo: sl.container || '', client: sl.client || '',
+        brand: sl.brand || '', action: 'audit_record',
+        fromClient: '', fromContainer: '',
+        notes: 'March 2026 warehouse audit — baseline import', user: 'System',
+      });
+    });
+  });
+})();
+
+function whLogEntry(e) {
+  e.id   = 'AL' + String(WH_AUDIT_LOG.length + 1).padStart(5, '0');
+  e.ts   = e.ts || new Date().toISOString();
+  e.user = e.user || (window._authDisplayName || window._driverName || 'Admin');
+  WH_AUDIT_LOG.push(e);
+}
+
+function whLocHistory(locId) {
+  var cut = whAuditCutoff();
+  return WH_AUDIT_LOG.filter(function(e) { return e.locId === locId && e.ts >= cut; })
+    .sort(function(a, b) { return b.ts.localeCompare(a.ts); });
+}
+
+function whContainerHistory(cno) {
+  if (!cno) return [];
+  var u = cno.trim().toUpperCase(), cut = whAuditCutoff();
+  return WH_AUDIT_LOG.filter(function(e) {
+    return e.ts >= cut && (
+      (e.containerNo || '').toUpperCase() === u ||
+      (e.fromContainer || '').toUpperCase() === u
+    );
+  }).sort(function(a, b) { return b.ts.localeCompare(a.ts); });
+}
+
+function whAuditCutoff() {
+  var d = new Date(); d.setMonth(d.getMonth() - 24); return d.toISOString();
+}
+
+// ── ACTION META ───────────────────────────────────────────────────────
+var WH_ACT = {
+  audit_record:   { lbl: 'Audit baseline',           icon: '📋', col: '#7A849E' },
+  move_in:        { lbl: 'Container moved in',        icon: '⬇',  col: '#00A86B' },
+  move_out:       { lbl: 'Container moved out',       icon: '⬆',  col: '#E44258' },
+  move_between:   { lbl: 'Moved between locations',   icon: '↔',  col: '#0073EA' },
+  client_change:  { lbl: 'Client reassigned',         icon: '👤',  col: '#9B59B6' },
+  container_swap: { lbl: 'Container swapped',         icon: '🔄',  col: '#FF9F1A' },
+  mark_empty:     { lbl: 'Marked empty',              icon: '◻',  col: '#B0BEC5' },
+  mark_tip:       { lbl: 'Marked for TIP',            icon: '🗑',  col: '#FF6B00' },
+  note_added:     { lbl: 'Note added',                icon: '✏',  col: '#2DC4B2' },
+};
+
+// ═══════════════════════════════════════════════════════════════════════
+// WAREHOUSE GRID RENDER
+// ═══════════════════════════════════════════════════════════════════════
 function renderWhGrid() {
   var h = '';
 
-  // ── Toolbar ──────────────────────────────────────────────────────
-  h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
-  h += '<input id="wh-search" value="' + escH(whSearchTerm) + '" oninput="whSearchTerm=this.value;renderWhGrid()" placeholder="Search client or container…" style="border:1.5px solid var(--b1);border-radius:8px;padding:6px 10px;font-size:13px;flex:1;min-width:160px">';
-  h += '<button onclick="whZoom(-1)" style="' + whZoomBtnStyle() + '">−</button>';
-  h += '<button onclick="whZoom(1)"  style="' + whZoomBtnStyle() + '">+</button>';
-  h += '<button onclick="whSearchTerm=\'\';whFilter=\'\';renderWhGrid()" style="' + whZoomBtnStyle() + '">Clear</button>';
+  // ── Filter panel ─────────────────────────────────────────────────
+  h += '<div style="background:#fff;border:1px solid var(--b1);border-radius:10px;padding:13px 15px;margin-bottom:12px">';
+
+  // Row 1 — search + zoom
+  h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+  h += '<input id="wh-grid-search" value="' + escH(whSearchTerm) + '" oninput="whSearchTerm=this.value;renderWhGrid()" placeholder="🔍  Search client, container or location…" style="flex:1;min-width:0;border:1.5px solid var(--b1);border-radius:8px;padding:7px 11px;font-size:13px">';
+  h += '<button onclick="whZoom(-1)" style="' + _wbtn() + '">−</button>';
+  h += '<button onclick="whZoom(1)"  style="' + _wbtn() + '">+</button>';
   h += '</div>';
 
-  // ── Legend ────────────────────────────────────────────────────────
-  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;align-items:center">';
-  h += '<span style="font-size:11px;font-weight:700;color:var(--t3)">KEY:</span>';
-  [['#E8F0F8','Occupied'],['#F0F4F8','Empty container'],['diagonal','GAP — structural'],['#FFF3E0','TIP']].forEach(function(k){
-    var bg = k[0]==='diagonal'
-      ? 'repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px)'
-      : k[0];
-    h += '<div style="display:flex;align-items:center;gap:4px">';
-    h += '<div style="width:14px;height:14px;border-radius:3px;background:' + bg + ';border:1px solid #DDE8F0"></div>';
-    h += '<span style="font-size:11px;color:var(--t3)">' + k[1] + '</span></div>';
+  // Row 2 — filter chips
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+  h += '<span style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--t3)">Aisle:</span>';
+  [['', 'Both'], ['A', 'A'], ['B', 'B']].forEach(function(p) {
+    h += '<button onclick="whFilterAisle=\'' + p[0] + '\';renderWhGrid()" style="' + _wchip(whFilterAisle === p[0]) + '">' + p[1] + '</button>';
+  });
+
+  h += '<div style="width:1px;height:16px;background:var(--b1)"></div>';
+  h += '<span style="font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--t3)">Status:</span>';
+  [['', 'All'], ['occupied', 'Occupied'], ['empty', 'Empty'], ['tip', 'TIP'], ['gap', 'GAP']].forEach(function(p) {
+    h += '<button onclick="whFilterStatus=\'' + p[0] + '\';renderWhGrid()" style="' + _wchip(whFilterStatus === p[0]) + '">' + p[1] + '</button>';
+  });
+
+  h += '<div style="width:1px;height:16px;background:var(--b1)"></div>';
+
+  // Brand select
+  var brands = [];
+  WH_LOCATIONS.forEach(function(loc) {
+    [loc.lower, loc.upper].forEach(function(s) {
+      if (s && s.brand && brands.indexOf(s.brand) < 0) brands.push(s.brand);
+    });
+  });
+  brands.sort();
+  h += '<select onchange="whFilterBrand=this.value;renderWhGrid()" style="' + _wsel() + '">';
+  h += '<option value="">All brands</option>';
+  brands.forEach(function(b) {
+    h += '<option value="' + escH(b) + '"' + (whFilterBrand === b ? ' selected' : '') + '>' + escH(b) + '</option>';
+  });
+  h += '</select>';
+
+  // Client select
+  var clients = Object.keys(WH_CLIENT_COLOURS).sort();
+  h += '<select onchange="whFilterClient=this.value;renderWhGrid()" style="' + _wsel() + ';max-width:150px">';
+  h += '<option value="">All clients</option>';
+  clients.forEach(function(c) {
+    h += '<option value="' + escH(c) + '"' + (whFilterClient === c ? ' selected' : '') + '>' + escH(c) + '</option>';
+  });
+  h += '</select>';
+
+  var anyActive = whSearchTerm || whFilterBrand || whFilterStatus || whFilterAisle || whFilterClient;
+  if (anyActive) {
+    h += '<button onclick="whClearFilters()" style="' + _wchip(false) + ';color:#E44258;border-color:#E44258">✕ Clear</button>';
+  }
+  h += '</div>'; // chips row
+
+  // Stats row
+  var st = whGridStats();
+  h += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--b1)">';
+  [['Occupied', st.occupied, '#2872A1'], ['Empty', st.empty, '#7A849E'],
+   ['GAP', st.gaps, '#B0BEC5'], ['TIP', st.tip, '#FF6B00'],
+   ['Showing', st.showing + ' / ' + st.total + ' slots', '#00A86B']
+  ].forEach(function(r) {
+    h += '<div style="font-size:11px;color:' + r[2] + '"><b>' + r[1] + '</b> <span style="opacity:.65">' + r[0] + '</span></div>';
+  });
+  h += '</div>';
+  h += '</div>'; // filter panel
+
+  // ── Legend ───────────────────────────────────────────────────────
+  h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:center">';
+  [['#2872A122', 'Occupied', '#2872A1'], ['#F0F4F8', 'Empty', '#B0BEC5'],
+   ['diagonal', 'GAP', '#DDE8F0'], ['#FFF3E0', 'TIP', '#FF6B00']
+  ].forEach(function(k) {
+    var bg = k[0] === 'diagonal' ? 'repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px)' : k[0];
+    h += '<div style="display:flex;align-items:center;gap:4px"><div style="width:12px;height:12px;border-radius:2px;background:' + bg + ';border:1px solid ' + k[2] + '55"></div><span style="font-size:11px;color:var(--t3)">' + k[1] + '</span></div>';
   });
   h += '</div>';
 
-  var cellW = [48, 64, 84][whZoomLevel];
-  var cellH = [28, 36, 48][whZoomLevel];
-  var fontSize = [9, 11, 13][whZoomLevel];
+  var cellW = [44, 60, 80][whZoomLevel];
+  var cellH = [26, 34, 46][whZoomLevel];
+  var fs    = [9, 11, 13][whZoomLevel];
 
-  // ── Render one aisle ──────────────────────────────────────────────
-  function renderAisle(aisleLabel, cols) {
-    var ah = '';
-    ah += '<div style="margin-bottom:20px">';
-    ah += '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#2872A1;margin-bottom:6px">Aisle ' + aisleLabel + '</div>';
-    ah += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">';
-    ah += '<table style="border-collapse:collapse;white-space:nowrap">';
-
-    // Column header row
-    ah += '<tr>';
-    ah += '<td style="font-size:9px;font-weight:700;color:var(--t3);padding:2px 6px 2px 0;text-align:right;white-space:nowrap">Depth</td>';
-    cols.forEach(function(colId){
-      ah += '<td colspan="1" style="font-size:10px;font-weight:800;color:#2872A1;text-align:center;padding:2px 1px;min-width:' + (cellW) + 'px">' + colId + '</td>';
+  function renderAisle(label, cols) {
+    if (whFilterAisle && whFilterAisle !== label) return '';
+    var ah = '<div style="margin-bottom:20px">';
+    ah += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;color:#2872A1;background:#EBF4FF;border-radius:6px;padding:4px 10px;display:inline-block;margin-bottom:8px;cursor:pointer" onclick="whOpenColHistory(\'' + label + '\')" title="View full aisle history">▶ Aisle ' + label + ' — click for history</div>';
+    ah += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="border-collapse:collapse;white-space:nowrap"><tr>';
+    ah += '<td style="font-size:9px;font-weight:700;color:var(--t3);padding:2px 6px 2px 0;text-align:right">Depth ▾</td>';
+    cols.forEach(function(colId) {
+      ah += '<td style="font-size:10px;font-weight:800;color:#2872A1;text-align:center;padding:2px 1px;min-width:' + cellW + 'px;cursor:pointer" onclick="whOpenColHistory(null,\'' + colId + '\')" title="Column ' + colId + ' history">' + colId + '</td>';
     });
     ah += '</tr>';
-
-    // Depth rows 1-5 (front to back)
-    for (var depth = 1; depth <= 5; depth++) {
+    for (var d = 1; d <= 5; d++) {
       ah += '<tr>';
-      ah += '<td style="font-size:9px;color:var(--t3);padding:1px 6px 1px 0;text-align:right;vertical-align:middle">D' + depth + '</td>';
-      cols.forEach(function(colId){
-        var locId = colId + '-D' + depth;
-        var loc = whGetLoc(locId);
-        ah += renderWhCell(loc, colId, depth, cellW, cellH, fontSize);
+      ah += '<td style="font-size:9px;color:var(--t3);padding:1px 6px 1px 0;text-align:right;vertical-align:middle;cursor:pointer" onclick="whOpenRowHistory(\'' + label + '\',' + d + ')" title="Depth ' + d + ' row history">D' + d + '</td>';
+      cols.forEach(function(colId) {
+        ah += renderWhCell(whGetLoc(colId + '-D' + d), cellW, cellH, fs);
       });
       ah += '</tr>';
     }
@@ -9902,159 +10024,342 @@ function renderWhGrid() {
 
   h += renderAisle('A', WH_AISLE_A_COLS);
   h += renderAisle('B', WH_AISLE_B_COLS);
-
-  // ── Client index ──────────────────────────────────────────────────
   h += renderWhClientIndex();
 
-  var _out=el('wh-out');if(_out)_out.innerHTML='<div id="wh-grid-body" style="padding-bottom:40px">'+h+'</div>';
+  var out = el('wh-out');
+  if (out) out.innerHTML = '<div id="wh-grid-body" style="padding-bottom:40px">' + h + '</div>';
+
+  if (whHlLoc) {
+    var hlId = whHlLoc; whHlLoc = '';
+    setTimeout(function() {
+      var cell = document.querySelector('[data-loc="' + hlId + '"]');
+      if (cell) {
+        cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        cell.style.outline = '3px solid #FF9F1A';
+        cell.style.borderRadius = '4px';
+        setTimeout(function() { cell.style.outline = ''; }, 2500);
+      }
+    }, 200);
+  }
 }
 
-function renderWhCell(loc, colId, depth, cellW, cellH, fontSize) {
+function _wchip(on) {
+  return 'border:1.5px solid ' + (on ? '#2872A1' : 'var(--b1)') + ';background:' + (on ? '#EBF4FF' : '#fff') + ';color:' + (on ? '#2872A1' : 'var(--t2)') + ';border-radius:20px;padding:4px 12px;font-size:11px;font-weight:' + (on ? '800' : '600') + ';cursor:pointer';
+}
+function _wsel() {
+  return 'border:1.5px solid var(--b1);border-radius:20px;padding:4px 10px;font-size:12px;font-weight:600;color:var(--t2);background:#fff;cursor:pointer';
+}
+function _wbtn() {
+  return 'background:#F0F4F8;border:1px solid var(--b1);border-radius:6px;padding:5px 11px;font-size:13px;font-weight:700;cursor:pointer;color:var(--t2);flex-shrink:0';
+}
+
+function whClearFilters() {
+  whSearchTerm = ''; whFilterBrand = ''; whFilterStatus = '';
+  whFilterAisle = ''; whFilterClient = '';
+  renderWhGrid();
+}
+
+function whGridStats() {
+  var occupied = 0, empty = 0, gaps = 0, tip = 0, showing = 0, total = 0;
+  WH_LOCATIONS.forEach(function(loc) {
+    if (whFilterAisle && loc.aisle !== whFilterAisle) return;
+    [loc.lower, loc.upper].forEach(function(s) {
+      if (!s) return;
+      total++;
+      if (whSlotPasses(s)) showing++;
+      if (s.type === 'OCCUPIED') occupied++;
+      else if (s.type === 'EMPTY') empty++;
+      else if (s.type === 'GAP')  gaps++;
+      else if (s.type === 'TIP')  tip++;
+    });
+  });
+  return { occupied: occupied, empty: empty, gaps: gaps, tip: tip, showing: showing, total: total };
+}
+
+function whSlotPasses(slot) {
+  if (!slot) return false;
+  if (whFilterStatus === 'occupied' && slot.type !== 'OCCUPIED') return false;
+  if (whFilterStatus === 'empty'    && slot.type !== 'EMPTY')    return false;
+  if (whFilterStatus === 'tip'      && slot.type !== 'TIP')      return false;
+  if (whFilterStatus === 'gap'      && slot.type !== 'GAP')      return false;
+  if (whFilterBrand  && (slot.brand  || '') !== whFilterBrand)   return false;
+  if (whFilterClient && (slot.client || '') !== whFilterClient)  return false;
+  if (whSearchTerm) {
+    var q = whSearchTerm.toLowerCase();
+    if (!(slot.client || '').toLowerCase().includes(q) &&
+        !(slot.container || '').toLowerCase().includes(q)) return false;
+  }
+  return true;
+}
+
+function renderWhCell(loc, cellW, cellH, fs) {
   if (!loc) {
-    return '<td style="width:' + cellW + 'px;padding:1px"><div style="width:' + cellW + 'px;height:' + (cellH*2+2) + 'px;background:#F8FAFC;border:1px solid #EEF2F6;border-radius:4px"></div></td>';
+    return '<td style="width:' + cellW + 'px;padding:1px"><div style="width:' + cellW + 'px;height:' + (cellH * 2 + 2) + 'px;background:#F8FAFC;border:1px solid #EEF2F6;border-radius:4px"></div></td>';
+  }
+  var lower = loc.lower, upper = loc.upper, locId = loc.id;
+  var anyFilter = whSearchTerm || whFilterBrand || whFilterStatus || whFilterClient;
+
+  if (lower && lower.type === 'GAP' && upper && upper.type === 'GAP') {
+    return '<td style="width:' + cellW + 'px;padding:1px"><div data-loc="' + locId + '" onclick="whOpenLoc(\'' + locId + '\')" style="width:' + cellW + 'px;height:' + (cellH * 2 + 2) + 'px;background:repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px);border:1px solid #DDE8F0;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer"><span style="font-size:8px;color:#B0BEC5;font-weight:700">GAP</span></div></td>';
   }
 
-  var lower = loc.lower;
-  var upper = loc.upper;
-
-  // Both GAP
-  if (lower && lower.type==='GAP' && upper && upper.type==='GAP') {
-    return '<td style="width:' + cellW + 'px;padding:1px"><div style="width:' + cellW + 'px;height:' + (cellH*2+2) + 'px;background:repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px);border:1px solid #DDE8F0;border-radius:4px;display:flex;align-items:center;justify-content:center"><span style="font-size:9px;color:#B0BEC5;font-weight:700">GAP</span></div></td>';
-  }
-
-  var locId = loc.id;
-  var openId = 'whOpenLoc(\'' + locId + '\')';
-
-  var search = whSearchTerm.toLowerCase();
-  function slotMatch(slot) {
-    if (!slot || !search) return true;
-    return (slot.client||'').toLowerCase().includes(search) ||
-           (slot.container||'').toLowerCase().includes(search);
-  }
-  var anyMatch = !search || slotMatch(lower) || slotMatch(upper);
-  var opacity = anyMatch ? '1' : '0.18';
-
-  var html = '<td style="width:' + cellW + 'px;padding:1px;opacity:' + opacity + '">';
-  html += '<div onclick="' + openId + '" style="cursor:pointer;display:flex;flex-direction:column;gap:1px">';
-
-  // Render each level
+  var html = '<td style="width:' + cellW + 'px;padding:1px"><div data-loc="' + locId + '" onclick="whOpenLoc(\'' + locId + '\')" style="cursor:pointer;display:flex;flex-direction:column;gap:1px">';
   [['upper', upper], ['lower', lower]].forEach(function(pair) {
-    var level = pair[0], slot = pair[1];
-    var bg, textCol, label;
-
-    if (!slot) {
-      bg = '#F8FAFC'; textCol = '#ccc'; label = '';
-    } else if (slot.type === 'GAP') {
-      bg = 'repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px)';
-      textCol = '#B0BEC5'; label = 'GAP';
-    } else if (slot.type === 'EMPTY') {
-      bg = '#F0F4F8'; textCol = '#B0BEC5'; label = slot.container || 'EMPTY';
-    } else if (slot.type === 'TIP') {
-      bg = '#FFF3E0'; textCol = '#FF6B00'; label = 'TIP ' + (slot.container||'');
-    } else {
-      var col = whClientColour(slot.client);
-      bg = col + '22';
-      textCol = col;
-      label = slot.client || '';
+    var lv = pair[0], sl = pair[1];
+    var dim = anyFilter && !whSlotPasses(sl) ? '0.1' : '1';
+    var bg, bc, tc, lbl;
+    if (!sl)                   { bg = '#F8FAFC'; bc = '#EEF2F6'; tc = '#ccc'; lbl = ''; }
+    else if (sl.type === 'GAP')   { bg = 'repeating-linear-gradient(45deg,#E3E7F0,#E3E7F0 3px,#fff 3px,#fff 8px)'; bc = '#DDE8F0'; tc = '#B0BEC5'; lbl = 'GAP'; }
+    else if (sl.type === 'EMPTY') { bg = '#F0F4F8'; bc = '#DDE8F0'; tc = '#B0BEC5'; lbl = sl.container || 'EMPTY'; }
+    else if (sl.type === 'TIP')   { bg = '#FFF3E0'; bc = '#FFD59E'; tc = '#FF6B00'; lbl = 'TIP ' + (sl.container || ''); }
+    else {
+      var col = whClientColour(sl.client);
+      bg = col + '22'; bc = col + '55'; tc = col; lbl = sl.client || '';
     }
-
-    html += '<div style="width:' + cellW + 'px;height:' + cellH + 'px;background:' + bg + ';border:1px solid ' + (slot&&slot.type==='OCCUPIED'?whClientColour(slot.client)+'44':'#DDE8F0') + ';border-radius:3px;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:1px 3px;box-sizing:border-box">';
-    html += '<div style="font-size:' + (fontSize-1) + 'px;font-weight:700;color:' + textCol + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.1">' + escH(label) + '</div>';
-    if (slot && slot.container && slot.type!=='GAP' && fontSize >= 11) {
-      html += '<div style="font-size:' + (fontSize-3) + 'px;color:' + textCol + ';opacity:.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escH(slot.container) + '</div>';
+    html += '<div style="width:' + cellW + 'px;height:' + cellH + 'px;background:' + bg + ';border:1px solid ' + bc + ';border-radius:3px;overflow:hidden;display:flex;flex-direction:column;justify-content:center;padding:1px 3px;box-sizing:border-box;opacity:' + dim + '">';
+    html += '<div style="font-size:' + (fs - 1) + 'px;font-weight:700;color:' + tc + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.1">' + escH(lbl) + '</div>';
+    if (sl && sl.container && sl.type !== 'GAP' && fs >= 11) {
+      html += '<div style="font-size:' + (fs - 3) + 'px;color:' + tc + ';opacity:.55;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escH(sl.container) + '</div>';
     }
     html += '</div>';
   });
-
   html += '</div></td>';
   return html;
 }
 
 function renderWhClientIndex() {
-  // Count containers per client
   var counts = {};
   WH_LOCATIONS.forEach(function(loc) {
-    [loc.lower, loc.upper, loc.third].forEach(function(slot) {
-      if (slot && slot.type==='OCCUPIED' && slot.client) {
-        counts[slot.client] = (counts[slot.client]||0) + 1;
-      }
+    [loc.lower, loc.upper, loc.third].forEach(function(s) {
+      if (s && s.type === 'OCCUPIED' && s.client) counts[s.client] = (counts[s.client] || 0) + 1;
     });
   });
-  var sorted = Object.keys(counts).sort(function(a,b){ return counts[b]-counts[a]; });
-
-  var h = '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--b1)">';
-  h += '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--t3);margin-bottom:10px">Client Index (' + sorted.length + ' clients, ' + Object.values(counts).reduce(function(a,b){return a+b;},0) + ' containers)</div>';
-  h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+  var sorted = Object.keys(counts).sort(function(a, b) { return counts[b] - counts[a]; });
+  var total  = Object.values(counts).reduce(function(a, b) { return a + b; }, 0);
+  var h = '<div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--b1)">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin-bottom:8px">Client Index — ' + sorted.length + ' clients · ' + total + ' containers</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:5px">';
   sorted.forEach(function(client) {
     var col = whClientColour(client);
-    h += '<div onclick="whSearchTerm=\'' + escH(client) + '\';renderWhGrid()" style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:20px;border:1.5px solid ' + col + ';background:' + col + '15;cursor:pointer">';
-    h += '<div style="width:8px;height:8px;border-radius:50%;background:' + col + ';flex-shrink:0"></div>';
-    h += '<span style="font-size:12px;font-weight:700;color:' + col + '">' + escH(client) + '</span>';
-    h += '<span style="font-size:11px;color:var(--t3)">' + counts[client] + '</span>';
+    var on  = whFilterClient === client;
+    h += '<div onclick="whFilterClient=(whFilterClient===\'' + escH(client) + '\'?\'\':' + '\'' + escH(client) + '\');renderWhGrid()" style="display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;border:1.5px solid ' + (on ? col : '#E3E7F0') + ';background:' + (on ? col + '22' : '#fff') + ';cursor:pointer">';
+    h += '<div style="width:7px;height:7px;border-radius:50%;background:' + col + '"></div>';
+    h += '<span style="font-size:11px;font-weight:700;color:' + col + '">' + escH(client) + '</span>';
+    h += '<span style="font-size:10px;color:var(--t3)">' + counts[client] + '</span>';
     h += '</div>';
   });
   h += '</div></div>';
   return h;
 }
 
-// ── LOCATION DETAIL MODAL ─────────────────────────────────────────────
+function whZoom(dir) { whZoomLevel = Math.max(0, Math.min(2, whZoomLevel + dir)); renderWhGrid(); }
+
+// ═══════════════════════════════════════════════════════════════════════
+// LOCATION DETAIL MODAL — with history shortcuts
+// ═══════════════════════════════════════════════════════════════════════
 function whOpenLoc(locId) {
   var loc = whGetLoc(locId);
   if (!loc) return;
 
-  var overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
-
-  function slotHtml(slot, levelLabel) {
-    if (!slot) return '';
-    var sh = '<div style="padding:10px 0;border-bottom:1px solid #F0F4F8">';
-    sh += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;letter-spacing:.5px;margin-bottom:4px">' + levelLabel + '</div>';
-    if (slot.type==='GAP') {
-      sh += '<div style="font-size:13px;color:#B0BEC5;font-weight:700">⛔ Structural GAP — unusable</div>';
-    } else if (slot.type==='EMPTY') {
-      sh += '<div style="font-size:13px;font-weight:700;color:#7A849E">Empty container</div>';
-      if (slot.container) sh += '<div style="font-size:12px;color:#B0BEC5">Ref: ' + escH(slot.container) + '</div>';
-      if (slot.brand)     sh += '<div style="font-size:11px;color:#B0BEC5">Brand: ' + escH(slot.brand) + '</div>';
-    } else if (slot.type==='TIP') {
-      sh += '<div style="font-size:13px;font-weight:700;color:#FF6B00">🗑 TIP — dispose</div>';
-      if (slot.container) sh += '<div style="font-size:12px;color:#B0BEC5">Ref: ' + escH(slot.container) + '</div>';
-    } else {
-      var col = whClientColour(slot.client);
-      sh += '<div style="font-size:15px;font-weight:800;color:' + col + '">' + escH(slot.client) + '</div>';
-      if (slot.container) sh += '<div style="font-size:12px;color:#7A849E;margin-top:2px">Container: <strong>' + escH(slot.container) + '</strong></div>';
-      if (slot.brand)     sh += '<div style="font-size:11px;color:#B0BEC5;margin-top:1px">Brand: ' + escH(slot.brand) + '</div>';
-      if (slot.notes)     sh += '<div style="font-size:11px;color:#FF9F1A;margin-top:3px;background:#FFF3E0;border-radius:6px;padding:3px 8px">⚠ ' + escH(slot.notes) + '</div>';
+  function slotCard(sl, levelLabel, lv) {
+    if (!sl) return '';
+    var s = '<div style="padding:11px 0;border-bottom:1px solid #F5F7FA">';
+    s += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">';
+    s += '<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#7A849E">' + levelLabel + '</span>';
+    if (sl.container && sl.type !== 'GAP') {
+      s += '<button onclick="whOpenContainerHistory(\'' + escH(sl.container) + '\')" style="font-size:11px;background:#EBF4FF;border:none;border-radius:5px;padding:3px 9px;color:#0073EA;font-weight:700;cursor:pointer">📋 Container history</button>';
     }
-    sh += '</div>';
-    return sh;
+    s += '</div>';
+    if (sl.type === 'GAP') {
+      s += '<div style="font-size:13px;font-weight:700;color:#B0BEC5">⛔ Structural GAP — cannot place containers here</div>';
+    } else if (sl.type === 'EMPTY') {
+      s += '<div style="font-size:13px;font-weight:700;color:#7A849E">Empty container</div>';
+      if (sl.container) s += '<div style="font-size:12px;color:#B0BEC5;margin-top:2px">Ref: <b>' + escH(sl.container) + '</b></div>';
+      if (sl.brand)     s += '<div style="font-size:11px;color:#B0BEC5">Brand: ' + escH(sl.brand) + '</div>';
+    } else if (sl.type === 'TIP') {
+      s += '<div style="font-size:13px;font-weight:700;color:#FF6B00">🗑 Marked for TIP</div>';
+      if (sl.container) s += '<div style="font-size:12px;color:#B0BEC5;margin-top:2px">Ref: ' + escH(sl.container) + '</div>';
+    } else {
+      var col = whClientColour(sl.client);
+      s += '<div style="font-size:15px;font-weight:800;color:' + col + '">' + escH(sl.client) + '</div>';
+      if (sl.container) s += '<div style="font-size:12px;color:#7A849E;margin-top:2px">Container: <b>' + escH(sl.container) + '</b></div>';
+      if (sl.brand)     s += '<div style="font-size:11px;color:#B0BEC5;margin-top:1px">Brand: ' + escH(sl.brand) + '</div>';
+      if (sl.notes)     s += '<div style="font-size:11px;color:#FF9F1A;margin-top:4px;background:#FFF3E0;border-radius:6px;padding:4px 9px">⚠ ' + escH(sl.notes) + '</div>';
+    }
+    s += '</div>';
+    return s;
   }
 
-  var bh = '<div style="background:#fff;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;box-sizing:border-box;max-height:80vh;overflow-y:auto">';
+  var ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+  var bh = '<div style="background:#fff;border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:520px;box-sizing:border-box;max-height:84vh;overflow-y:auto">';
   bh += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
-  bh += '<div>';
-  bh += '<div style="font-size:18px;font-weight:800;color:#1C2333">Location ' + escH(loc.id) + '</div>';
-  bh += '<div style="font-size:12px;color:#7A849E">Aisle ' + loc.aisle + ' · Column ' + loc.col + ' · Depth ' + loc.depth + '</div>';
-  bh += '</div>';
+  bh += '<div><div style="font-size:18px;font-weight:800;color:#1C2333">' + escH(locId) + '</div>';
+  bh += '<div style="font-size:12px;color:#7A849E">Aisle ' + loc.aisle + ' · Column ' + loc.col + ' · Depth ' + loc.depth + '</div></div>';
+  bh += '<div style="display:flex;gap:6px">';
+  bh += '<button onclick="this.closest(\'[style*=fixed]\').remove();whOpenLocHistory(\'' + escH(locId) + '\')" style="font-size:12px;font-weight:700;background:#EBF4FF;border:none;border-radius:8px;padding:6px 12px;color:#0073EA;cursor:pointer">📋 Location history</button>';
   bh += '<button onclick="this.closest(\'[style*=fixed]\').remove()" style="background:#F0F4F8;border:none;border-radius:8px;width:32px;height:32px;font-size:18px;cursor:pointer;color:#7A849E">×</button>';
+  bh += '</div></div>';
+  bh += slotCard(loc.upper, 'Upper container', 'upper');
+  bh += slotCard(loc.lower, 'Lower container', 'lower');
+  if (loc.third) bh += slotCard(loc.third, 'Third level', 'third');
+  bh += '<button onclick="this.closest(\'[style*=fixed]\').remove()" style="width:100%;background:#F0F4F8;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#7A849E;cursor:pointer;margin-top:12px">Close</button>';
   bh += '</div>';
-  bh += slotHtml(loc.upper, 'Upper container');
-  bh += slotHtml(loc.lower, 'Lower container');
-  if (loc.third) bh += slotHtml(loc.third, 'Third level (small containers)');
-  bh += '<button onclick="this.closest(\'[style*=fixed]\').remove()" style="width:100%;background:#F0F4F8;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;color:#7A849E;cursor:pointer;margin-top:14px">Close</button>';
-  bh += '</div>';
-
-  overlay.innerHTML = bh;
-  document.body.appendChild(overlay);
-  overlay.onclick = function(e){ if(e.target===overlay) overlay.remove(); };
+  ov.innerHTML = bh;
+  document.body.appendChild(ov);
+  ov.onclick = function(e) { if (e.target === ov) ov.remove(); };
 }
 
-function whZoom(dir) {
-  whZoomLevel = Math.max(0, Math.min(2, whZoomLevel + dir));
-  renderWhGrid();
+// ═══════════════════════════════════════════════════════════════════════
+// AUDIT HISTORY MODALS
+// ═══════════════════════════════════════════════════════════════════════
+function whOpenLocHistory(locId) {
+  var entries = whLocHistory(locId);
+  whShowHistory('Location History', locId, entries, function() { whHlLoc = locId; renderWhGrid(); });
 }
 
-function whZoomBtnStyle() {
-  return 'background:#F0F4F8;border:1px solid var(--b1);border-radius:6px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer;color:var(--t2)';
+function whOpenContainerHistory(cno) {
+  var entries = whContainerHistory(cno);
+  whShowHistory('Container History', cno, entries, null);
+}
+
+function whOpenColHistory(aisle, colId) {
+  var entries = WH_AUDIT_LOG.filter(function(e) {
+    var cut = whAuditCutoff();
+    if (e.ts < cut) return false;
+    var loc = whGetLoc(e.locId);
+    if (colId) return loc && loc.col === colId;
+    return loc && loc.aisle === aisle;
+  }).sort(function(a, b) { return b.ts.localeCompare(a.ts); });
+  var title = colId ? 'Column History' : 'Aisle ' + aisle + ' History';
+  var sub   = colId || ('Aisle ' + aisle + ' — all locations');
+  whShowHistory(title, sub, entries, null);
+}
+
+function whOpenRowHistory(aisle, depth) {
+  var cut = whAuditCutoff();
+  var entries = WH_AUDIT_LOG.filter(function(e) {
+    if (e.ts < cut) return false;
+    var loc = whGetLoc(e.locId);
+    return loc && loc.aisle === aisle && loc.depth === depth;
+  }).sort(function(a, b) { return b.ts.localeCompare(a.ts); });
+  whShowHistory('Row History', 'Aisle ' + aisle + ' · Depth ' + depth, entries, null);
+}
+
+function whShowHistory(title, subtitle, entries, onClose) {
+  var old = document.getElementById('wh-hist-ov');
+  if (old) old.remove();
+  window._whHistAll = entries;
+  window._whHistQ   = '';
+
+  var ov = document.createElement('div');
+  ov.id  = 'wh-hist-ov';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center;padding:12px';
+
+  var cutDate = new Date(whAuditCutoff()).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+
+  var bh = '<div style="background:#fff;border-radius:14px;width:100%;max-width:580px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">';
+
+  // Header
+  bh += '<div style="background:#1a4f7a;padding:16px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">';
+  bh += '<div><div style="font-size:16px;font-weight:800;color:#fff">' + escH(title) + '</div>';
+  bh += '<div style="font-size:12px;color:rgba(255,255,255,.55);margin-top:2px">' + escH(subtitle) + ' · Last 24 months</div></div>';
+  var closeStr = 'document.getElementById(\'wh-hist-ov\').remove()' + (onClose ? ';(' + onClose.toString() + ')()' : '');
+  bh += '<button onclick="' + escH(closeStr) + '" style="background:rgba(255,255,255,.15);border:none;border-radius:8px;width:34px;height:34px;font-size:20px;cursor:pointer;color:#fff;line-height:1">×</button>';
+  bh += '</div>';
+
+  // Search bar
+  bh += '<div style="padding:10px 14px;border-bottom:1px solid #F0F4F8;display:flex;gap:8px;align-items:center;flex-shrink:0">';
+  bh += '<input id="wh-hist-q" placeholder="Filter entries…" oninput="window._whHistQ=this.value;whRenderHistEntries()" style="flex:1;border:1.5px solid #E3E7F0;border-radius:8px;padding:6px 10px;font-size:12px">';
+  bh += '<span id="wh-hist-cnt" style="font-size:11px;color:#7A849E;white-space:nowrap"></span>';
+  bh += '</div>';
+
+  // Body
+  bh += '<div id="wh-hist-body" style="overflow-y:auto;padding:4px 16px;flex:1"></div>';
+
+  // Footer
+  bh += '<div style="padding:11px 16px;border-top:1px solid #F0F4F8;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">';
+  bh += '<span style="font-size:11px;color:#B0BEC5">Showing events from ' + cutDate + ' to now</span>';
+  bh += '<button onclick="' + escH(closeStr) + '" style="background:#F0F4F8;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:700;color:#7A849E;cursor:pointer">Close</button>';
+  bh += '</div></div>';
+
+  ov.innerHTML = bh;
+  document.body.appendChild(ov);
+  ov.onclick = function(e) { if (e.target === ov) { ov.remove(); if (onClose) onClose(); } };
+  whRenderHistEntries();
+}
+
+function whRenderHistEntries() {
+  var q  = (window._whHistQ || '').toLowerCase();
+  var all = window._whHistAll || [];
+  var shown = all.filter(function(e) {
+    if (!q) return true;
+    return (e.client || '').toLowerCase().includes(q) ||
+           (e.containerNo || '').toLowerCase().includes(q) ||
+           (e.action || '').toLowerCase().includes(q) ||
+           (e.locId  || '').toLowerCase().includes(q) ||
+           (e.notes  || '').toLowerCase().includes(q) ||
+           (e.user   || '').toLowerCase().includes(q);
+  });
+  var cnt = document.getElementById('wh-hist-cnt');
+  if (cnt) cnt.textContent = shown.length + ' event' + (shown.length !== 1 ? 's' : '');
+
+  var body = document.getElementById('wh-hist-body');
+  if (!body) return;
+
+  if (!shown.length) {
+    body.innerHTML = '<div style="text-align:center;padding:48px 16px;color:#B0BEC5"><div style="font-size:36px;margin-bottom:10px">📋</div><div style="font-size:14px;font-weight:700">No history events found</div><div style="font-size:12px;margin-top:4px">Changes made from now will appear here</div></div>';
+    return;
+  }
+
+  // Group by month
+  var months = {}, order = [];
+  shown.forEach(function(e) {
+    var d   = new Date(e.ts);
+    var key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    var lbl = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    if (!months[key]) { months[key] = { lbl: lbl, list: [] }; order.push(key); }
+    months[key].list.push(e);
+  });
+  order.sort().reverse();
+
+  var h = '';
+  order.forEach(function(key) {
+    var grp = months[key];
+    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:#7A849E;padding:10px 0 5px;border-bottom:1px solid #F5F7FA;margin-bottom:2px">' + escH(grp.lbl) + ' · ' + grp.list.length + ' events</div>';
+    grp.list.forEach(function(e) { h += whHistEntryHtml(e); });
+  });
+  body.innerHTML = h;
+}
+
+function whHistEntryHtml(e) {
+  var act  = WH_ACT[e.action] || { lbl: e.action, icon: '•', col: '#7A849E' };
+  var d    = new Date(e.ts);
+  var mos  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var ds   = d.getDate() + ' ' + mos[d.getMonth()] + ' ' + d.getFullYear() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  var col  = e.client ? whClientColour(e.client) : act.col;
+
+  var h = '<div style="display:grid;grid-template-columns:30px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid #F8FAFC">';
+  h += '<div style="width:28px;height:28px;border-radius:50%;background:' + act.col + '18;border:2px solid ' + act.col + '44;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;margin-top:2px">' + act.icon + '</div>';
+  h += '<div>';
+  h += '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px">';
+  h += '<span style="font-size:12px;font-weight:800;color:' + act.col + '">' + escH(act.lbl) + '</span>';
+  h += '<span style="font-size:10px;color:#B0BEC5;white-space:nowrap;flex-shrink:0">' + escH(ds) + '</span>';
+  h += '</div>';
+  if (e.client || e.containerNo) {
+    h += '<div style="font-size:12px;margin-top:2px">';
+    if (e.client)      h += '<span style="font-weight:700;color:' + col + '">' + escH(e.client) + '</span> ';
+    if (e.containerNo) h += '<span style="font-family:monospace;font-size:11px;background:#F0F4F8;padding:1px 5px;border-radius:3px;color:#7A849E">' + escH(e.containerNo) + '</span>';
+    h += '</div>';
+  }
+  if (e.fromClient && e.fromClient !== (e.client || e.toClient)) {
+    h += '<div style="font-size:11px;color:#7A849E;margin-top:2px">' + escH(e.fromClient) + ' → ' + escH(e.client || e.toClient || '') + '</div>';
+  }
+  if (e.notes) h += '<div style="font-size:11px;color:#7A849E;margin-top:2px;font-style:italic">' + escH(e.notes) + '</div>';
+  var meta = [e.user, e.locId, e.level ? '(' + e.level + ')' : ''].filter(Boolean).join(' · ');
+  h += '<div style="font-size:10px;color:#C5CDD8;margin-top:3px">' + escH(meta) + '</div>';
+  h += '</div></div>';
+  return h;
 }
 
 function escH(s) {
