@@ -5044,7 +5044,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v58 — 5 Mar 2026';
+var APP_VERSION = 'v59 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18699,7 +18699,10 @@ var MSAL_CONFIG = {
   auth: {
     clientId:    '8c6c6e1d-3d50-4fa5-8700-49989764860f',
     authority:   'https://login.microsoftonline.com/52c88d8a-2382-40ad-afef-c6cb5d98820e',
-    redirectUri: window.location.origin + window.location.pathname,
+    // redirectUri must match EXACTLY what is registered in Entra.
+    // Using just the origin (e.g. https://yourdomain.com) is safest —
+    // make sure your Entra app registration Redirect URI is set to the same value.
+    redirectUri: window.location.origin,
   },
   cache: { cacheLocation: 'sessionStorage', storeAuthStateInCookie: false },
 };
@@ -18713,46 +18716,88 @@ var GRAPH_SCOPES = [
 var _msalApp = null;
 
 // ── Entry point ────────────────────────────────────────────────────
+// ── Error display helper ──────────────────────────────────────────
+function msalShowError(msg) {
+  console.error('MSAL:', msg);
+  var errEl   = document.getElementById('msal-wall-error');
+  var retryEl = document.getElementById('msal-retry-btn');
+  var spinner = document.querySelector('#msal-login-wall div[style*="animation"]');
+  if (errEl)   { errEl.style.display = 'block'; errEl.textContent = msg; }
+  if (retryEl)   retryEl.style.display = 'block';
+  if (spinner)   spinner.style.display = 'none';
+}
+
 async function msalBoot() {
   // Show MoveSquad logo on the login wall immediately
-  var wallLogo = document.getElementById('msal-login-wall');
-  var logoImg  = document.getElementById('msal-wall-logo');
-  if (logoImg) {
-    logoImg.src = APP_DEFAULT_LOGO || '';
-  }
+  var logoImg = document.getElementById('msal-wall-logo');
+  if (logoImg) logoImg.src = APP_DEFAULT_LOGO || '';
 
   // Guard: if MSAL didn't load, show useful error
   if (typeof msal === 'undefined') {
-    throw new Error('Microsoft sign-in library (MSAL) failed to load. Check your internet connection and that no browser extension is blocking Microsoft scripts, then refresh.');
+    msalShowError('Microsoft sign-in library failed to load. Check your connection and refresh.');
+    return;
   }
 
   try {
     _msalApp = new msal.PublicClientApplication(MSAL_CONFIG);
-    // Note: .initialize() is MSAL v3 only — v2 doesn't need it
 
-    // Handle redirect response (returning from Microsoft login page)
-    var response = await _msalApp.handleRedirectPromise();
-    var account  = response && response.account
-                   ? response.account
-                   : (_msalApp.getAllAccounts()[0] || null);
-
-    if (!account) {
-      // No active session — redirect to Microsoft login
-      msalLogin();
+    // CRITICAL: always call handleRedirectPromise() first on every page load.
+    // This processes the token from Microsoft when returning from loginRedirect.
+    // If we don't await this before checking accounts, we'll always see 0 accounts
+    // and fire another redirect — causing the infinite loop.
+    var response = null;
+    try {
+      response = await _msalApp.handleRedirectPromise();
+    } catch(redirectErr) {
+      // handleRedirectPromise throws if the redirect contained an error (e.g. user cancelled)
+      console.warn('MSAL redirect error:', redirectErr);
+      msalShowError('Sign-in was cancelled or failed. Please try again.');
       return;
     }
 
-    // Acquire token silently (SSO — user already logged into M365)
+    // Account resolution: prefer the freshly-returned redirect account,
+    // then fall back to any cached account in sessionStorage
+    var account = (response && response.account)
+                ? response.account
+                : (_msalApp.getAllAccounts()[0] || null);
+
+    if (!account) {
+      // Genuinely no session at all — go to Microsoft login.
+      // Guard against looping: if we just came back from a redirect
+      // (URL has #code= or ?code=) but still have no account, something
+      // is wrong with the redirect URI config rather than auth itself.
+      var url = window.location.href;
+      var returningFromRedirect = url.indexOf('code=') >= 0 || url.indexOf('error=') >= 0;
+      if (returningFromRedirect) {
+        msalShowError(
+          'Sign-in redirect completed but no account was found. ' +
+          'Check that the Redirect URI in Entra matches exactly: ' +
+          window.location.origin + window.location.pathname
+        );
+        return;
+      }
+      // Clean first visit — send to Microsoft login
+      _msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
+      return;
+    }
+
+    // Acquire token silently — uses the cached session, no redirect needed
     var tokenResponse = await _msalApp.acquireTokenSilent({
       scopes:  GRAPH_SCOPES,
       account: account,
-    }).catch(async function(err) {
-      // Silent failed — do an interactive redirect
+    }).catch(function(err) {
+      // InteractionRequiredAuthError means the token genuinely needs a fresh login
+      // (e.g. MFA required, consent needed). Do NOT await the redirect —
+      // it navigates away, so just fire and return.
       if (err.name === 'InteractionRequiredAuthError') {
-        await _msalApp.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: account });
+        _msalApp.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: account });
+        return null; // will never resolve — redirect fires
       }
       throw err;
     });
+
+    // If acquireTokenRedirect fired above, tokenResponse is null — just return
+    if (!tokenResponse) return;
 
     // ── Decode claims from ID token ─────────────────────────────
     var claims = tokenResponse.idTokenClaims || {};
@@ -18795,16 +18840,7 @@ async function msalBoot() {
     }
 
   } catch(err) {
-    console.error('MSAL boot error:', err);
-    var errEl  = document.getElementById('msal-wall-error');
-    var retryEl = document.getElementById('msal-retry-btn');
-    var spinner = document.querySelector('#msal-login-wall div[style*="animation"]');
-    if (errEl) {
-      errEl.style.display = 'block';
-      errEl.textContent = 'Sign-in failed: ' + (err.message || String(err));
-    }
-    if (retryEl)  retryEl.style.display  = 'block';
-    if (spinner)  spinner.style.display  = 'none';
+    msalShowError('Sign-in failed: ' + (err.message || String(err)));
   }
 }
 
