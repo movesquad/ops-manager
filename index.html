@@ -5,14 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OPS MANAGER</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<!-- Microsoft Authentication Library v2 (UMD build — exposes window.msal) -->
-<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
-<script>
-// Fallback: if primary CDN fails, load from jsDelivr
-if (typeof msal === 'undefined') {
-  document.write('<scr'+'ipt src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></scr'+'ipt>');
-}
-</script>
+<!-- Microsoft Authentication Library v2 — jsDelivr CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size:13.5px;background:#CBDDE9;color:#1C2333}
@@ -5044,7 +5038,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v61 — 5 Mar 2026';
+var APP_VERSION = 'v62 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18701,7 +18695,7 @@ var GRAPH_SCOPES    = ['User.Read', 'User.ReadBasic.All', 'Directory.Read.All'];
 // redirectUri MUST match exactly what is in Entra → Authentication → Redirect URIs
 // If your app is at https://foo.github.io/bar/ use that full path.
 // We use the full href minus any hash/query so it stays stable.
-var MSAL_REDIRECT_URI = window.location.origin + window.location.pathname.replace(/\/+$/, '');
+var MSAL_REDIRECT_URI = window.location.origin; // origin never has trailing slash
 
 var _msalApp  = null;
 var _msalBusy = false;   // prevent double-boot
