@@ -5041,7 +5041,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v64 — 5 Mar 2026';
+var APP_VERSION = 'v65 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18798,6 +18798,22 @@ async function msalBoot() {
     msalShowError('Microsoft sign-in library failed to load. Please refresh.');
     return;
   }
+
+  // Clear any stale MSAL interaction state from previous sessions/loops.
+  // This prevents the "interaction_in_progress" error after redirect loops.
+  try {
+    var keysToRemove = [];
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k && (k.indexOf('msal.') === 0 || k.indexOf('msal|') >= 0 ||
+          k.indexOf('interaction.status') >= 0 || k.indexOf('request.state') >= 0 ||
+          k.indexOf('nonce.idtoken') >= 0 || k.indexOf('pkce') >= 0)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach(function(k) { localStorage.removeItem(k); });
+    if (keysToRemove.length) console.log('[MSAL] Cleared', keysToRemove.length, 'stale MSAL keys from localStorage');
+  } catch(e) { /* storage access blocked — ignore */ }
 
   _msalApp = new msal.PublicClientApplication({
     auth: {
