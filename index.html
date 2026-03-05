@@ -1,3070 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + esc(opts.subject) + '</title></head>'
-  + '<body style="margin:0;padding:0;background:#f4f6f9;font-family:DM Sans,Helvetica,Arial,sans-serif">'
-  + (preheader ? '<div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f4f6f9">' + esc(preheader) + '</div>' : '')
-  + '<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:32px 16px">'
-  + '<tr><td align="center">'
-  + '<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px">'
-  // Header
-  + '<tr><td style="background:' + accent + ';border-radius:12px 12px 0 0;padding:28px 40px">'
-  + '<div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:-0.3px">' + esc(company) + '</div>'
-  + '<div style="color:rgba(255,255,255,0.8);font-size:13px;margin-top:3px">' + esc(tagline) + '</div>'
-  + '</td></tr>'
-  // Body
-  + '<tr><td style="background:#ffffff;padding:40px;border-left:1px solid #d4e4ef;border-right:1px solid #d4e4ef">'
-  + '<div style="color:#1a1a2e;font-size:15px;line-height:1.7">'
-  + opts.bodyHtml
-  + '</div>'
-  + ctaBlock
-  + '</td></tr>'
-  // Footer
-  + '<tr><td style="background:#f0f6fa;border:1px solid #d4e4ef;border-top:none;border-radius:0 0 12px 12px;padding:24px 40px">'
-  + '<div style="color:#6b7280;font-size:12px;line-height:1.6">'
-  + (phone ? '<span>' + esc(phone) + '</span> &nbsp;|&nbsp; ' : '')
-  + (website ? '<a href="https://' + esc(website) + '" style="color:' + accent + ';text-decoration:none">' + esc(website) + '</a>' : '')
-  + (address ? '<br>' + esc(address) : '')
-  + (footer ? '<br><span style="color:#9ca3af">' + esc(footer) + '</span>' : '')
-  + (opts.footerExtra ? '<br>' + opts.footerExtra : '')
-  + '</div></td></tr>'
-  + '</table></td></tr></table>';
-}
-
-// ── SHARE FOLDER EMAIL ────────────────────────────────────────────────────
-async function spSendShareEmail(cjId, linkUrl, expiryStr, overrideTo, overrideSubject) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj) return;
-  var mm      = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-  var mmEmail = mm ? (mm.email||'') : '';
-  var toEmail = overrideTo || mmEmail;
-  if (!toEmail) { toast('No email address for move manager — add one in Settings → Move Managers'); return; }
-
-  var clientName  = cj.clientName   || '—';
-  var partnerRef  = cj.partnerRef   || cj.clientRef || '—';
-  var ourRef      = cj.masterJobId  || '—';
-  var brand       = cj.brand        || '—';
-  var mmName      = mm ? mm.name : (cj.moveManager||'Move Manager');
-  var subject = overrideSubject || ('Documents: ' + partnerRef + ' / ' + ourRef + ' — ' + clientName);
-
-  var bodyHtml = '<p>Dear ' + esc(mmName) + ',</p>'
-    + '<p>Please find the documentation folder for the following move below. You can access all job documents, upload files and track progress using the link provided.</p>'
-    + '<table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:14px">'
-    + '<tr style="background:#f0f6fa"><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;width:160px;color:#374151">Client</td><td style="padding:10px 14px;border:1px solid #d4e4ef;color:#1a1a2e">' + esc(clientName) + '</td></tr>'
-    + '<tr><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;color:#374151">Your Reference</td><td style="padding:10px 14px;border:1px solid #d4e4ef;color:#1a1a2e">' + esc(partnerRef) + '</td></tr>'
-    + '<tr style="background:#f0f6fa"><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;color:#374151">Our Reference</td><td style="padding:10px 14px;border:1px solid #d4e4ef;color:#1a1a2e">' + esc(ourRef) + '</td></tr>'
-    + '<tr><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;color:#374151">Brand</td><td style="padding:10px 14px;border:1px solid #d4e4ef;color:#1a1a2e">' + esc(brand) + '</td></tr>'
-    + '<tr style="background:#f0f6fa"><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;color:#374151">Move Manager</td><td style="padding:10px 14px;border:1px solid #d4e4ef;color:#1a1a2e">' + esc(mmName) + '</td></tr>'
-    + '</table>'
-    + '<p style="color:#6b7280;font-size:13px">The folder link expires on <strong>' + esc(expiryStr) + '</strong> and is view-only. Please contact us if you need to upload documents directly.</p>'
-    + '<p>If you have any questions please reply to this email.</p>'
-    + '<p>Kind regards,<br><strong>' + esc(APP_SETTINGS.companyName||'Onwards') + ' Operations</strong></p>';
-
-  var html = buildEmailHtml({
-    subject,
-    preheader: 'Documents available for ' + clientName + ' (' + partnerRef + ')',
-    bodyHtml,
-    ctaUrl:   linkUrl,
-    ctaLabel: '📁 View Document Folder'
-  });
-
-  toast('Sending email…');
-  var res = await sendEmail({ to: toEmail, subject, html, replyTo: APP_SETTINGS.emailReplyTo });
-  if (res.ok) {
-    toast('✅ Email sent to ' + toEmail);
-  } else {
-    toast('❌ Email failed: ' + (res.error||'Unknown error'));
-  }
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CALENDAR INVITES — GRAPH API CREATE EVENT IN MOVE MANAGER'S OUTLOOK
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function createMoveManagerCalendarEvent(cj, movs) {
-  if (!movs || !movs.length) return;
-  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-  if (!mm || !mm.email) return;
-
-  var firstMov     = movs[0];
-  var jobType      = firstMov.jobType || firstMov.type || 'Job';
-  var clientName   = cj.clientName  || '';
-  var partnerRef   = cj.partnerRef  || cj.clientRef || '';
-  var ourRef       = cj.masterJobId || '';
-  var jobDate      = firstMov.start || cj.startDate || '';
-  if (!jobDate) return;
-
-  // Build event title and body
-  var title = jobType + ' — ' + clientName + (partnerRef ? ' (' + partnerRef + ')' : '');
-  var bodyText = [
-    'Job confirmed by ' + (APP_SETTINGS.companyName||'Onwards') + ' Operations.',
-    '',
-    'Client:         ' + clientName,
-    'Partner Ref:    ' + (partnerRef||'—'),
-    'Our Ref:        ' + (ourRef||'—'),
-    'Brand:          ' + (cj.brand||'—'),
-    'Type:           ' + jobType,
-    'Origin:         ' + (firstMov.origin||'—'),
-    'Destination:    ' + (firstMov.dest||'—'),
-    (cj.spFolderUrl ? 'Documents:      ' + cj.spFolderUrl : '')
-  ].filter(Boolean).join('\n');
-
-  // Build start/end — full day event starting at 08:00, ending at 18:00
-  var startDt = jobDate + 'T08:00:00';
-  var endDt   = jobDate + 'T18:00:00';
-
-  var eventPayload = {
-    subject: title,
-    body: { contentType: 'Text', content: bodyText },
-    start: { dateTime: startDt, timeZone: 'Europe/London' },
-    end:   { dateTime: endDt,   timeZone: 'Europe/London' },
-    location: { displayName: firstMov.origin || '' },
-    attendees: [{
-      emailAddress: { address: mm.email, name: mm.name },
-      type: 'required'
-    }],
-    isOrganizer: true,
-    showAs: 'busy'
-  };
-
-  try {
-    var res = await fetch('/api/graph', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'createCalendarEvent', payload: eventPayload, userEmail: mm.email })
-    });
-    var data = await res.json();
-    if (data.id) {
-      console.log('Calendar event created for', mm.email, data.id);
-      // Store event ID on client job for future updates/cancellations
-      if (!cj.calendarEvents) cj.calendarEvents = [];
-      cj.calendarEvents.push({ mmEmail: mm.email, eventId: data.id, jobDate });
-      saveData('clientjob', cj.id, cj);
-    } else {
-      console.warn('Calendar event failed:', data.error || JSON.stringify(data));
-    }
-  } catch(e) {
-    console.warn('Calendar event error:', e.message);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CONTACT SYNC — SYNC CLIENT + PARTNER CONTACTS TO M365
-// ═══════════════════════════════════════════════════════════════════════════
-
-async function syncContactToM365(opts) {
-  // opts: { displayName, email, phone, company, notes, jobRef }
-  if (!opts.email && !opts.displayName) return;
-  try {
-    var res = await fetch('/api/graph', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upsertContact', payload: opts })
-    });
-    var data = await res.json();
-    if (data.id) console.log('Contact synced:', opts.displayName, data.id);
-    else console.warn('Contact sync failed:', data.error || JSON.stringify(data));
-  } catch(e) {
-    console.warn('Contact sync error:', e.message);
-  }
-}
-
-// Called after job is saved — sync client contact and move manager to M365
-function syncJobContacts(cj) {
-  if (!cj) return;
-  // Sync client contact
-  if (cj.clientEmail || cj.clientName) {
-    setTimeout(function() {
-      syncContactToM365({
-        displayName: cj.clientName || '',
-        email:       cj.clientEmail || '',
-        phone:       cj.clientPhone || '',
-        company:     cj.brand || '',
-        notes:       'OpsManager client — ' + (cj.masterJobId||cj.id),
-        jobRef:      cj.masterJobId || ''
-      });
-    }, 2000);
-  }
-  // Sync move manager contact
-  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-  if (mm && mm.email) {
-    setTimeout(function() {
-      syncContactToM365({
-        displayName: mm.name || '',
-        email:       mm.email || '',
-        phone:       mm.phone || '',
-        company:     mm.brand || cj.brand || '',
-        notes:       'Move Manager — ' + (mm.brand||''),
-        jobRef:      ''
-      });
-    }, 3000);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BOOKING PARSER — CLAUDE AI EXTRACTS BOOKING FROM EMAIL/PDF/DOC
-// ═══════════════════════════════════════════════════════════════════════════
-
-function openBookingParser() {
-  var existing = document.getElementById('booking-parser-modal');
-  if (existing) existing.remove();
-
-  var modal = document.createElement('div');
-  modal.id = 'booking-parser-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:950;display:flex;align-items:center;justify-content:center;padding:20px';
-  modal.innerHTML = '<div style="background:#fff;border-radius:14px;padding:0;width:100%;max-width:640px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-height:92vh;overflow:hidden;display:flex;flex-direction:column">'
-    // Header
-    + '<div style="padding:20px 24px 16px;border-bottom:1px solid #d4e4ef;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
-    + '<div><div style="font-size:16px;font-weight:800;color:#1a1a2e">🤖 Parse Booking from Email or Document</div>'
-    + '<div style="font-size:12px;color:#6b7280;margin-top:3px">Paste email text, or drop a PDF/Word/Excel file — Claude will extract the booking details</div></div>'
-    + '<button onclick="document.getElementById(\'booking-parser-modal\').remove()" style="width:30px;height:30px;border-radius:7px;border:1px solid #e3e7f0;background:#f5f5f5;cursor:pointer;font-size:16px;flex-shrink:0">✕</button>'
-    + '</div>'
-    // Drop zone + textarea
-    + '<div style="padding:20px 24px;flex:1;overflow-y:auto">'
-    + '<div id="bp-dropzone" style="border:2px dashed #d1d5db;border-radius:10px;padding:20px;text-align:center;cursor:pointer;margin-bottom:16px;transition:border-color .2s;background:#fafafa"'
-    + ' ondragover="event.preventDefault();this.style.borderColor=&quot;#0073EA&quot;"'
-    + ' ondragleave="this.style.borderColor=&quot;#d1d5db&quot;"'
-    + ' ondrop="bpHandleDrop(event)" onclick="document.getElementById(&quot;bp-file-input&quot;).click()">'
-    + '<div style="font-size:24px;margin-bottom:8px">📄</div>'
-    + '<div style="font-size:13px;font-weight:600;color:#374151">Drop PDF, Word or Excel file here</div>'
-    + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">or click to browse</div>'
-    + '<input type="file" id="bp-file-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.eml" style="display:none" onchange="bpHandleFile(this.files[0])">'
-    + '</div>'
-    + '<textarea id="bp-text" placeholder="Paste the email body or booking instruction text here..." rows="10" style="width:100%;padding:12px;border:1.5px solid #e3e7f0;border-radius:8px;font-size:13px;resize:vertical;box-sizing:border-box;font-family:inherit;line-height:1.6"></textarea>'
-    + '<div id="bp-file-name" style="font-size:11px;color:#6b7280;margin-top:6px;display:none"></div>'
-    + '</div>'
-    // Footer
-    + '<div style="padding:16px 24px;border-top:1px solid #d4e4ef;display:flex;gap:10px;justify-content:flex-end;flex-shrink:0">'
-    + '<button onclick="document.getElementById(&quot;booking-parser-modal&quot;).remove()" style="padding:10px 18px;border:1.5px solid #e3e7f0;border-radius:7px;background:#fff;font-size:13px;font-weight:600;cursor:pointer">Cancel</button>'
-    + '<button id="bp-parse-btn" onclick="bpRunParse()" style="padding:10px 24px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer">🤖 Extract Booking Details</button>'
-    + '</div></div>';
-
-  document.body.appendChild(modal);
-}
-
-var _bpFileContent = null;
-var _bpFileName    = null;
-
-function bpHandleDrop(e) {
-  e.preventDefault();
-  document.getElementById('bp-dropzone').style.borderColor = '#d1d5db';
-  var file = e.dataTransfer.files[0];
-  if (file) bpHandleFile(file);
-}
-
-function bpHandleFile(file) {
-  if (!file) return;
-  _bpFileName = file.name;
-  document.getElementById('bp-file-name').style.display = 'block';
-  document.getElementById('bp-file-name').textContent = '📎 ' + file.name + ' (' + Math.round(file.size/1024) + ' KB)';
-
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    _bpFileContent = e.target.result.split(',')[1]; // base64
-  };
-  reader.readAsDataURL(file);
-}
-
-async function bpRunParse() {
-  var textInput = (document.getElementById('bp-text')||{}).value || '';
-  var btn = document.getElementById('bp-parse-btn');
-  if (!textInput.trim() && !_bpFileContent) { toast('Please paste some text or attach a file'); return; }
-
-  btn.disabled = true;
-  btn.textContent = '⏳ Reading…';
-
-  try {
-    var messages = [];
-    var systemPrompt = 'You are a booking extraction assistant for a removals and logistics company. '
-      + 'Extract structured booking data from emails, PDFs or documents. '
-      + 'Return ONLY valid JSON — no markdown, no explanation. '
-      + 'If a field is not found, use null. '
-      + 'Dates must be YYYY-MM-DD format. '
-      + 'JSON schema: {'
-      + '"clientName":string,"clientEmail":string,"clientPhone":string,'
-      + '"partnerRef":string,"brand":string,"moveManager":string,'
-      + '"jobType":string,"startDate":string,"endDate":string,'
-      + '"origin":string,"originPostcode":string,"dest":string,"destPostcode":string,'
-      + '"volumeFt":number,"volumeCbm":number,'
-      + '"specialRequirements":string,"notes":string,'
-      + '"confidence":"high"|"medium"|"low"'
-      + '}';
-
-    if (_bpFileContent && _bpFileName) {
-      var ext = (_bpFileName||'').split('.').pop().toLowerCase();
-      var mediaType = ext === 'pdf' ? 'application/pdf'
-        : (ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        : (ext === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        : 'text/plain'));
-
-      if (ext === 'pdf') {
-        messages.push({ role: 'user', content: [
-          { type: 'document', source: { type: 'base64', media_type: mediaType, data: _bpFileContent } },
-          { type: 'text', text: 'Extract all booking details from this document and return as JSON.' + (textInput ? '\nAdditional context:\n' + textInput : '') }
-        ]});
-      } else {
-        // For non-PDF files, send as base64 text with filename context
-        messages.push({ role: 'user', content: 'Extract booking details from this file (' + _bpFileName + '). File content (base64): ' + _bpFileContent.slice(0, 8000) + (textInput ? '\n\nAdditional email text:\n' + textInput : '') });
-      }
-    } else {
-      messages.push({ role: 'user', content: 'Extract booking details from this email/text:\n\n' + textInput });
-    }
-
-    var res = await fetch('/api/claude', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: systemPrompt, messages })
-    });
-
-    var data = await res.json();
-    if (!res.ok || !data.content) {
-      throw new Error(data.error || 'Claude API error ' + res.status);
-    }
-
-    var rawText = data.content[0].text || '';
-    var cleaned = rawText.replace(/```json|```/g, '').trim();
-    var parsed;
-    try { parsed = JSON.parse(cleaned); } catch(e) { throw new Error('Could not parse Claude response: ' + rawText.slice(0,200)); }
-
-    document.getElementById('booking-parser-modal').remove();
-    bpApplyToBookingForm(parsed);
-
-  } catch(err) {
-    toast('❌ Parse failed: ' + err.message);
-    btn.disabled = false;
-    btn.textContent = '🤖 Extract Booking Details';
-  }
-}
-
-function bpApplyToBookingForm(parsed) {
-  if (!parsed) return;
-
-  // Open new booking flow with pre-filled data
-  // Store parsed data globally so cfgInit can pick it up
-  window._bpParsed = parsed;
-
-  // Determine route type from job type
-  var jt = (parsed.jobType||'').toLowerCase();
-  var routeKey = jt.includes('door') || jt.includes('d2d') || jt.includes('domestic') ? 'd2d'
-    : (jt.includes('destination') || jt.includes('delivery') ? 'destination'
-    : (jt.includes('storage') || jt.includes('ex store') ? 'storage' : 'origin'));
-
-  // Open booking flow
-  newClientJob();
-  toast('✅ Booking details extracted — review and confirm below');
-
-  // Apply fields after a short delay for form to render
-  setTimeout(function() {
-    var p = window._bpParsed;
-    if (!p) return;
-
-    function setField(id, val) { var e = document.getElementById(id); if (e && val) e.value = val; }
-    function setSelect(id, val) {
-      var e = document.getElementById(id);
-      if (e && val) {
-        for (var i = 0; i < e.options.length; i++) {
-          if (e.options[i].value.toLowerCase().includes(val.toLowerCase()) || val.toLowerCase().includes(e.options[i].value.toLowerCase())) {
-            e.selectedIndex = i; break;
-          }
-        }
-      }
-    }
-
-    setField('bk-client',  p.clientName);
-    setField('bk-email',   p.clientEmail);
-    setField('bk-phone',   p.clientPhone);
-    setField('bk-ref',     p.partnerRef);
-    setField('bk-origin',  p.origin);
-    setField('bk-dest',    p.dest);
-    setField('bk-start',   p.startDate);
-    setField('bk-end',     p.endDate);
-    setField('bk-notes',   p.notes || p.specialRequirements);
-    if (p.volumeFt)  setField('bk-vol-ft',  p.volumeFt);
-    if (p.volumeCbm) setField('bk-vol-cbm', p.volumeCbm);
-    if (p.brand)     setSelect('bk-brand',  p.brand);
-    if (p.moveManager) setSelect('bk-mm',   p.moveManager);
-
-    // Show confidence indicator
-    var conf = p.confidence || 'medium';
-    var confColor = conf === 'high' ? '#00C875' : conf === 'medium' ? '#FF9F1A' : '#e44258';
-    var confMsg = conf === 'high' ? 'High confidence — most fields extracted cleanly'
-      : conf === 'medium' ? 'Medium confidence — please review highlighted fields carefully'
-      : 'Low confidence — manual review recommended for all fields';
-    toast(confColor === '#00C875' ? '✅ ' + confMsg : '⚠ ' + confMsg, 5000);
-
-    window._bpParsed = null;
-  }, 800);
-}
-
-
-// ── TWILIO SMS / WHATSAPP / VOICE ────────────────────────────────────────
-async function sendSms(opts) {
-  // opts: { to, body, action ('sendSms'|'sendWhatsApp'|'makeCall'), twiml }
-  try {
-    var res = await fetch('/api/twilio', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: opts.action || 'sendSms',
-        to:     opts.to,
-        body:   opts.body || '',
-        twiml:  opts.twiml || ''
-      })
-    });
-    var data = await res.json();
-    return data.ok ? { ok: true, sid: data.sid } : { ok: false, error: data.error || 'SMS failed' };
-  } catch(e) {
-    return { ok: false, error: e.message };
-  }
-}
-
-async function saveCommsSettings() {
-  var pc = el('sl-postcode');
-  if (pc) SL_CONFIG.companyPostcode = pc.value.trim();
-  toast('Settings saved');
-  saveData('settings');
-}
-
-
-
-function autoCalcMileageAndRefresh(jobId) {
-  var j = jobs.filter(function(x){ return x.id === jobId; })[0];
-  if (!j) return;
-  if (!mapsApiLoaded()) { toast('Google Maps not loaded — check API key in Settings'); return; }
-  toast('Calculating route via Google Maps…');
-  autoCalcMileage(j, function(miles) {
-    if (miles) {
-      toast('✅ Mileage set: ' + miles + ' mi (origin → destination)');
-      renderActiveMod();
-    } else {
-      toast('❌ Could not calculate — check origin/destination addresses');
-    }
-  });
-}
-
-// ── AUTO MILEAGE CALCULATION ─────────────────────────────────────────────
-// Called after job save — uses Google Maps Distance Matrix to get origin→dest miles
-// Stores j.mileage (origin→dest only; warehouse legs are added dynamically in costing)
-function autoCalcMileage(job, cb) {
-  if (job.mileage) { if (cb) cb(job.mileage); return; } // already set
-  if (!job.origin)  { if (cb) cb(0); return; }
-  if (!mapsApiLoaded()) { if (cb) cb(0); return; }
-
-  var origin = job.origin;
-  var dest   = job.dest || '';
-  if (!dest || dest === origin) { if (cb) cb(0); return; }
-
-  var svc = new google.maps.DistanceMatrixService();
-  svc.getDistanceMatrix({
-    origins:      [origin],
-    destinations: [dest],
-    travelMode:   google.maps.TravelMode.DRIVING,
-    unitSystem:   google.maps.UnitSystem.IMPERIAL
-  }, function(resp, status) {
-    if (status !== 'OK') { if (cb) cb(0); return; }
-    try {
-      var metres = resp.rows[0].elements[0].distance.value;
-      var miles  = Math.round(metres / 1609.34);
-      job.mileage = miles;
-      saveData('job', job.id, job);
-      console.log('Auto mileage set:', origin, '→', dest, '=', miles, 'mi');
-      if (cb) cb(miles);
-    } catch(e) { if (cb) cb(0); }
-  });
-}
-
-// Calculate full journey mileage via Google Maps (multi-stop)
-// Calls cb with total miles. Also stores individual leg mileages on jobs.
-function autoCalcJourneyMileage(jrn, cb) {
-  if (!mapsApiLoaded()) { if (cb) cb(0); return; }
-  var jjobs = jobsInJourney(jrn.id);
-  if (!jjobs.length) { if (cb) cb(0); return; }
-
-  var wh = APP_SETTINGS.warehouseAddress || SL_CONFIG.companyPostcode || 'WN73EQ';
-
-  // Build waypoints: warehouse → origins/dests in order → warehouse
-  var waypoints = [wh];
-  var byDay = {};
-  var allDays = [];
-  for (var i = 0; i < jjobs.length; i++) {
-    var day = jjobs[i].start || '';
-    if (!byDay[day]) { byDay[day] = []; allDays.push(day); }
-    byDay[day].push(jjobs[i]);
-  }
-  allDays.sort();
-  for (var d = 0; d < allDays.length; d++) {
-    var dayJobs = byDay[allDays[d]];
-    for (var i = 0; i < dayJobs.length; i++) {
-      if (dayJobs[i].origin) waypoints.push(dayJobs[i].origin);
-      if (dayJobs[i].dest)   waypoints.push(dayJobs[i].dest);
-    }
-  }
-  waypoints.push(wh);
-
-  // Distance Matrix: each consecutive pair
-  var pairs = [];
-  for (var i = 0; i < waypoints.length - 1; i++) {
-    if (waypoints[i] !== waypoints[i+1]) {
-      pairs.push({ from: waypoints[i], to: waypoints[i+1] });
-    }
-  }
-
-  if (!pairs.length) { if (cb) cb(0); return; }
-
-  var svc = new google.maps.DistanceMatrixService();
-  var origins = pairs.map(function(p){ return p.from; });
-  var dests   = pairs.map(function(p){ return p.to;   });
-
-  svc.getDistanceMatrix({
-    origins: origins, destinations: dests,
-    travelMode: google.maps.TravelMode.DRIVING,
-    unitSystem: google.maps.UnitSystem.IMPERIAL
-  }, function(resp, status) {
-    if (status !== 'OK') { if (cb) cb(0); return; }
-    var total = 0;
-    try {
-      for (var i = 0; i < pairs.length; i++) {
-        var el = resp.rows[i].elements[i]; // diagonal — each row has one dest
-        if (el && el.status === 'OK') total += Math.round(el.distance.value / 1609.34);
-      }
-      if (cb) cb(total);
-    } catch(e) { if (cb) cb(0); }
-  });
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SHAREPOINT + APPENATE — FULL INTEGRATION
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ── DOCUMENT CHECKLIST DEFINITION ────────────────────────────────────────
-// timing: 'before' = required before job date, 'after' = expected after job
-// required: true = counts toward red/amber indicator
-// jobTypes: which job types this applies to (empty = all)
-
-var SP_CHECKLIST = [
-  { slug:'survey',        label:'Survey & Quote',          folder:'01 — Survey & Quote',          icon:'📋', timing:'before', required:true,  jobTypes:['Origin Sea Pack','Origin Air Pack','Origin Road Pack','Door to Door','Destination Services','Ex Store Delivery','Blanket Wrap','Handling Only'] },
-  { slug:'auth',          label:'Authorisation & Booking', folder:'02 — Authorisation & Booking', icon:'✅', timing:'before', required:true,  jobTypes:[] },
-  { slug:'jobpaperwork',  label:'Job Paperwork',           folder:'03 — Job Paperwork',           icon:'📄', timing:'before', required:true,  jobTypes:[] },
-  { slug:'inventory',     label:'Inventory & Packing',     folder:'04 — Inventory & Packing Lists',icon:'📦', timing:'mixed',  required:false, jobTypes:[] },
-  { slug:'images',        label:'Images',                  folder:'05 — Images',                  icon:'🖼',  timing:'after',  required:false, jobTypes:[] },
-  { slug:'invoices',      label:'Invoices & Finance',      folder:'06 — Invoices & Finance',      icon:'💷', timing:'after',  required:false, jobTypes:[] },
-  { slug:'pod',           label:'POD & Completion',        folder:'07 — POD & Completion',        icon:'🖊',  timing:'after',  required:false, jobTypes:[] },
-  { slug:'aftersales',   label:'Aftersales & Quality',    folder:'08 — Aftersales & Quality',    icon:'⭐',  timing:'after',  required:false, jobTypes:[] },
-];
-
-// Inventory timing rule: 'before' for destination/ex-store, 'after' for origin/D2D
-function spInventoryTiming(jobType) {
-  var destTypes = ['Destination Services','Ex Store Delivery'];
-  return destTypes.indexOf(jobType) >= 0 ? 'before' : 'after';
-}
-
-// ── DOC READINESS for calendar indicator ─────────────────────────────────
-function spDocReadiness(cj, jobDateStr) {
-  if (!cj.spFolderId) {
-    return { cls:'grey', icon:'📁', tip:'No SharePoint folder created' };
-  }
-  var checklist = cj.docChecklist || {};
-  var jobDate = jobDateStr ? new Date(jobDateStr + 'T00:00:00') : null;
-  var today = new Date(); today.setHours(0,0,0,0);
-  var daysToJob = jobDate ? Math.round((jobDate - today) / 86400000) : 999;
-  var jobType = cj.jobType || '';
-
-  var missingRequired = [];
-  var missingAfter = [];
-
-  SP_CHECKLIST.forEach(function(item) {
-    // Skip if N/A
-    if (checklist[item.slug] === 'na') return;
-    // Check job type filter
-    if (item.jobTypes.length && item.jobTypes.indexOf(jobType) < 0) return;
-
-    var timing = item.slug === 'inventory' ? spInventoryTiming(jobType) : item.timing;
-    var status = checklist[item.slug];
-    var fileCount = (cj.spFileCounts && cj.spFileCounts[item.slug]) || 0;
-    var hasFiles = fileCount > 0 || status === 'received';
-
-    if (timing === 'before' && !hasFiles) {
-      missingRequired.push(item.label);
-    }
-    if (timing === 'after' && jobDate && today > jobDate && !hasFiles) {
-      missingAfter.push(item.label);
-    }
-  });
-
-  if (missingRequired.length > 0 && daysToJob <= 7) {
-    return { cls:'red', icon:'🔴', tip:'AT RISK: Missing before job — ' + missingRequired.join(', ') };
-  }
-  if (missingRequired.length > 0) {
-    return { cls:'amber', icon:'🟡', tip:'Outstanding: ' + missingRequired.join(', ') };
-  }
-  if (missingAfter.length > 0) {
-    return { cls:'amber', icon:'🟡', tip:'Post-job docs outstanding: ' + missingAfter.join(', ') };
-  }
-  return { cls:'green', icon:'🟢', tip:'All required documents received' };
-}
-
-// ── SP CHECKLIST RENDER ───────────────────────────────────────────────────
-function spDocChecklist(cj) {
-  var checklist = cj.docChecklist || {};
-  var jobType = cj.jobType || '';
-  var today = new Date(); today.setHours(0,0,0,0);
-  var h = '<div>';
-
-  SP_CHECKLIST.forEach(function(item) {
-    var timing = item.slug === 'inventory' ? spInventoryTiming(jobType) : item.timing;
-    var override = checklist[item.slug];
-    var fileCount = (cj.spFileCounts && cj.spFileCounts[item.slug]) || 0;
-    var isNA = override === 'na';
-    var isReceived = override === 'received' || fileCount > 0;
-
-    // Status
-    var statusCls, statusLbl;
-    if (isNA) { statusCls = 'na'; statusLbl = 'N/A'; }
-    else if (isReceived) { statusCls = 'received'; statusLbl = '✓ Received'; }
-    else if (timing === 'before') { statusCls = 'outstanding'; statusLbl = 'Outstanding'; }
-    else if (timing === 'after') { statusCls = 'after'; statusLbl = 'After job'; }
-    else { statusCls = 'outstanding'; statusLbl = 'Awaiting'; }
-
-    h += '<div class="sp-checklist-row' + (isNA ? '" style="opacity:.45' : '') + '">';
-    h += '<div class="sp-cl-icon">' + item.icon + '</div>';
-    h += '<div class="sp-cl-name">' + esc(item.label) + '</div>';
-    if (fileCount) h += '<div class="sp-cl-count">' + fileCount + ' file' + (fileCount!==1?'s':'') + '</div>';
-    h += '<div class="sp-cl-status ' + statusCls + '">' + statusLbl + '</div>';
-    h += '<div class="sp-cl-actions">';
-    if (cj.spFolderId) {
-      h += '<button class="btn btn-s" style="padding:2px 7px;font-size:10.5px" onclick="spUploadToFolder(\''+cj.id+'\',\''+item.slug+'\',\''+esc(item.folder)+'\')">⬆</button>';
-      h += '<button class="btn btn-s" style="padding:2px 7px;font-size:10.5px;color:'+(isNA?'var(--green)':'var(--t3)')+'" onclick="spToggleNA(\''+cj.id+'\',\''+item.slug+'\')" title="'+(isNA?'Mark as required':'Mark as not needed')+'">'+(isNA?'↩ Undo N/A':'N/A')+'</button>';
-    }
-    h += '</div></div>';
-  });
-
-  // Upload zone
-  if (cj.spFolderId) {
-    h += '<div class="sp-upload-zone" onclick="spUploadFile(\''+cj.id+'\')" ondragover="event.preventDefault()" ondrop="spHandleDrop(event,\''+cj.id+'\')">';
-    h += '<div style="font-size:22px;margin-bottom:6px">⬆️</div>';
-    h += '<div style="font-size:12.5px;font-weight:600;color:var(--t2)">Drop files here or click to upload</div>';
-    h += '<div style="font-size:11px;color:var(--t3);margin-top:3px">Word, PDF, images, spreadsheets supported</div>';
-    h += '</div>';
-  }
-
-  h += '</div>';
-  return h;
-}
-
-// ── SP API HELPERS ────────────────────────────────────────────────────────
-async function spCall(action, payload) {
-  var res = await fetch('/api/sharepoint', {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: action, payload: payload || {} })
-  });
-  var text = await res.text();
-  try { return JSON.parse(text); } catch(e) { return { error: text }; }
-}
-
-// Cache site/drive IDs so we don't re-fetch every time
-var _spSiteId  = '';
-var _spDriveId = '';
-
-async function spTestConnection() {
-  toast('Testing SharePoint connection…');
-  var res = await spCall('testConnection', {});
-  console.log('SharePoint test result:', res);
-  if (res.siteStatus === 200) {
-    toast('✅ SharePoint connected! Site: ' + (res.siteResponse && res.siteResponse.displayName || 'OK'));
-  } else if (res.siteStatus === 401) {
-    toast('❌ Unauthorised — check SP_CLIENT_ID and SP_CLIENT_SECRET in Azure');
-  } else if (res.siteStatus === 403) {
-    toast('❌ Forbidden — Sites.ReadWrite.All permission needs admin consent in Entra ID');
-  } else if (res.siteStatus === 404) {
-    toast('❌ Site not found — check SP_SITE_URL is correct');
-  } else if (res.error) {
-    toast('❌ ' + res.error);
-  } else {
-    toast('❌ Unexpected response (' + res.siteStatus + ') — check browser console');
-  }
-}
-
-async function spGetSiteAndDrive() {
-  if (_spSiteId && _spDriveId) return { siteId: _spSiteId, driveId: _spDriveId };
-  // Get site ID
-  var siteRes = await spCall('getSiteId', {});
-  if (!siteRes.id) {
-    var errDetail = (siteRes.error && siteRes.error.message) || (siteRes.error) || JSON.stringify(siteRes);
-    toast('SharePoint error: ' + errDetail);
-    console.error('SharePoint getSiteId response:', siteRes);
-    return null;
-  }
-  _spSiteId = siteRes.id;
-  // Get drive ID (Shared Documents = default drive)
-  var drivesRes = await spCall('getDriveId', { siteId: _spSiteId });
-  var drives = (drivesRes.value || []);
-  var drive = drives.filter(function(d){ return d.name === 'Documents' || d.name === 'Shared Documents'; })[0] || drives[0];
-  if (!drive) { toast('SharePoint: Could not find document library'); return null; }
-  _spDriveId = drive.id;
-  return { siteId: _spSiteId, driveId: _spDriveId };
-}
-
-function spBrandFolder(brand) {
-  var bd = BRAND_DATA.filter(function(b){ return b.name === brand; })[0];
-  return bd && bd.spFolder ? bd.spFolder : '';
-}
-
-function spFolderName(cj) {
-  var ref = cj.partnerRef || cj.clientRef || '';
-  var ourRef = cj.masterJobId || '';
-  var client = cj.clientName || '';
-  if (ref && ourRef) return ref + ' — ' + ourRef + ' — ' + client;
-  if (ourRef) return ourRef + ' — ' + client;
-  return client || 'Unknown';
-}
-
-// ── CREATE SHAREPOINT FOLDER ─────────────────────────────────────────────
-async function spCreateFolder(cjId) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj) return;
-
-  var brandFolder = spBrandFolder(cj.brand);
-  if (!brandFolder) {
-    toast('No SharePoint folder configured for brand "' + cj.brand + '" — set it in Settings → Brands');
-    return;
-  }
-  if (!(cj.partnerRef || cj.clientRef)) {
-    toast('Add the partner reference before creating the SharePoint folder');
-    return;
-  }
-
-  var btn = event && event.target;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
-  toast('Creating SharePoint folder…');
-
-  var sd = await spGetSiteAndDrive();
-  if (!sd) { if(btn){btn.disabled=false;btn.textContent='📁 Create SharePoint Folder';} return; }
-
-  var topFolderName = spFolderName(cj);
-  var basePath = 'Partners/' + brandFolder;
-
-  // Create top-level job folder
-  var topRes = await spCall('createFolder', {
-    siteId: sd.siteId, driveId: sd.driveId,
-    parentPath: basePath,
-    folderName: topFolderName
-  });
-  if (!topRes.id) {
-    toast('Failed to create folder: ' + (topRes.error || JSON.stringify(topRes)));
-    if(btn){btn.disabled=false;btn.textContent='📁 Create SharePoint Folder';}
-    return;
-  }
-
-  var jobFolderPath = basePath + '/' + topFolderName;
-
-  // Create all 8 sub-folders using parent folder ID (avoids encoding issues with special chars)
-  var subFolders = SP_CHECKLIST.map(function(item){ return item.folder; });
-  var parentFolderId = topRes.id;
-  console.log('Creating sub-folders, parentFolderId:', parentFolderId, 'siteId:', sd.siteId, 'driveId:', sd.driveId);
-  var failedFolders = [];
-  for (var i = 0; i < subFolders.length; i++) {
-    var sfRes = await spCall('createFolderById', {
-      siteId: sd.siteId, driveId: sd.driveId,
-      parentId: parentFolderId,
-      folderName: subFolders[i]
-    });
-    console.log('Sub-folder', subFolders[i], ':', sfRes.id ? 'OK' : 'FAILED', sfRes.error || '');
-    if (!sfRes.id) failedFolders.push(subFolders[i]);
-  }
-  if (failedFolders.length) {
-    toast('⚠ Top folder created but ' + failedFolders.length + ' sub-folders failed: ' + failedFolders[0] + '... — check browser console');
-  }
-
-  // Store folder details on client record
-  cj.spFolderId   = topRes.id;
-  cj.spFolderUrl  = topRes.webUrl;
-  cj.spFolderPath = jobFolderPath;
-  cj.spSiteId     = sd.siteId;
-  cj.spDriveId    = sd.driveId;
-  saveData('clientjob', cj.id, cj);
-
-  toast('✅ SharePoint folder created with 7 sub-folders');
-  if (curMod === 'bookings') renderClientJobDetail(cj);
-}
-
-// ── UPLOAD FILE ───────────────────────────────────────────────────────────
-function spUploadFile(cjId) {
-  var input = document.createElement('input');
-  input.type = 'file';
-  input.multiple = true;
-  input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.heic';
-  input.onchange = function() { spHandleFiles(cjId, input.files, null); };
-  input.click();
-}
-
-function spUploadToFolder(cjId, slug, folderName) {
-  var input = document.createElement('input');
-  input.type = 'file';
-  input.multiple = true;
-  input.accept = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.heic';
-  input.onchange = function() { spHandleFiles(cjId, input.files, folderName); };
-  input.click();
-}
-
-function spHandleDrop(event, cjId) {
-  event.preventDefault();
-  spHandleFiles(cjId, event.dataTransfer.files, null);
-}
-
-async function spHandleFiles(cjId, files, targetFolder) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj || !cj.spFolderId) { toast('No SharePoint folder linked to this job'); return; }
-  if (!files || !files.length) return;
-
-  // If no target folder specified, show folder picker
-  if (!targetFolder) {
-    targetFolder = await spPickFolder();
-    if (!targetFolder) return;
-  }
-
-  var folderPath = cj.spFolderPath + '/' + targetFolder;
-  toast('Uploading ' + files.length + ' file(s)…');
-
-  for (var i = 0; i < files.length; i++) {
-    var file = files[i];
-    var reader = new FileReader();
-    await new Promise(function(resolve) {
-      reader.onload = async function(e) {
-        var base64 = e.target.result.split(',')[1];
-        // Find the sub-folder ID by listing the job folder children
-        var subFolderId = null;
-        var children = await spCall('getFolderChildren', { siteId: cj.spSiteId, driveId: cj.spDriveId, itemId: cj.spFolderId });
-        if (children.value) {
-          var match = children.value.filter(function(x){ return x.name === targetFolder; })[0];
-          if (match) subFolderId = match.id;
-        }
-        var res = await spCall('uploadFile', {
-          siteId:      cj.spSiteId,
-          driveId:     cj.spDriveId,
-          parentId:    subFolderId || cj.spFolderId,
-          fileName:    file.name,
-          fileContent: base64,
-          contentType: file.type || 'application/octet-stream'
-        });
-        if (res.id) {
-          // Write metadata
-          var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-          await spCall('updateMetadata', {
-            siteId:  cj.spSiteId,
-            driveId: cj.spDriveId,
-            itemId:  res.id,
-            metadata: {
-              OpsJobRef:        cj.masterJobId || '',
-              PartnerRef:       cj.partnerRef || cj.clientRef || '',
-              ClientName:       cj.clientName || '',
-              Brand:            cj.brand || '',
-              MoveManager:      cj.moveManager || '',
-              MoveManagerEmail: mm ? (mm.email || '') : '',
-              DocumentType:     targetFolder,
-              UploadedBy:       (APP_SETTINGS.userName || 'Ops Team')
-            }
-          });
-          // Mark checklist item as received
-          var matchItem = SP_CHECKLIST.filter(function(it){ return it.folder === targetFolder; })[0];
-          if (matchItem) {
-            if (!cj.docChecklist) cj.docChecklist = {};
-            cj.docChecklist[matchItem.slug] = 'received';
-            if (!cj.spFileCounts) cj.spFileCounts = {};
-            cj.spFileCounts[matchItem.slug] = (cj.spFileCounts[matchItem.slug] || 0) + 1;
-            saveData('clientjob', cj.id, cj);
-          }
-        }
-        resolve();
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  toast('✅ ' + files.length + ' file(s) uploaded to SharePoint');
-  if (curMod === 'bookings') renderClientJobDetail(cj);
-}
-
-function spPickFolder() {
-  return new Promise(function(resolve) {
-    var opts = SP_CHECKLIST.map(function(item, i) {
-      return '<option value="'+esc(item.folder)+'">'+esc(item.label)+'</option>';
-    }).join('');
-    var modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:flex;align-items:center;justify-content:center';
-    modal.innerHTML = '<div style="background:#fff;border-radius:12px;padding:24px;width:320px;box-shadow:0 20px 60px rgba(0,0,0,.2)">'
-      + '<div style="font-size:14px;font-weight:700;margin-bottom:12px">Select document type</div>'
-      + '<select id="_sp_folder_pick" style="width:100%;padding:9px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:16px">'+opts+'</select>'
-      + '<div style="display:flex;gap:8px">'
-      + '<button onclick="this.closest(\'div\').parentNode.parentNode._resolve(null);this.closest(\'div\').parentNode.remove()" style="flex:1;padding:9px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;cursor:pointer">Cancel</button>'
-      + '<button onclick="this.closest(\'div\').parentNode.parentNode._resolve(document.getElementById(\'_sp_folder_pick\').value);this.closest(\'div\').parentNode.remove()" style="flex:2;padding:9px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer">Upload →</button>'
-      + '</div></div>';
-    modal._resolve = resolve;
-    document.body.appendChild(modal);
-  });
-}
-
-// ── TOGGLE N/A on checklist item ─────────────────────────────────────────
-function spToggleNA(cjId, slug) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj) return;
-  if (!cj.docChecklist) cj.docChecklist = {};
-  cj.docChecklist[slug] = cj.docChecklist[slug] === 'na' ? '' : 'na';
-  saveData('clientjob', cj.id, cj);
-  if (curMod === 'bookings') renderClientJobDetail(cj);
-}
-
-// ── SHARE FOLDER ─────────────────────────────────────────────────────────
-async function spShareFolder(cjId) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj || !cj.spFolderId) { toast('No SharePoint folder linked'); return; }
-
-  toast('Generating share link…');
-  var res = await spCall('createShareLink', {
-    siteId:  cj.spSiteId,
-    driveId: cj.spDriveId,
-    itemId:  cj.spFolderId
-  });
-
-  console.log('Share link response:', res);
-  var linkUrl = res.link && res.link.webUrl ? res.link.webUrl : '';
-  if (!linkUrl) {
-    var errDetail = res.error || JSON.stringify(res);
-    toast('Could not generate share link: ' + errDetail);
-    return;
-  }
-
-  // Calculate expiry
-  var expiry = new Date();
-  expiry.setDate(expiry.getDate() + 90);
-  var expiryStr = expiry.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][expiry.getMonth()] + ' ' + expiry.getFullYear();
-
-  // Find move manager details
-  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-  var mmName  = mm ? mm.name  : (cj.moveManager || 'Move Manager');
-  var mmEmail = mm ? (mm.email || '') : '';
-
-  // Build share message
-  var subject = 'Documents — ' + (cj.partnerRef||cj.clientRef||'') + ' / ' + (cj.masterJobId||'') + ' — ' + (cj.clientName||'');
-  var body = 'Hi ' + mmName + ',\n\n'
-    + 'Please find the documentation folder for the above move below.\n\n'
-    + 'Client:           ' + (cj.clientName||'—') + '\n'
-    + 'Your Reference:   ' + (cj.partnerRef||cj.clientRef||'—') + '\n'
-    + 'Our Reference:    ' + (cj.masterJobId||'—') + '\n'
-    + 'Brand:            ' + (cj.brand||'—') + '\n'
-    + 'Move Manager:     ' + mmName + (mmEmail ? ' (' + mmEmail + ')' : '') + '\n\n'
-    + 'Documents:\n→ View folder: ' + linkUrl + '\n  (Valid until ' + expiryStr + ' — view only)\n\n'
-    + 'If you have any questions please reply to this email.\n\n'
-    + 'Kind regards\nMoveSquad Operations';
-
-  spShowShareModal(cjId, subject, body, linkUrl, mmEmail, expiryStr);
-}
-
-function spShowShareModal(cjId, subject, body, linkUrl, toEmail, expiryStr) {
-  var existing = document.getElementById('sp-share-modal');
-  if (existing) existing.remove();
-
-  var modal = document.createElement('div');
-  modal.id = 'sp-share-modal';
-  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:900;display:flex;align-items:center;justify-content:center;padding:20px';
-  modal.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;overflow-y:auto">'
-    + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">'
-    + '<div style="font-size:15px;font-weight:700;color:#1A2035">🔗 Share Document Folder</div>'
-    + '<button onclick="document.getElementById(\'sp-share-modal\').remove()" style="width:28px;height:28px;border-radius:6px;border:1px solid #E3E7F0;background:#f5f5f5;cursor:pointer;font-size:16px">✕</button>'
-    + '</div>'
-    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">To</div>'
-    + '<input id="sp-sh-to" value="'+esc(toEmail||'')+'" placeholder="recipient@email.com" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:12px;box-sizing:border-box;font-family:inherit">'
-    + '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#7A849E;margin-bottom:4px">Subject</div>'
-    + '<input id="sp-sh-subj" value="'+esc(subject)+'" style="width:100%;padding:8px 10px;border:1.5px solid #E3E7F0;border-radius:7px;font-size:13px;margin-bottom:12px;box-sizing:border-box;font-family:inherit">'
-    + '<div style="font-size:10.5px;color:#7A849E;margin-bottom:12px">📧 A fully branded HTML email will be sent from <strong>' + esc(APP_SETTINGS.companyEmail||'updates@onwards.network') + '</strong></div>'
-    + '<div style="font-size:10.5px;color:#7A849E;margin-top:6px">⏰ Link expires '+esc(expiryStr)+' — view only, no sign-in required</div>'
-    + '<div style="display:flex;gap:8px;margin-top:16px">'
-    + '<button onclick="navigator.clipboard.writeText(\''+linkUrl.replace(/'/g,"\\'")+'\'  );toast(\'Link copied to clipboard\')" style="flex:1;padding:10px;border:1.5px solid #E3E7F0;border-radius:7px;background:#fff;font-size:13px;font-weight:600;cursor:pointer">📋 Copy Link</button>'
-    + '<button onclick="spSendShareEmailFromModal(\''+cjId+'\',\''+linkUrl.replace(/'/g,"\\'")+'\'  ,\''+expiryStr.replace(/'/g,"\\'")+'\'  )" style="flex:2;padding:10px;border:none;border-radius:7px;background:#0073EA;color:#fff;font-size:13px;font-weight:700;cursor:pointer">📧 Send Branded Email</button>'
-    + '</div></div>';
-  document.body.appendChild(modal);
-}
-
-async function spSendShareEmailFromModal(cjId, linkUrl, expiryStr) {
-  var toEmail   = (document.getElementById('sp-sh-to')   || {}).value || '';
-  var subject   = (document.getElementById('sp-sh-subj') || {}).value || '';
-  if (!toEmail) { toast('Please enter a recipient email address'); return; }
-  document.getElementById('sp-share-modal').remove();
-  await spSendShareEmail(cjId, linkUrl, expiryStr, toEmail, subject);
-}
-
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ICS CALENDAR FILE GENERATOR
-// ═══════════════════════════════════════════════════════════════════════════
-
-function generateIcs(opts) {
-  // opts: { summary, description, location, startDate (YYYY-MM-DD), startTime (HH:MM), durationHours, uid, organiserEmail, organiserName }
-  var start = opts.startDate.replace(/-/g,'');
-  var timeStr = (opts.startTime || '09:00').replace(':','');
-  var startDt = start + 'T' + timeStr + '00';
-
-  // Calculate end time
-  var durationH = opts.durationHours || 2;
-  var startH = parseInt(timeStr.slice(0,2));
-  var startM = parseInt(timeStr.slice(2,4));
-  var endTotalM = (startH * 60 + startM) + (durationH * 60);
-  var endH = String(Math.floor(endTotalM / 60) % 24).padStart(2,'0');
-  var endM = String(endTotalM % 60).padStart(2,'0');
-  var endDt = start + 'T' + endH + endM + '00';
-
-  var uid = opts.uid || ('ops-' + Date.now() + '@onwards.network');
-  var now = new Date().toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z';
-  var company = APP_SETTINGS.companyName || 'Onwards';
-  var orgEmail = opts.organiserEmail || APP_SETTINGS.companyEmail || 'updates@onwards.network';
-  var orgName  = opts.organiserName  || company + ' Operations';
-
-  var desc = (opts.description || '').split('\n').join('\\n').split(',').join('\\,');
-  var loc  = (opts.location    || '').replace(/,/g,'\,');
-  var summ = (opts.summary     || '').replace(/,/g,'\,');
-
-  return [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//' + company + '//OpsManager//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:REQUEST',
-    'BEGIN:VEVENT',
-    'UID:' + uid,
-    'DTSTAMP:' + now,
-    'DTSTART:' + startDt,
-    'DTEND:' + endDt,
-    'SUMMARY:' + summ,
-    'DESCRIPTION:' + desc,
-    (loc ? 'LOCATION:' + loc : ''),
-    'ORGANIZER;CN=' + orgName + ':mailto:' + orgEmail,
-    'STATUS:CONFIRMED',
-    'SEQUENCE:0',
-    'END:VEVENT',
-    'END:VCALENDAR'
-  ].filter(Boolean).join('\r\n');
-}
-
-function icsDataUrl(icsContent) {
-  // Returns a data URL the email can link to for one-click calendar add
-  return 'data:text/calendar;charset=utf8,' + encodeURIComponent(icsContent);
-}
-
-function icsCalendarBlock(icsContent, summary, dateStr) {
-  // Returns the HTML block to include in emails for one-click calendar add
-  var dataUrl = icsDataUrl(icsContent);
-  return '<div style="margin:24px 0;padding:16px 20px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;display:flex;align-items:center;gap:16px">'
-    + '<div style="font-size:28px">📅</div>'
-    + '<div style="flex:1">'
-    + '<div style="font-weight:700;color:#1e40af;font-size:14px">Save to your calendar</div>'
-    + '<div style="color:#374151;font-size:13px;margin-top:2px">' + esc(summary) + ' — ' + esc(dateStr) + '</div>'
-    + '</div>'
-    + '<a href="' + dataUrl + '" download="event.ics" style="background:#1e40af;color:#fff;font-size:13px;font-weight:600;padding:10px 18px;border-radius:6px;text-decoration:none;white-space:nowrap">📅 Add to Calendar</a>'
-    + '</div>'
-    + '<p style="font-size:11px;color:#9ca3af;margin-top:-12px">Works with Apple Calendar, Google Calendar and Outlook. Click the button above to save this appointment to your calendar.</p>';
-}
-
-// ── SURVEY CONFIRMATION EMAIL ────────────────────────────────────────────
-async function sendSurveyConfirmationEmail(svId, opts) {
-  var sv = SURVEYS.filter(function(x){ return x.id === svId; })[0];
-  if (!sv) return;
-  if (!sv.clientEmail) {
-    if (opts && opts.resend) toast('No client email on this survey record');
-    return;
-  }
-
-  var company   = APP_SETTINGS.companyName || 'Onwards';
-  var surveyor  = sv.surveyor  || 'our surveyor';
-  var dateNice  = sv.surveyDate ? (new Date(sv.surveyDate+'T12:00:00')).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : 'TBC';
-  var timeNice  = sv.surveyTime || 'TBC';
-  var subject   = 'Survey Appointment: ' + sv.ref + ' — ' + (sv.clientName||'');
-
-  // Generate .ics
-  var icsContent = generateIcs({
-    summary:        company + ' Survey — ' + (sv.clientName||''),
-    description:    'Survey appointment with ' + surveyor + '\nRef: ' + sv.ref + '\nAddress: ' + (sv.postcode||''),
-    location:       sv.postcode || '',
-    startDate:      sv.surveyDate,
-    startTime:      sv.surveyTime || '09:00',
-    durationHours:  1,
-    uid:            sv.id + '@onwards.network',
-    organiserEmail: APP_SETTINGS.companyEmail || 'updates@onwards.network',
-    organiserName:  company + ' Operations'
-  });
-
-  var bodyHtml = '<p>Dear ' + esc(sv.clientName||'') + ',</p>'
-    + '<p>Thank you for choosing ' + esc(company) + '. We are pleased to confirm your survey appointment:</p>'
-    + '<table style="width:100%;border-collapse:collapse;margin:20px 0">'
-    + '<tr><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa;width:140px">Date</td><td style="padding:10px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(dateNice) + '</td></tr>'
-    + '<tr><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa">Time</td><td style="padding:10px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(timeNice) + '</td></tr>'
-    + '<tr><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa">Surveyor</td><td style="padding:10px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(surveyor) + '</td></tr>'
-    + '<tr><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa">Address</td><td style="padding:10px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(sv.postcode||'TBC') + '</td></tr>'
-    + (sv.notes ? '<tr><td style="padding:10px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa">Notes</td><td style="padding:10px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(sv.notes) + '</td></tr>' : '')
-    + '</table>'
-    + icsCalendarBlock(icsContent, company + ' Survey', dateNice)
-    + '<p>If you need to reschedule or have any questions, please reply to this email.</p>'
-    + '<p>Kind regards,<br><strong>' + esc(company) + ' Operations</strong></p>';
-
-  var html = buildEmailHtml({ subject, preheader: 'Your survey is confirmed for ' + dateNice, bodyHtml });
-
-  var res = await sendEmail({ to: sv.clientEmail, subject, html });
-  if (res.ok) {
-    sv.confirmationSent = new Date().toISOString();
-    saveData('survey', sv.id, sv);
-    if (opts && opts.resend) toast('✅ Survey confirmation sent to ' + sv.clientEmail);
-  } else {
-    if (opts && opts.resend) toast('❌ Email failed: ' + (res.error||'Unknown error'));
-    console.error('Survey confirmation failed:', res.error);
-  }
-}
-
-// ── JOB CONFIRMATION EMAIL ───────────────────────────────────────────────────
-async function sendJobConfirmationEmail(cjId, opts) {
-  // opts: { resend: bool } — if resend, skip auto-check
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj) { console.warn('sendJobConfirmationEmail: client job not found', cjId); return; }
-
-  // Determine channel from brand
-  var bd       = BRAND_DATA.filter(function(b){ return b.name === cj.brand; })[0];
-  var channel  = bd ? bd.channel : 'Partner';
-  var isDomestic = channel === 'Domestic';
-
-  // Determine recipient
-  var toEmail  = '';
-  var toName   = '';
-  if (isDomestic) {
-    toEmail = cj.clientEmail || '';
-    toName  = cj.clientName  || 'Customer';
-    if (!toEmail) { console.warn('No client email for domestic job', cjId); return; }
-  } else {
-    var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-    toEmail = mm ? (mm.email || '') : '';
-    toName  = mm ? mm.name : (cj.moveManager || 'Move Manager');
-    if (!toEmail) {
-      if (opts && opts.resend) toast('No email set for move manager — add one in Settings → Move Managers');
-      return;
-    }
-  }
-
-  // Get all movements for this client job
-  var movs = jobs.filter(function(j){ return j.clientJobId === cjId; });
-
-  // Subject line
-  var partnerRef = cj.partnerRef || cj.clientRef || '';
-  var ourRef     = cj.masterJobId || '';
-
-  // Extract surname — handle both "Surname, First" and "First Surname" formats
-  var fullName = cj.clientName || '';
-  var surname  = fullName.indexOf(',') >= 0
-    ? fullName.split(',')[0].trim()
-    : (fullName.split(' ').pop() || fullName);
-
-  // Get primary job type from first movement
-  var primaryJobType = movs.length ? (movs[0].jobType || movs[0].type || '') : '';
-
-  var subject = isDomestic
-    ? 'Booking Confirmation: ' + ourRef + ' — ' + surname + (primaryJobType ? ' — ' + primaryJobType : '')
-    : 'Booking Confirmation: ' + (partnerRef ? partnerRef + ' / ' : '') + ourRef + ' — ' + surname + (primaryJobType ? ' — ' + primaryJobType : '');
-
-  // Build movements table rows
-  var movRows = '';
-  movs.forEach(function(j) {
-    var jobType = j.jobType || j.type || '';
-    var isWarehouseIn  = jobType === 'Int Store Handling' || (j.dest   && j.dest.indexOf('INT STORE') >= 0);
-    var isWarehouseOut = jobType === 'Ex Store Delivery'  || (j.origin && j.origin.indexOf('EX STORE') >= 0);
-    var isDTD = jobType === 'Door to Door' || jobType === 'Domestic' || (j.origin && j.dest && !isWarehouseIn && !isWarehouseOut);
-
-    // Address display logic
-    var addrHtml = '';
-    if (isWarehouseIn) {
-      addrHtml = '<strong>Origin:</strong> ' + esc(j.origin||'TBC') + '<br><strong>To:</strong> MoveSquad Warehouse';
-    } else if (isWarehouseOut) {
-      addrHtml = '<strong>From:</strong> MoveSquad Warehouse<br><strong>Destination:</strong> ' + esc(j.dest||'TBC');
-    } else if (isDTD) {
-      addrHtml = '<strong>Origin:</strong> ' + esc(j.origin||'TBC') + '<br><strong>Destination:</strong> ' + esc(j.dest||'TBC');
-    } else if (jobType && jobType.indexOf('Destination') >= 0) {
-      addrHtml = '<strong>Destination:</strong> ' + esc(j.dest||'TBC');
-    } else {
-      addrHtml = '<strong>Origin:</strong> ' + esc(j.origin||'TBC');
-    }
-
-    // Access notes
-    var accessNotes = [];
-    if (j.access) {
-      if (j.access.lift)       accessNotes.push('Lift available');
-      if (j.access.noLift)     accessNotes.push('No lift — stairs only');
-      if (j.access.parking)    accessNotes.push('Parking available');
-      if (j.access.noParking)  accessNotes.push('No parking — permits required');
-      if (j.access.longCarry)  accessNotes.push('Long carry');
-      if (j.access.narrowAccess) accessNotes.push('Narrow access');
-    }
-
-    var dateStr = j.start ? (new Date(j.start+'T12:00:00')).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : 'TBC';
-    var volStr  = j.volFt ? j.volFt + ' ft³' + (j.volCbm ? ' / ' + j.volCbm + ' m³' : '') : 'TBC';
-
-    movRows += '<tr style="border-bottom:1px solid #d4e4ef">'
-      + '<td style="padding:12px 14px;vertical-align:top;min-width:140px"><strong style="color:#1a1a2e">' + esc(jobType) + '</strong><br><span style="font-size:12px;color:#6b7280">' + esc(j.ref||j.movementRef||'') + '</span></td>'
-      + '<td style="padding:12px 14px;vertical-align:top"><span style="background:#f0f4ff;color:#2563eb;font-size:12px;font-weight:600;padding:3px 8px;border-radius:4px">' + esc(dateStr) + '</span></td>'
-      + '<td style="padding:12px 14px;vertical-align:top;font-size:13px;color:#374151">' + addrHtml + '</td>'
-      + '<td style="padding:12px 14px;vertical-align:top;font-size:13px">' + esc(volStr) + '</td>'
-      + (accessNotes.length ? '<td style="padding:12px 14px;vertical-align:top;font-size:12px;color:#b45309">' + accessNotes.join('<br>') + '</td>' : '<td style="padding:12px 14px"></td>')
-      + '</tr>';
-  });
-
-  // Ref table
-  var refRows = '';
-  if (!isDomestic && partnerRef) refRows += '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa;width:160px">Your Reference</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(partnerRef) + '</td></tr>';
-  if (ourRef) refRows += '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa">Our Reference</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(ourRef) + '</td></tr>';
-  refRows += '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa">Client</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(cj.clientName||'—') + '</td></tr>';
-  if (cj.brand) refRows += '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa">Service</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(cj.brand) + '</td></tr>';
-  if (!isDomestic && cj.moveManager) refRows += '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;color:#374151;background:#f0f6fa">Move Manager</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px;color:#1a1a2e">' + esc(cj.moveManager) + '</td></tr>';
-
-  // SP folder link
-  var docsLink = '';
-  if (cj.spFolderUrl) {
-    docsLink = '<p style="margin-top:24px"><strong>📁 Document Folder</strong><br><a href="' + esc(cj.spFolderUrl) + '" style="color:' + (APP_SETTINGS.emailAccentColor||'#0073EA') + '">' + esc(cj.spFolderUrl) + '</a></p>';
-  }
-
-  // Generate .ics for first movement date
-  var icsBlock = '';
-  if (movs.length && movs[0].start) {
-    var firstMov = movs[0];
-    var jobDateNice = (new Date(firstMov.start+'T12:00:00')).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-    var icsDesc = ['Ref: ' + ourRef, (partnerRef ? 'Partner Ref: ' + partnerRef : ''), 'Client: ' + (cj.clientName||''), (cj.moveManager ? 'Move Manager: ' + cj.moveManager : '')].filter(Boolean).join('\n');
-    var icsContent = generateIcs({
-      summary:       (firstMov.jobType||firstMov.type||'Job') + ' — ' + (cj.clientName||''),
-      description:   icsDesc,
-      location:      firstMov.origin || firstMov.dest || '',
-      startDate:     firstMov.start,
-      startTime:     '08:00',
-      durationHours: 8,
-      uid:           cj.id + '-' + firstMov.id + '@onwards.network',
-      organiserEmail: APP_SETTINGS.companyEmail || 'updates@onwards.network',
-      organiserName:  (APP_SETTINGS.companyName||'Onwards') + ' Operations'
-    });
-    icsBlock = icsCalendarBlock(icsContent, (firstMov.jobType||'Job') + ' — ' + (cj.clientName||''), jobDateNice);
-  }
-
-  var greeting = isDomestic ? ('Dear ' + esc(cj.clientName||'') + ',') : ('Dear ' + esc(toName) + ',');
-  var intro    = isDomestic
-    ? '<p>Thank you for choosing ' + esc(APP_SETTINGS.companyName||'Onwards') + '. We are pleased to confirm the following job booking:</p>'
-    : '<p>Please find below the confirmed job details for the above booking:</p>';
-
-  var bodyHtml = '<p>' + greeting + '</p>'
-    + intro
-    + '<table style="width:100%;border-collapse:collapse;margin:16px 0">' + refRows + '</table>'
-    + '<p style="margin-top:24px"><strong>Job Details</strong></p>'
-    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
-    + '<thead><tr style="background:#f0f6fa;border-bottom:2px solid #d4e4ef">'
-    + '<th style="padding:10px 14px;text-align:left;color:#374151">Type</th>'
-    + '<th style="padding:10px 14px;text-align:left;color:#374151">Date</th>'
-    + '<th style="padding:10px 14px;text-align:left;color:#374151">Address</th>'
-    + '<th style="padding:10px 14px;text-align:left;color:#374151">Volume</th>'
-    + '<th style="padding:10px 14px;text-align:left;color:#374151">Access Notes</th>'
-    + '</tr></thead><tbody>' + movRows + '</tbody></table></div>'
-    + docsLink
-    + icsBlock
-    + '<p style="margin-top:24px">If you have any questions please reply to this email.</p>'
-    + '<p>Kind regards,<br><strong>' + esc(APP_SETTINGS.companyName||'Onwards') + ' Operations</strong></p>';
-
-  var html = buildEmailHtml({
-    subject,
-    preheader: 'Job confirmation for ' + (cj.clientName||'') + (partnerRef ? ' (' + partnerRef + ')' : ''),
-    bodyHtml,
-    ctaUrl:   cj.spFolderUrl || '',
-    ctaLabel: cj.spFolderUrl ? '📁 View Documents' : ''
-  });
-
-  var res = await sendEmail({ to: toEmail, subject, html, replyTo: APP_SETTINGS.emailReplyTo });
-  if (res.ok) {
-    // Log the send on the client job
-    if (!cj.emailLog) cj.emailLog = [];
-    cj.emailLog.push({ type: 'confirmation', sentAt: new Date().toISOString(), to: toEmail, subject });
-    saveData('clientjob', cj.id, cj);
-    if (opts && opts.resend) toast('✅ Confirmation email sent to ' + toEmail);
-    console.log('Job confirmation sent to', toEmail);
-    // Also create Outlook calendar event for move manager (partner/account jobs only)
-    if (!isDomestic && movs.length) {
-      setTimeout(function() { createMoveManagerCalendarEvent(cj, movs); }, 500);
-    }
-  } else {
-    console.error('Job confirmation email failed:', res.error);
-    if (opts && opts.resend) toast('❌ Email failed: ' + (res.error||'Unknown error'));
-  }
-}
-
-// ── MANUAL DOC REMINDER ──────────────────────────────────────────────────────
-async function sendDocReminder(cjId) {
-  var cj = CLIENT_JOBS.filter(function(x){ return x.id === cjId; })[0];
-  if (!cj) return;
-
-  var REQUIRED_SLUGS = ['packing-list','insurance','survey-report','delivery-order'];
-  var slugLabels = {
-    'packing-list':'Packing List / Inventory','insurance':'Insurance Certificate',
-    'survey-report':'Survey Report','delivery-order':'Delivery Order / Instructions'
-  };
-  var checklist   = cj.docChecklist || {};
-  var missingDocs = REQUIRED_SLUGS.filter(function(s){ return !checklist[s] || checklist[s] === 'missing'; });
-
-  if (!missingDocs.length) { toast('No missing required documents for this job'); return; }
-
-  var mm = MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0];
-  if (!mm || !mm.email) { toast('No email set for move manager — add one in Settings → Move Managers'); return; }
-
-  if (!confirm('Send document request to ' + mm.name + ' (' + mm.email + ')?')) return;
-
-  var partnerRef   = cj.partnerRef || cj.clientRef || '—';
-  var ourRef       = cj.masterJobId || '—';
-  var clientName   = cj.clientName  || '—';
-  var jobDateNice  = cj.startDate ? (new Date(cj.startDate+'T12:00:00')).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : 'TBC';
-  var missingList  = missingDocs.map(function(s){ return slugLabels[s]||s; }).join(', ');
-  var docsUrl      = cj.spFolderUrl || '';
-  var company      = APP_SETTINGS.companyName || 'Onwards';
-
-  var subject = 'Action Required — Missing Documents: ' + partnerRef + ' / ' + ourRef + ' — ' + clientName;
-
-  var bodyHtml = '<p>Dear ' + esc(mm.name) + ',</p>'
-    + '<p>We are writing to request the outstanding documents for the following job. Please provide these as soon as possible:</p>'
-    + '<table style="width:100%;border-collapse:collapse;margin:16px 0">'
-    + '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;background:#f0f6fa;width:150px">Client</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px">' + esc(clientName) + '</td></tr>'
-    + '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;background:#f0f6fa">Your Reference</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px">' + esc(partnerRef) + '</td></tr>'
-    + '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;background:#f0f6fa">Our Reference</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px">' + esc(ourRef) + '</td></tr>'
-    + '<tr><td style="padding:8px 14px;border:1px solid #d4e4ef;font-weight:600;font-size:13px;background:#f0f6fa">Job Date</td><td style="padding:8px 14px;border:1px solid #d4e4ef;font-size:13px">' + esc(jobDateNice) + '</td></tr>'
-    + '</table>'
-    + '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin:20px 0">'
-    + '<div style="font-weight:700;color:#856404;margin-bottom:8px">⚠ Missing Documents</div>'
-    + '<div style="color:#533f03;font-size:13px">' + esc(missingList) + '</div>'
-    + '</div>'
-    + (docsUrl ? '<p>Please upload to the job folder: <a href="'+esc(docsUrl)+'" style="color:#0073EA">'+esc(docsUrl)+'</a></p>' : '')
-    + '<p>If you have any questions please reply to this email.</p>'
-    + '<p>Kind regards,<br><strong>' + esc(company) + ' Operations</strong></p>';
-
-  var html = buildEmailHtml({ subject: subject, preheader: 'Missing documents required for ' + clientName, bodyHtml: bodyHtml });
-
-  toast('Sending document request…');
-  var res = await sendEmail({ to: mm.email, subject: subject, html: html });
-  if (res.ok) {
-    toast('✅ Document request sent to ' + mm.email);
-  } else {
-    toast('❌ Failed: ' + (res.error || 'Unknown error'));
-  }
-}
-
-// ── SEND TO CREW (Appenate) ───────────────────────────────────────────────
-async function sendToCrew(jobId) {
-  var job = jobs.filter(function(j){ return j.id === jobId; })[0];
-  if (!job) { toast('Job not found'); return; }
-
-  var crew = (job.drivers || []).concat(job.porters || []).filter(function(x){ return x; });
-  if (!crew.length) { toast('No crew assigned to this job'); return; }
-
-  // Find linked client job for partner ref, docs link etc.
-  var cj = job.clientJobId ? CLIENT_JOBS.filter(function(x){ return x.id === job.clientJobId; })[0] : null;
-  var partnerRef = cj ? (cj.partnerRef || cj.clientRef || '') : '';
-  var mm = cj && cj.moveManager ? MOVE_MANAGERS.filter(function(m){ return m.name === cj.moveManager; })[0] : null;
-
-  // CompleteBy = job date at 17:00 UTC
-  var completeBy = (job.start || d2s(new Date())) + 'T17:00:00Z';
-
-  // Build AdditionalInfo
-  var info = [
-    'JOB: ' + (job.type || job.jobType || ''),
-    'CLIENT: ' + (job.client || ''),
-    'PARTNER REF: ' + (partnerRef || 'TBC'),
-    'OUR REF: ' + (job.ref || ''),
-    'BRAND: ' + (job.brand || ''),
-    'ORIGIN: ' + (job.origin || '—'),
-    'DESTINATION: ' + (job.dest || '—'),
-    'VOLUME: ' + (job.volFt ? job.volFt + ' ft³' : 'TBC'),
-  ];
-  if (mm) info.push('MOVE MANAGER: ' + mm.name + (mm.email ? ' (' + mm.email + ')' : ''));
-  if (job.access) {
-    var flags = Object.keys(job.access).filter(function(k){ return job.access[k]; });
-    if (flags.length) info.push('ACCESS: ' + flags.join(', '));
-  }
-  if (job.opsNotes) info.push('OPS NOTES: ' + job.opsNotes);
-  if (cj && cj.spFolderUrl) info.push('DOCUMENTS: ' + cj.spFolderUrl);
-  var additionalInfo = info.join('\n');
-
-  var taskName = (job.type || job.jobType || 'Job') + ' — ' + (job.client || '') + ' — ' + (job.start ? job.start : '');
-
-  toast('Sending to crew (' + crew.length + ' member' + (crew.length!==1?'s':'') + ')…');
-
-  var successCount = 0;
-  var taskIds = [];
-
-  for (var ci = 0; ci < crew.length; ci++) {
-    var crewName = crew[ci];
-    var crewMember = CREW.filter(function(c){ return c.name === crewName; })[0];
-    var crewEmail = crewMember ? (crewMember.email || '') : '';
-    if (!crewEmail) {
-      toast('⚠ No email set for ' + crewName + ' — skipped. Add email in Settings → Crew.');
-      continue;
-    }
-
-    var taskPayload = {
-      Name:            taskName,
-      UserEmail:       crewEmail,
-      CompleteBy:      completeBy,
-      CompleteAtText:  job.origin || '',
-      CompleteAtLat:   job.originLat || 0,
-      CompleteAtLon:   job.originLon || 0,
-      AdditionalInfo:  additionalInfo,
-      ExternalId:      (job.ref || job.id) + '-' + crewEmail,
-      UserCanReject:   true,
-      STaskActivities: [
-        { Instruction: 'Review job brief and confirm details are correct for: ' + taskName }
-      ]
-    };
-
-    var res = await fetch('/api/appenate', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'createTask', payload: taskPayload })
-    });
-    var data = await res.json().catch(function(){ return {}; });
-    var parsed = typeof data === 'string' ? {} : data;
-
-    // Log full response for debugging
-    console.log('Appenate response for', crewName, ':', res.status, JSON.stringify(parsed));
-
-    if (!res.ok) {
-      var errMsg = parsed.error || parsed.Message || parsed.message || ('HTTP ' + res.status);
-      toast('❌ Appenate error for ' + crewName + ': ' + errMsg);
-      continue;
-    }
-
-    var taskId = (parsed.STask && parsed.STask.Id) || (parsed.Id) || (parsed.TaskId) || '';
-
-    if (taskId) {
-      successCount++;
-      taskIds.push({ crew: crewName, taskId: taskId });
-    }
-  }
-
-  if (successCount > 0) {
-    // Store task IDs on the job
-    if (!job.appenateTaskIds) job.appenateTaskIds = [];
-    job.appenateTaskIds = job.appenateTaskIds.concat(taskIds);
-    job.appenateSynced = true;
-    saveData('job', job.id, job);
-    toast('✅ Sent to ' + successCount + ' crew member' + (successCount!==1?'s':'') + ' via Appenate');
-    renderActiveMod();
-  } else {
-    toast('❌ Appenate send failed — check browser console (F12) for the full error response from Appenate');
-  }
-}
-
-// Crew email field is handled inline in renderSettingsCrew
-
-</script>
-
-<div class="page" id="mod-dashboard">
-      <div style="flex:1;overflow:auto;padding:20px" id="dashboard-body"></div>
-    </div>
-    
-<script>
-// ═══════════════════════════════════════════════════════════════════════════
-// NEW 4-STAGE BOOKING FLOW — STAGE RENDER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════════════════
-
-// ── ROUTE TYPES ──────────────────────────────────────────────────────────
-var ROUTE_TYPES = [
-  {
-    key: 'origin',
-    icon: '📦',
-    label: 'Origin Job',
-    sub: 'Packing & collection at client property',
-    color: '#EBF4FF',
-    accent: '#0073EA',
-    jobTypes: ['Sea Freight','Air Freight','Origin Sea Pack','Origin Air Pack','Origin Road Pack','Int Store Handling','Blanket Wrap','Debris Removal','Handling Only','Consolidation','Other']
-  },
-  {
-    key: 'destination',
-    icon: '🏠',
-    label: 'Destination Job',
-    sub: 'Delivery & unpack at client property',
-    color: '#E6FFF5',
-    accent: '#00C875',
-    jobTypes: ['Sea Freight','Air Freight','Destination Services','Blanket Wrap','Debris Removal','Handling Only','Other']
-  },
-  {
-    key: 'd2d',
-    icon: '🔄',
-    label: 'Door to Door',
-    sub: 'Full residential or commercial move A to B',
-    color: '#F5EEFF',
-    accent: '#9B59B6',
-    jobTypes: ['Door to Door','Domestic','Commercial','Other']
-  },
-  {
-    key: 'commercial',
-    icon: '🏢',
-    label: 'Commercial',
-    sub: 'Business to business or office move',
-    color: '#FFF0F5',
-    accent: '#E91E8C',
-    jobTypes: ['Commercial','Door to Door','Handling Only','Other']
-  },
-  {
-    key: 'handling',
-    icon: '🤲',
-    label: 'Handling Only',
-    sub: 'Load/unload, shuttle, or debris — no packing',
-    color: '#F0FFF4',
-    accent: '#38A169',
-    jobTypes: ['Handling Only','Debris Removal','Blanket Wrap','Other']
-  },
-  {
-    key: 'storage',
-    icon: '🏭',
-    label: 'Storage / Warehouse',
-    sub: 'Into storage, out of storage, or warehouse movement',
-    color: '#FFF5E0',
-    accent: '#FF9F1A',
-    jobTypes: ['Warehouse','Int Store Handling','Ex Store Delivery','Destination Services','Other']
-  }
-];
-
-// ── STAGE 1: ROUTE ────────────────────────────────────────────────────────
-function cfgRenderRoute() {
-  var h = '';
-
-  // Route selector card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">🧭</div>';
-  h += '<div><div class="cs-card-title">What kind of job is this?</div>';
-  h += '<div class="cs-card-sub">Select a route — this determines which fields and options appear on the next stage</div></div></div>';
-  h += '<div class="cs-body">';
-  h += '<div class="route-grid">';
-  for (var ri = 0; ri < ROUTE_TYPES.length; ri++) {
-    var rt = ROUTE_TYPES[ri];
-    var sel = CFG.route === rt.key;
-    h += '<div class="route-tile' + (sel ? ' sel' : '') + '" onclick="cfgSetRoute(\'' + rt.key + '\',this)" style="--rt-accent:' + rt.accent + ';--rt-bg:' + rt.color + '">';
-    h += '<div class="route-tile-icon">' + rt.icon + '</div>';
-    h += '<div class="route-tile-label">' + rt.label + '</div>';
-    h += '<div class="route-tile-sub">' + rt.sub + '</div>';
-    if (sel) h += '<div class="route-tile-check">✓</div>';
-    h += '</div>';
-  }
-  h += '</div>';
-  h += '</div></div>';
-
-  // AI Parser card — always visible on Stage 1
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">🤖</div>';
-  h += '<div><div class="cs-card-title">AI Email Parser</div>';
-  h += '<div class="cs-card-sub">Paste any email or instruction — Claude extracts all details instantly</div></div></div>';
-  h += '<div class="cs-body">';
-  h += '<textarea class="cfg-input" id="cfg-email-paste" rows="4" placeholder="Paste booking email, instruction sheet, or any message here...\n\ne.g. Please confirm the following move:\nClient: John Smith\nOrigin: 14 High Street, Leeds, LS1 3CD..." style="resize:vertical;min-height:80px">' + esc(CFG.sourceEmail || '') + '</textarea>';
-  h += '<div style="display:flex;gap:7px;margin-top:8px">';
-  h += '<button class="btn btn-p btn-sm" id="cfg-parse-btn" onclick="cfgParseEmail()"><span id="cfg-parse-spin"></span>✓ Extract Details</button>';
-  h += '<button class="btn btn-s btn-sm" onclick="el(\'cfg-email-paste\').value=\'\'">Clear</button>';
-  h += '</div>';
-  // AI parse results chips
-  if (CFG.aiParsed) {
-    h += '<div style="margin-top:14px;border-top:1px solid #dceaf3;padding-top:12px">';
-    h += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#7A849E;margin-bottom:10px">✓ Extracted — Review & confirm (amber = assumed)</div>';
-    var ap = CFG.aiParsed;
-    var fields = [['Client Name','clientName'],['Email','clientEmail'],['Phone','clientPhone'],['Start Date','startDate'],['Origin','origin'],['Destination','dest'],['Volume','volume'],['Notes','notes']];
-    for (var fi = 0; fi < fields.length; fi++) {
-      var lbl = fields[fi][0], key = fields[fi][1];
-      var val = ap[key];
-      var conf = ap._conf && ap._conf[key] ? ap._conf[key] : (val ? 'assumed' : 'missing');
-      h += '<div class="ai-field-row">';
-      h += '<div class="ai-field-lbl">' + lbl + '</div>';
-      if (val) {
-        h += '<span class="ai-chip ' + conf + '" onclick="cfgChipEdit(this,\'' + key + '\')" title="Click to edit">' + esc(String(val).substring(0,40)) + ' <span style="opacity:.6;font-size:10px">✎</span></span>';
-        h += '<input class="ai-edit-input" id="aied-' + key + '" style="display:none" value="' + esc(String(val)) + '" onblur="cfgChipConfirm(this,\'' + key + '\')" onkeydown="if(event.key===\'Enter\')cfgChipConfirm(this,\'' + key + '\')">';
-      } else {
-        h += '<span class="ai-chip missing">✗ Not found</span>';
-        h += '<input class="ai-edit-input" id="aied-' + key + '" placeholder="Enter manually..." style="display:none" onblur="cfgChipConfirm(this,\'' + key + '\')" onkeydown="if(event.key===\'Enter\')cfgChipConfirm(this,\'' + key + '\')">';
-      }
-      h += '</div>';
-    }
-    h += '</div>';
-  }
-  h += '</div></div>';
-
-  return h;
-}
-
-function cfgSetRoute(key, tileEl) {
-  CFG.route = key;
-  var rt = ROUTE_TYPES.filter(function(r){ return r.key === key; })[0];
-  // Auto-set job type if route only has one real option
-  if (rt && rt.jobTypes.length === 1) {
-    CFG.jobs[0].jobType = rt.jobTypes[0];
-  }
-  // Storage route: auto-set storage direction on job
-  if (key === 'storage') {
-    CFG.jobs[0].storageRequired = true;
-    CFG.jobs[0].storageDirection = 'out';
-    CFG.jobs[0].jobType = CFG.jobs[0].jobType || 'Ex Store Delivery';
-  }
-  // D2D: default to Door to Door
-  if (key === 'd2d') {
-    CFG.jobs[0].jobType = CFG.jobs[0].jobType || 'Door to Door';
-  }
-  document.querySelectorAll('.route-tile').forEach(function(t){ t.classList.remove('sel'); t.querySelector('.route-tile-check') && t.querySelector('.route-tile-check').remove(); });
-  if (tileEl) {
-    tileEl.classList.add('sel');
-    if (!tileEl.querySelector('.route-tile-check')) {
-      var chk = document.createElement('div');
-      chk.className = 'route-tile-check';
-      chk.textContent = '✓';
-      tileEl.appendChild(chk);
-    }
-  }
-  CFG.route = key;
-}
-
-function cfgCollectRoute() {
-  // Route is set directly by cfgSetRoute — nothing to collect from DOM
-  // But save email parser text
-  CFG.sourceEmail = (el('cfg-email-paste') || {}).value || CFG.sourceEmail;
-}
-
-// ── STAGE 2: BRIEF ────────────────────────────────────────────────────────
-function cfgRenderBrief() {
-  var h = '';
-  var rt = ROUTE_TYPES.filter(function(r){ return r.key === CFG.route; })[0];
-  var routeJobTypes = rt ? rt.jobTypes : JOB_TYPES.map(function(j){ return j.type; });
-
-  // Storage route — show live storage records to pick from
-  if (CFG.route === 'storage') {
-    h += cfgRenderStoragePicker();
-  }
-
-  // Job type card — filtered to route
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:' + (rt ? rt.color : '#EBF4FF') + '">' + (rt ? rt.icon : '📋') + '</div>';
-  h += '<div><div class="cs-card-title">Job Type</div>';
-  h += '<div class="cs-card-sub">' + (rt ? rt.label + ' — ' + rt.sub : 'Select type') + '</div></div></div>';
-  h += '<div class="cs-body">';
-  h += '<div class="jtype-grid">';
-  for (var ti = 0; ti < JOB_TYPES.length; ti++) {
-    var jt = JOB_TYPES[ti];
-    if (routeJobTypes.indexOf(jt.type) < 0) continue;
-    h += '<div class="jtype-tile' + (CFG.jobs[0].jobType === jt.type ? ' sel' : '') + '" onclick="cfgSetJobType(0,this,\'' + jt.type.replace(/'/g,"\\'") + '\')">';
-    h += '<span class="jtype-icon">' + jt.icon + '</span>';
-    h += '<div class="jtype-lbl">' + jt.type + '</div>';
-    h += '<div class="jtype-sub">' + jt.sub + '</div>';
-    h += '</div>';
-  }
-  h += '</div></div></div>';
-
-  // Addresses card — smart based on job type + route
-  if (CFG.route !== 'storage') {
-    h += cfgRenderBriefAddresses();
-  }
-
-  // Volume card
-  var jb = CFG.jobs[0];
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">📐</div>';
-  h += '<div class="cs-card-title">Volume</div></div>';
-  h += '<div class="cs-body">';
-  h += '<div class="vol-row">';
-  h += '<input class="cfg-input" id="jcfg-vol-0" type="number" value="' + esc(jb.volFt || '') + '" min="0" placeholder="0" style="width:140px">';
-  h += '<button class="vol-unit-btn' + (jb.volUnit !== 'cbm' ? ' sel' : '') + '" onclick="cfgSetVolUnit(0,\'ft\',this)">ft³</button>';
-  h += '<button class="vol-unit-btn' + (jb.volUnit === 'cbm' ? ' sel' : '') + '" onclick="cfgSetVolUnit(0,\'cbm\',this)">CBM</button>';
-  h += '</div></div></div>';
-
-  // Client details card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">👤</div>';
-  h += '<div class="cs-card-title">Client Details</div></div>';
-  h += '<div class="cs-body">';
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
-  h += cfgField('Client Name *', 'cfg-client', CFG.clientName, 'text', 'Full name or company');
-  h += cfgField('Client Email', 'cfg-cemail', CFG.clientEmail, 'email', 'client@example.com');
-  h += cfgField('Client Phone', 'cfg-cphone', CFG.clientPhone, 'text', '07700 000 000');
-  h += cfgField('Partner Reference', 'cfg-cref', CFG.clientRef, 'text', 'e.g. GBH-78432 (partner\'s job ref)');
-  h += '</div></div></div>';
-
-  // Brand & admin card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#F5EEFF">🏢</div>';
-  h += '<div class="cs-card-title">Brand &amp; Admin</div></div>';
-  h += '<div class="cs-body">';
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
-  h += '<div class="cfg-field"><label class="cfg-label">Brand</label><select class="cfg-input cfg-select" id="cfg-brand">';
-  for (var bi = 0; bi < BRANDS.length; bi++) h += '<option' + (CFG.brand === BRANDS[bi] ? ' selected' : '') + '>' + BRANDS[bi] + '</option>';
-  h += '</select></div>';
-  h += '<div class="cfg-field"><label class="cfg-label">Channel</label><select class="cfg-input cfg-select" id="cfg-channel">';
-  ['Partner','Account','Domestic'].forEach(function(c){ h += '<option' + (CFG.channel === c ? ' selected' : '') + '>' + c + '</option>'; });
-  h += '</select></div>';
-  h += '<div class="cfg-field"><label class="cfg-label">Move Manager</label><select class="cfg-input cfg-select" id="cfg-mm">';
-  h += '<option value="">— None —</option>';
-  for (var mi = 0; mi < MOVE_MANAGERS.length; mi++) h += '<option value="' + esc(MOVE_MANAGERS[mi].name) + '"' + (CFG.moveManager === MOVE_MANAGERS[mi].name ? ' selected' : '') + '>' + esc(MOVE_MANAGERS[mi].name) + ' (' + esc(MOVE_MANAGERS[mi].brand) + ')</option>';
-  h += '</select></div>';
-  // Origin country
-  h += '<div class="cfg-field"><label class="cfg-label">Origin Country</label>';
-  h += '<input class="cfg-input" id="cfg-origin-country" value="' + esc(CFG.originCountry || 'XX') + '" placeholder="UK, US, FR or full name" style="text-transform:uppercase" oninput="cfgPreviewJobId()">';
-  h += '</div>';
-  h += '</div>';
-  // Job ID preview
-  var _previewType = CFG.jobs[0].jobType || 'Door to Door';
-  var _previewCC   = CFG.originCountry || 'XX';
-  h += '<div style="margin-top:10px;padding:8px 12px;background:var(--blt);border-radius:6px;border:1px solid rgba(0,115,234,.2);font-family:monospace;font-size:12px;font-weight:700;color:var(--blue)" id="cfg-jobid-preview">';
-  h += esc(countryToCode(_previewCC)) + '-' + esc(jobTypeCode(_previewType)) + '-XXXXXXX';
-  h += '</div>';
-  h += '</div></div>';
-
-  // Multi-job option (if not storage)
-  if (CFG.route !== 'storage') {
-    h += '<div class="cs-card">';
-    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#dde8f0">➕</div>';
-    h += '<div><div class="cs-card-title">Additional Job Components</div>';
-    h += '<div class="cs-card-sub">e.g. a sea pack AND an air pack on the same move</div></div></div>';
-    h += '<div class="cs-body">';
-    if (CFG.jobs.length > 1) {
-      for (var ji = 1; ji < CFG.jobs.length; ji++) {
-        h += cfgRenderJobCard(ji, CFG.jobs[ji]);
-      }
-    }
-    h += '<button class="btn btn-s btn-sm" style="width:100%" onclick="cfgAddJob()">+ Add Another Job Component</button>';
-    h += '</div></div>';
-  }
-
-  return h;
-}
-
-function cfgRenderBriefAddresses() {
-  var jb = CFG.jobs[0];
-  var _ac = getAddrConfig(jb.jobType);
-  var _defWh = getDefaultWarehouse();
-  var _defWhAddr = _defWh ? _defWh.address : (APP_SETTINGS.warehouseAddress || '');
-  var _defWhName = _defWh ? _defWh.name : 'Warehouse';
-  var _whId = jb.warehouseId || '';
-
-  var h = '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📍</div>';
-  h += '<div class="cs-card-title">Route Addresses</div>';
-  if (!jb.jobType) {
-    h += '<div class="cs-card-sub" style="color:var(--amber)">Select a job type above first</div>';
-  }
-  h += '</div>';
-  h += '<div class="cs-body">';
-
-  if (!jb.jobType) {
-    h += '<div style="text-align:center;padding:20px;color:var(--t3);font-size:12.5px">👆 Select a job type to configure address fields</div>';
-    h += '</div></div>';
-    return h;
-  }
-
-  h += '<div class="jcfg-row col2 jcfg-route-section">';
-
-  // Origin
-  if (_ac && _ac.originRole === 'warehouse') {
-    h += '<div class="cfg-field">';
-    h += '<label class="cfg-label">' + esc(_ac.originLabel || 'Origin') + '</label>';
-    if (WAREHOUSES.length > 1) {
-      h += '<select class="cfg-input" onchange="cfgSetWarehouse(0,\'orig\',this.value)">' + whSelectOptions(_whId) + '</select>';
-    }
-    h += '<input class="cfg-input" id="jcfg-origin-0" value="' + esc(jb.origin || _defWhAddr) + '" readonly style="background:var(--s2);color:var(--t3);cursor:default;margin-top:4px">';
-    h += '<div style="font-size:10px;color:var(--blue);margin-top:3px">✓ Auto-filled from ' + esc(_defWhName) + '</div>';
-    h += '</div>';
-  } else {
-    h += '<div class="cfg-field"><label class="cfg-label">' + esc((_ac && _ac.originLabel) || 'Origin Address') + '</label>';
-    h += '<input class="cfg-input" id="jcfg-origin-0" value="' + esc(jb.origin || '') + '" placeholder="' + (_ac && _ac.originRole === 'port' ? 'Port, airport or depot' : 'Full address or postcode') + '">';
-    h += '</div>';
-  }
-
-  // Destination
-  if (_ac && _ac.destRole === 'warehouse') {
-    h += '<div class="cfg-field">';
-    h += '<label class="cfg-label">' + esc(_ac.destLabel || 'Destination') + '</label>';
-    if (WAREHOUSES.length > 1) {
-      h += '<select class="cfg-input" onchange="cfgSetWarehouse(0,\'dest\',this.value)">' + whSelectOptions(_whId) + '</select>';
-    }
-    h += '<input class="cfg-input" id="jcfg-dest-0" value="' + esc(jb.dest || _defWhAddr) + '" readonly style="background:var(--s2);color:var(--t3);cursor:default;margin-top:4px">';
-    h += '<div style="font-size:10px;color:var(--blue);margin-top:3px">✓ Auto-filled from ' + esc(_defWhName) + '</div>';
-    h += '</div>';
-  } else {
-    h += '<div class="cfg-field"><label class="cfg-label">' + esc((_ac && _ac.destLabel) || 'Destination Address') + '</label>';
-    h += '<input class="cfg-input" id="jcfg-dest-0" value="' + esc(jb.dest || '') + '" placeholder="' + (_ac && _ac.destRole === 'port' ? 'Port, airport or depot' : 'Full address or postcode') + '">';
-    h += '</div>';
-  }
-
-  h += '</div>';
-  h += '</div></div>';
-  return h;
-}
-
-// Storage picker for 'From Storage' route
-function cfgRenderStoragePicker() {
-  var h = '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">🏭</div>';
-  h += '<div><div class="cs-card-title">Client in Storage</div>';
-  h += '<div class="cs-card-sub">Select the storage record — addresses and volume will auto-fill</div></div></div>';
-  h += '<div class="cs-body">';
-
-  var activeRecords = STORAGE_RECORDS.filter(function(s){ return s.status === 'active'; });
-
-  if (!activeRecords.length) {
-    h += '<div style="text-align:center;padding:20px;color:var(--t3);font-size:12.5px">No active storage records found. <a onclick="cfgSetRoute(\'origin\',null);cfgRenderStage()" style="color:var(--blue);cursor:pointer">Switch to Origin job</a></div>';
-    h += '</div></div>';
-    return h;
-  }
-
-  h += '<div style="margin-bottom:10px"><input class="cfg-input" id="sto-quick-search" placeholder="Search by client name..." oninput="cfgFilterStoragePicker(this.value)" style="max-width:280px"></div>';
-  h += '<div id="sto-picker-list">';
-  for (var si = 0; si < activeRecords.length; si++) {
-    var rec = activeRecords[si];
-    var isSel = CFG.jobs[0].storageId === rec.id;
-    h += '<div class="sto-pick-row' + (isSel ? ' sel' : '') + '" onclick="cfgPickStorage(\'' + rec.id + '\')">';
-    h += '<div class="sto-pick-main">';
-    h += '<div class="sto-pick-name">' + esc(rec.client || 'Unnamed') + '</div>';
-    h += '<div class="sto-pick-meta">' + esc(rec.id) + ' &bull; ' + (rec.volRemaining || rec.volFt || 0) + ' ft³ remaining &bull; ' + (rec.containers ? rec.containers.length : 0) + ' containers</div>';
-    h += '</div>';
-    h += '<div class="sto-pick-brand">' + bbadge(rec.brand, 'sm') + '</div>';
-    if (isSel) h += '<div class="sto-pick-check">✓ Selected</div>';
-    h += '</div>';
-  }
-  h += '</div>';
-
-  // If selected, show container picker inline
-  if (CFG.jobs[0].storageId) {
-    h += cfgRenderStorageOut(0, CFG.jobs[0]);
-    // Also auto-fill delivery address field
-    h += '<div class="cfg-field" style="margin-top:12px"><label class="cfg-label">Delivery Address</label>';
-    h += '<input class="cfg-input" id="jcfg-dest-0" value="' + esc(CFG.jobs[0].dest || '') + '" placeholder="Full address or postcode">';
-    h += '</div>';
-  }
-
-  h += '</div></div>';
-  return h;
-}
-
-function cfgPickStorage(id) {
-  var rec = STORAGE_RECORDS.filter(function(s){ return s.id === id; })[0];
-  if (!rec) return;
-  CFG.jobs[0].storageId = id;
-  CFG.jobs[0].storageRequired = true;
-  CFG.jobs[0].storageDirection = 'out';
-  // Auto-fill client name and volume from storage record
-  if (!CFG.clientName) CFG.clientName = rec.client || '';
-  if (!CFG.brand && rec.brand) CFG.brand = rec.brand;
-  var defWh = getDefaultWarehouse();
-  CFG.jobs[0].origin = defWh ? defWh.address : (APP_SETTINGS.warehouseAddress || '');
-  CFG.jobs[0].volFt = rec.volRemaining || rec.volFt || 0;
-  cfgRenderStage();
-}
-
-function cfgFilterStoragePicker(q) {
-  var rows = document.querySelectorAll('.sto-pick-row');
-  rows.forEach(function(row) {
-    var name = row.querySelector('.sto-pick-name');
-    var match = !q || (name && name.textContent.toLowerCase().indexOf(q.toLowerCase()) >= 0);
-    row.style.display = match ? '' : 'none';
-  });
-}
-
-function cfgCollectBrief() {
-  // Client
-  CFG.clientName  = (el('cfg-client')  || {}).value || CFG.clientName;
-  CFG.clientEmail = (el('cfg-cemail')  || {}).value || CFG.clientEmail;
-  CFG.clientPhone = (el('cfg-cphone')  || {}).value || CFG.clientPhone;
-  CFG.clientRef   = (el('cfg-cref')    || {}).value || CFG.clientRef;
-  CFG.brand       = (el('cfg-brand')   || {}).value || CFG.brand;
-  CFG.channel     = (el('cfg-channel') || {}).value || CFG.channel;
-  CFG.moveManager = (el('cfg-mm')      || {}).value || CFG.moveManager;
-  CFG.status      = CFG.status || 'Provisional';
-  var ocEl = el('cfg-origin-country');
-  if (ocEl && ocEl.value) CFG.originCountry = countryToCode(ocEl.value) || 'XX';
-  // Jobs
-  var jb = CFG.jobs[0];
-  jb.origin = (el('jcfg-origin-0') || {}).value || jb.origin;
-  jb.dest   = (el('jcfg-dest-0')   || {}).value || jb.dest;
-  var volEl = el('jcfg-vol-0');
-  if (volEl) { if (jb.volUnit === 'cbm') jb.volCbm = volEl.value; else jb.volFt = volEl.value; }
-  // Collect all additional job cards
-  for (var ji = 1; ji < CFG.jobs.length; ji++) {
-    var jbi = CFG.jobs[ji];
-    jbi.origin = (el('jcfg-origin-' + ji) || {}).value || jbi.origin;
-    jbi.dest   = (el('jcfg-dest-' + ji)   || {}).value || jbi.dest;
-    var vEl = el('jcfg-vol-' + ji);
-    if (vEl) { if (jbi.volUnit === 'cbm') jbi.volCbm = vEl.value; else jbi.volFt = vEl.value; }
-  }
-  // Storage out: vol to remove
-  var vrEl = el('sto-volremove-0'); if (vrEl) jb.volToRemove = parseFloat(vrEl.value) || 0;
-}
-
-// ── STAGE 3: SCHEDULE & TEAM ─────────────────────────────────────────────
-function cfgRenderScheduleAndTeam() {
-  var h = '';
-
-  // Date selection card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📅</div>';
-  h += '<div class="cs-card-title">Date Selection</div></div>';
-  h += '<div class="cs-body">';
-
-  h += '<div style="display:flex;gap:14px;margin-bottom:16px">';
-  h += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;font-weight:600">';
-  h += '<input type="radio" name="cfg-dateoption" value="fix" ' + ((CFG.selectedDates && CFG.selectedDates.length) || CFG.startDate ? 'checked' : '') + ' onchange="cfgToggleDateOption(\'fix\')">Assign dates now</label>';
-  h += '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12.5px;font-weight:600">';
-  h += '<input type="radio" name="cfg-dateoption" value="nodate" ' + ((!CFG.selectedDates || !CFG.selectedDates.length) && !CFG.startDate ? 'checked' : '') + ' onchange="cfgToggleDateOption(\'nodate\')">No date yet — save as enquiry</label>';
-  h += '</div>';
-
-  h += '<div id="cfg-date-section" style="' + ((CFG.selectedDates && CFG.selectedDates.length) || CFG.startDate ? '' : 'display:none') + '">';
-  if (!CFG.isMultiDay) {
-    var singleVal = (CFG.selectedDates && CFG.selectedDates[0]) ? CFG.selectedDates[0] : (CFG.startDate || '');
-    if (!CFG.id) singleVal = '';
-    h += '<div class="cfg-field"><label class="cfg-label">Select from matrix below, or type manually</label>';
-    h += '<input class="cfg-input" id="cfg-startdate" type="date" value="' + singleVal + '" onchange="cfgManualDateChange()" style="max-width:200px"></div>';
-  } else {
-    var n = CFG.numDays || 2;
-    var chosen = CFG.selectedDates ? CFG.selectedDates.slice() : [];
-    var filled = chosen.filter(function(d){ return !!d; }).length;
-    h += '<div class="dayslot-progress"><div class="dp-label' + (filled >= n ? ' done' : '') + '">' + (filled >= n ? '✓ All ' + n + ' days selected' : filled + ' of ' + n + ' days selected') + '</div>';
-    h += '<div class="dp-bar-wrap"><div class="dp-bar" style="width:' + Math.round((filled / n) * 100) + '%"></div></div></div>';
-    h += '<div style="margin-bottom:12px">';
-    for (var si = 0; si < n; si++) {
-      var slotDate = chosen[si] || '';
-      h += '<div class="dayslot-row">';
-      h += '<div class="dayslot-num' + (slotDate ? ' filled' : '') + '">Day ' + (si + 1) + '</div>';
-      h += '<div class="dayslot-val' + (slotDate ? ' filled' : '') + '" id="ds-val-' + si + '">';
-      if (slotDate) { h += '<span>📅 ' + fmtNice(slotDate) + ' (' + ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(slotDate).getDay()] + ')</span><span class="ds-clear" onclick="cfgClearSlot(' + si + ')">✕</span>'; }
-      else { h += '<span style="color:#B0B8CC">Click a date below</span>'; }
-      h += '</div></div>';
-    }
-    h += '</div>';
-  }
-  h += '</div>';
-  h += '</div></div>';
-
-  // Duration & options card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">🌙</div>';
-  h += '<div class="cs-card-title">Duration &amp; Options</div></div>';
-  h += '<div class="cs-body">';
-  h += '<div class="mday-row"><label class="mday-toggle"><input type="checkbox" id="cfg-multiday"' + (CFG.isMultiDay ? ' checked' : '') + ' onchange="cfgToggleMultiday(this)"><span class="mday-slider"></span></label>';
-  h += '<div style="flex:1"><div class="mday-lbl">Multi-day job</div><div class="mday-sub">Spans more than one calendar day</div></div>';
-  if (CFG.isMultiDay) { h += '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:12px;color:var(--t3)">Days:</span><input class="cfg-input" id="cfg-numdays" type="number" min="2" max="30" value="' + (CFG.numDays || 2) + '" style="width:64px" onchange="cfgNumDaysChange(this)"></div>'; }
-  h += '</div>';
-  h += '<div class="mday-row"><label class="mday-toggle"><input type="checkbox" id="cfg-overnight"' + (CFG.hasOvernight ? ' checked' : '') + ' onchange="cfgToggleOvernight(this)"><span class="mday-slider"></span></label>';
-  h += '<div style="flex:1"><div class="mday-lbl">Overnight stays</div><div class="mday-sub">Crew needs accommodation</div></div>';
-  if (CFG.hasOvernight) { h += '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0"><input class="cfg-input" id="cfg-numnights" type="number" min="1" max="14" value="' + (CFG.numNights || 1) + '" style="width:56px"><span style="font-size:12px;color:var(--t3)">nights @ £</span><input class="cfg-input" id="cfg-nightallow" type="number" min="0" value="' + (CFG.overnightAllowance || 65) + '" style="width:68px"><span style="font-size:12px;color:var(--t3)">/person</span></div>'; }
-  h += '</div>';
-  h += '<div class="mday-row"><label class="mday-toggle"><input type="checkbox" id="cfg-weekend"' + (CFG.weekendWorking ? ' checked' : '') + '><span class="mday-slider"></span></label>';
-  h += '<div><div class="mday-lbl">Weekend working</div><div class="mday-sub">Saturday or Sunday required</div></div></div>';
-  h += '<div class="mday-row" style="margin-bottom:0"><label class="mday-toggle"><input type="checkbox" id="cfg-linkjourney"' + (CFG.linkJourney ? ' checked' : '') + ' onchange="cfgToggleLinkJourney(this)"><span class="mday-slider"></span></label>';
-  h += '<div style="flex:1"><div class="mday-lbl">Part of a Journey / Run</div><div class="mday-sub">Link to existing journey or create new</div></div>';
-  if (CFG.linkJourney) { h += '<select class="cfg-input cfg-select" id="cfg-journeysel" style="width:200px;flex-shrink:0"><option value="_new">+ Create new journey</option>'; for (var jni = 0; jni < JOURNEYS.length; jni++) { h += '<option value="' + JOURNEYS[jni].id + '"' + (CFG.journeyId === JOURNEYS[jni].id ? ' selected' : '') + '>' + esc(JOURNEYS[jni].label) + '</option>'; } h += '</select>'; }
-  h += '</div>';
-  h += '</div></div>';
-
-  // Availability matrix card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">📊</div>';
-  h += '<div class="cs-card-title">Availability</div>';
-  h += CFG.isMultiDay ? '<div class="cs-card-sub">Click to fill day slots — can be non-consecutive</div>' : '<div class="cs-card-sub">Click any date to select it</div>';
-  h += '</div>';
-  h += '<div class="cs-body" id="cfg-avail-body"><div style="text-align:center;color:var(--t3);padding:20px;font-size:12px">Building availability...</div></div>';
-  h += '</div>';
-
-  // Crew assignment card — shown filtered to selected date
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">👷</div>';
-  h += '<div class="cs-card-title">Crew Assignment</div>';
-  var ds = CFG.startDate || '';
-  if (ds) h += '<div class="cs-card-sub">' + fmtNice(ds) + '</div>';
-  h += '</div><div class="cs-body">';
-  for (var ci = 0; ci < CREW.length; ci++) {
-    var cr = CREW[ci];
-    var isSel = CFG.crewAssigned.indexOf(cr.name) >= 0;
-    var avail = cfgCrewAvailStatus(cr.name, CFG.startDate);
-    h += '<div class="res-person' + (isSel ? ' sel' : '') + '" onclick="cfgToggleCrew(this,\'' + cr.name + '\')">';
-    h += '<div class="res-person-av" style="background:' + cr.col + '">' + cr.name.slice(0,2) + '</div>';
-    h += '<div style="flex:1"><div class="res-person-name">' + esc(cr.name) + '</div><div class="res-person-role">' + esc(cr.role) + ' — £' + cr.chargeRate + '/day</div></div>';
-    h += '<span class="res-person-status ' + avail.cls + '">' + avail.lbl + '</span>';
-    h += '</div>';
-  }
-  h += '</div></div>';
-
-  // Vehicles card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF5E0">🚐</div>';
-  h += '<div class="cs-card-title">Vehicle Assignment</div></div>';
-  h += '<div class="cs-body">';
-  var needsSmall = CFG.jobs.some(function(jb){ return jb.access && (jb.access.smallVehicle || jb.access.tightAccess || jb.access.rdRestriction); });
-  if (needsSmall) h += '<div class="cs-hint" style="margin-bottom:10px">⚠ Access flags suggest a small vehicle may be required</div>';
-  for (var vi = 0; vi < VEHICLES.length; vi++) {
-    var veh = VEHICLES[vi];
-    var isSelV = CFG.vehAssigned.indexOf(veh.id) >= 0;
-    var vAvail = cfgVehAvailStatus(veh.id, CFG.startDate);
-    h += '<div class="res-person' + (isSelV ? ' sel' : '') + '" onclick="cfgToggleVeh(this,\'' + veh.id + '\')">';
-    h += '<div class="res-person-av" style="background:#4A5568;font-size:9px">🚐</div>';
-    h += '<div style="flex:1"><div class="res-person-name">' + esc(veh.name) + ' <span style="font-size:10.5px;color:#7A849E">' + esc(veh.reg) + '</span></div>';
-    h += '<div class="res-person-role">' + esc(veh.type) + ' — ' + veh.volCapFt + 'ft³ — £' + veh.dayRate + '/day</div></div>';
-    h += '<span class="res-person-status ' + vAvail.cls + '">' + vAvail.lbl + '</span>';
-    h += '</div>';
-  }
-  h += '</div></div>';
-
-  return h;
-}
-
-function cfgCollectScheduleAndTeam() {
-  // Date
-  var fixRadio = document.querySelector('input[name="cfg-dateoption"][value="fix"]');
-  var nodate = !fixRadio || !fixRadio.checked;
-  if (nodate) { CFG.startDate = ''; CFG.endDate = ''; CFG.selectedDates = []; }
-  else {
-    if (!CFG.isMultiDay) { var sdEl = el('cfg-startdate'); if (sdEl && sdEl.value) { CFG.startDate = sdEl.value; CFG.selectedDates = [sdEl.value]; } }
-  }
-  var mdEl = el('cfg-multiday'); if (mdEl) CFG.isMultiDay = mdEl.checked;
-  var ndEl = el('cfg-numdays'); if (ndEl) CFG.numDays = parseInt(ndEl.value) || 2;
-  var onEl = el('cfg-overnight'); if (onEl) CFG.hasOvernight = onEl.checked;
-  var nnEl = el('cfg-numnights'); if (nnEl) CFG.numNights = parseInt(nnEl.value) || 1;
-  var naEl = el('cfg-nightallow'); if (naEl) CFG.overnightAllowance = parseFloat(naEl.value) || 65;
-  var wkEl = el('cfg-weekend'); if (wkEl) CFG.weekendWorking = wkEl.checked;
-  var ljEl = el('cfg-linkjourney'); if (ljEl) CFG.linkJourney = ljEl.checked;
-  var jsEl = el('cfg-journeysel'); if (jsEl) CFG.journeyId = (jsEl.value === '_new' ? null : jsEl.value);
-}
-
-// ── STAGE 4: CONFIRM ─────────────────────────────────────────────────────
-function cfgRenderConfirm() {
-  var h = '';
-  var totalVol = CFG.jobs.reduce(function(s, jb){ return s + (parseFloat(jb.volFt) || 0); }, 0);
-  var totalRev = CFG.jobs.reduce(function(s, jb){ return s + jb.billing.reduce(function(bs, bl){ return bs + (bl.amt || 0); }, 0); }, 0);
-
-  // Summary bar
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">✅</div>';
-  h += '<div class="cs-card-title">Job Summary</div>';
-  var statusCls = CFG.status === 'Confirmed' ? 'obs-confirmed' : CFG.status === 'Provisional' ? 'obs-provisional' : 'obs-draft';
-  h += '<span class="' + statusCls + '">' + CFG.status + '</span>';
-  h += '</div><div class="cs-body">';
-  h += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">';
-  h += '<div class="ops-di"><div class="ops-dl">Client</div><div class="ops-dv">' + esc(CFG.clientName || '—') + '</div></div>';
-  h += '<div class="ops-di"><div class="ops-dl">Route</div><div class="ops-dv">' + esc(CFG.jobs[0].jobType || CFG.route || '—') + '</div></div>';
-  h += '<div class="ops-di"><div class="ops-dl">Date</div><div class="ops-dv" style="color:var(--blue)">' + (CFG.startDate ? fmtNice(CFG.startDate) : 'Enquiry') + '</div></div>';
-  h += '<div class="ops-di"><div class="ops-dl">Volume</div><div class="ops-dv">' + (totalVol ? totalVol + 'ft³' : 'TBC') + '</div></div>';
-  h += '<div class="ops-di"><div class="ops-dl">Brand</div><div class="ops-dv">' + bbadge(CFG.brand) + '</div></div>';
-  h += '<div class="ops-di"><div class="ops-dl">Revenue</div><div class="ops-dv" style="color:var(--blue)">' + (totalRev ? spv(fmt(totalRev)) : 'TBC') + '</div></div>';
-  h += '</div></div></div>';
-
-  // Services & access card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#E6FFF5">🛠</div>';
-  h += '<div class="cs-card-title">Additional Services</div></div>';
-  h += '<div class="cs-body">';
-  var jb0 = CFG.jobs[0];
-  h += '<div class="svc-grid">';
-  for (var si = 0; si < SERVICES.length; si++) {
-    var sv = SERVICES[si];
-    h += '<div class="svc-toggle' + (jb0.svcs[sv.key] ? ' on' : '') + '" onclick="cfgToggleSvc(0,this,\'' + sv.key + '\')">';
-    h += '<span style="font-size:14px">' + sv.icon + '</span><span style="font-size:11.5px;font-weight:600;color:#1A2035;flex:1">' + sv.lbl + '</span>';
-    h += '<div class="svc-check">' + (jb0.svcs[sv.key] ? '✓' : '') + '</div></div>';
-  }
-  h += '</div>';
-  h += '<div style="margin-top:12px"><div class="cs-sub-label">Access &amp; Logistics</div>';
-  h += '<div class="acc-grid">';
-  for (var ai = 0; ai < ACCESS_FLAGS.length; ai++) {
-    var af = ACCESS_FLAGS[ai];
-    h += '<div class="acc-flag svc-toggle' + (jb0.access[af.key] ? ' on' : '') + '" onclick="cfgToggleAccess(0,this,\'' + af.key + '\')">';
-    h += '<span style="font-size:14px">' + af.icon + '</span><span style="font-size:11.5px;font-weight:600;flex:1">' + af.lbl + '</span>';
-    h += '<div class="svc-check">' + (jb0.access[af.key] ? '✓' : '') + '</div></div>';
-  }
-  h += '</div></div></div></div>';
-
-  // Materials & charges card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📦</div>';
-  h += '<div class="cs-card-title">Materials &amp; Charges</div></div>';
-  h += '<div class="cs-body">';
-  for (var mi = 0; mi < MATERIALS.length; mi++) {
-    var mat = MATERIALS[mi];
-    var selMat = (CFG.materials || []).filter(function(m){ return m.id === mat.id; })[0];
-    var qty = selMat ? (selMat.qty || 0) : 0;
-    h += '<div class="res-person" style="cursor:default">';
-    h += '<div style="flex:1;font-size:12.5px;font-weight:500">' + esc(mat.name) + '</div>';
-    h += '<div style="display:flex;align-items:center;gap:6px"><input type="number" class="cfg-input" id="cfgmat-' + mat.id + '" value="' + qty + '" min="0" style="width:70px;text-align:right" placeholder="Qty"><span style="font-size:11px;color:var(--t3)">@ £' + mat.unitCost + ' ea</span></div>';
-    h += '</div>';
-  }
-  h += '<div style="margin-top:12px"><div class="cs-sub-label">Charges &amp; Taxes</div>';
-  h += '<div id="cfg-charges-list">';
-  var selChgs = CFG.charges || [];
-  for (var chgi = 0; chgi < selChgs.length; chgi++) h += cfgChgRow(chgi, selChgs[chgi].name, selChgs[chgi].amt);
-  h += '</div>';
-  h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">';
-  for (var chgi2 = 0; chgi2 < CHARGES.length; chgi2++) h += '<button class="btn btn-s btn-sm" onclick="cfgAddCharge(\'' + esc(CHARGES[chgi2].name) + '\',' + CHARGES[chgi2].defaultAmt + ')">+ ' + esc(CHARGES[chgi2].name) + '</button>';
-  h += '</div></div></div></div>';
-
-  // Billing card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFF0F0">💷</div>';
-  h += '<div class="cs-card-title">Billing Lines</div></div>';
-  h += '<div class="cs-body">';
-  h += '<div id="jcfg-blines-0">';
-  var jblines = jb0.billing || [];
-  for (var bi = 0; bi < jblines.length; bi++) h += cfgBline(0, bi, jblines[bi].item, jblines[bi].amt);
-  if (!jblines.length) h += cfgBline(0, 0, '', '');
-  h += '</div>';
-  h += '<button class="btn btn-s btn-sm" style="margin-top:4px" onclick="cfgAddBline(0)">+ Add billing line</button>';
-  h += '</div></div>';
-
-  // Notes card
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#F5EEFF">📝</div>';
-  h += '<div class="cs-card-title">Notes</div></div>';
-  h += '<div class="cs-body">';
-  h += '<div class="cfg-field"><label class="cfg-label">Ops Notes (crew instructions, access details)</label>';
-  h += '<textarea class="cfg-input" id="cfg-opsnotes" rows="3" style="resize:vertical">' + esc(CFG.opsNotes || '') + '</textarea></div>';
-  h += '<div class="cfg-field" style="margin-top:10px"><label class="cfg-label">Client-Facing Notes (for confirmation email)</label>';
-  h += '<textarea class="cfg-input" id="cfg-clientnotes" rows="2" style="resize:vertical">' + esc(CFG.clientNotes || '') + '</textarea></div>';
-  h += '</div></div>';
-
-  // Cancellation (edit mode only)
-  if (CFG.id) {
-    h += '<div class="cs-card">';
-    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#FFECEF">❌</div><div class="cs-card-title">Cancellation</div></div>';
-    h += '<div class="cs-body">';
-    h += '<div style="display:flex;gap:8px;margin-bottom:10px">';
-    ['Date Changed','Date Postponed','Job Cancelled'].forEach(function(r) {
-      var sel = CFG.cancelReason === r;
-      h += '<div onclick="CFG.cancelReason=\'' + r + '\';cfgRenderStage()" style="flex:1;border:2px solid ' + (sel ? 'var(--red)' : 'var(--b1)') + ';border-radius:7px;padding:8px;text-align:center;cursor:pointer;background:' + (sel ? '#FFECEF' : 'var(--w)') + ';font-size:12px;font-weight:600;color:' + (sel ? 'var(--red)' : 'var(--t2)') + '">' + r + '</div>';
-    });
-    h += '</div>';
-    h += '<div class="cfg-field"><label class="cfg-label">Cancellation Notes</label>';
-    h += '<textarea class="cfg-input" id="cfg-cancel-notes" rows="2" style="resize:vertical">' + esc(CFG.cancelNotes || '') + '</textarea></div>';
-    h += '</div></div>';
-  }
-
-  // Change log
-  if (CFG.changeLog && CFG.changeLog.length) {
-    h += '<div class="cs-card">';
-    h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#EBF4FF">📋</div><div class="cs-card-title">Change History</div></div>';
-    h += '<div class="cs-body" style="padding:0">';
-    CFG.changeLog.slice().reverse().forEach(function(entry) {
-      var d = new Date(entry.ts);
-      var when = d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-      var actionCol = entry.action === 'Created' ? 'var(--green)' : entry.action === 'Cancelled' ? 'var(--red)' : 'var(--blue)';
-      h += '<div style="padding:9px 16px;border-bottom:1px solid var(--s2);display:flex;gap:10px;align-items:flex-start">';
-      h += '<div style="font-size:10px;font-weight:700;color:' + actionCol + ';min-width:64px;padding-top:1px">' + entry.action + '</div>';
-      h += '<div style="flex:1">';
-      if (entry.changes && entry.changes.length) h += '<div style="font-size:11.5px;color:var(--t2)">' + entry.changes.map(function(c){ return esc(c); }).join(' · ') + '</div>';
-      if (entry.note) h += '<div style="font-size:11px;color:var(--t3);margin-top:2px">' + esc(entry.note) + '</div>';
-      h += '</div>';
-      h += '<div style="font-size:10.5px;color:var(--t4);white-space:nowrap">' + when + '<br>' + esc(entry.user || '') + '</div>';
-      h += '</div>';
-    });
-    h += '</div></div>';
-  }
-
-  // Status & publish
-  h += '<div class="cs-card">';
-  h += '<div class="cs-card-head"><div class="cs-card-icon" style="background:#D1FAE5">🚀</div>';
-  h += '<div class="cs-card-title">Status &amp; Publish</div></div>';
-  h += '<div class="cs-body">';
-  h += '<div style="display:flex;gap:10px">';
-  ['Provisional','Confirmed'].forEach(function(s) {
-    h += '<div onclick="cfgSetStatus(this,\'' + s + '\')" style="flex:1;border:2px solid ' + (CFG.status === s ? '#0073EA' : '#E3E7F0') + ';border-radius:8px;padding:10px;text-align:center;cursor:pointer;background:' + (CFG.status === s ? '#EBF4FF' : '#fff') + '" class="cfg-status-opt">';
-    h += '<div style="font-size:16px">' + (s === 'Provisional' ? '🕐' : '✅') + '</div>';
-    h += '<div style="font-size:12px;font-weight:700;margin-top:4px">' + s + '</div>';
-    h += '<div style="font-size:10px;color:var(--t3);margin-top:2px">' + (s === 'Provisional' ? 'Hold on calendar' : 'Fully confirmed') + '</div>';
-    h += '</div>';
-  });
-  h += '</div>';
-  if (false && CFG.status === 'Draft') h += '<div class="cs-hint" style="margin-top:10px">📋 Draft — jobs will NOT appear on the calendar until status is Provisional or Confirmed.</div>';
-  h += '</div></div>';
-
-  return h;
-}
-
-function cfgCollectConfirm() {
-  // Services, access, materials, charges, billing, notes — exact same logic as old cfgCollectResources + cfgCollectOps
-  // Materials
-  var mats = [];
-  for (var mi = 0; mi < MATERIALS.length; mi++) {
-    var qEl = el('cfgmat-' + MATERIALS[mi].id);
-    var qty = parseInt((qEl || {}).value) || 0;
-    if (qty > 0) mats.push({ id: MATERIALS[mi].id, qty: qty });
-  }
-  CFG.materials = mats;
-  // Charges
-  var chgs = [];
-  var list = el('cfg-charges-list');
-  if (list) {
-    var rows = list.children;
-    for (var ci = 0; ci < rows.length; ci++) {
-      var nameEl = rows[ci].querySelector('div[style*="flex:1"]');
-      var amtEl = rows[ci].querySelector('input[type="number"]');
-      if (nameEl && amtEl) chgs.push({ name: nameEl.textContent.trim(), amt: parseFloat(amtEl.value) || 0 });
-    }
-  }
-  CFG.charges = chgs;
-  // Billing lines
-  var blines = [];
-  var cont = el('jcfg-blines-0');
-  if (cont) {
-    var brows = cont.querySelectorAll('[id^="jbl-0-"]');
-    brows.forEach(function(row) {
-      var itemEl = row.querySelector('[id^="jbli"]'), amtEl2 = row.querySelector('[id^="jbla"]');
-      var item = (itemEl || {}).value || ''; var amt = parseFloat((amtEl2 || {}).value) || 0;
-      if (item) blines.push({ item: item, amt: amt });
-    });
-  }
-  CFG.jobs[0].billing = blines;
-  // Notes
-  CFG.opsNotes    = (el('cfg-opsnotes')     || {}).value || CFG.opsNotes;
-  CFG.clientNotes = (el('cfg-clientnotes')  || {}).value || CFG.clientNotes;
-  CFG.cancelNotes = (el('cfg-cancel-notes') || {}).value || CFG.cancelNotes;
-}
-
-
-// ── DATE JUMPER ──────────────────────────────────────────────────────────
-var _djTarget = 'main'; // 'main' | 'warehouse' | 'matrix'
-
-function openDateJumper(target) {
-  _djTarget = target || 'main';
-  var backdrop = el('dj-backdrop');
-  backdrop.style.display = 'flex';
-  var input = el('dj-input');
-  // Pre-fill with current date for that target
-  var today = new Date();
-  if (target === 'warehouse') {
-    input.value = d2s(whDate || today);
-  } else {
-    input.value = d2s(curDate || today);
-  }
-  djPreview(input.value);
-  setTimeout(function(){ input.focus(); }, 50);
-}
-
-function closeDateJumper() {
-  el('dj-backdrop').style.display = 'none';
-}
-
-function djPreview(val) {
-  var btn = el('dj-go-btn');
-  var preview = el('dj-preview');
-  if (!val) {
-    preview.textContent = '';
-    btn.disabled = true;
-    btn.style.opacity = '.5';
-    return;
-  }
-  var d = new Date(val + 'T00:00:00');
-  if (isNaN(d)) {
-    preview.textContent = '';
-    btn.disabled = true;
-    btn.style.opacity = '.5';
-    return;
-  }
-  var ws = weekMon(d);
-  var we = addDays(ws, 6);
-  preview.textContent = 'Week of ' + MS[ws.getMonth()].substr(0,3) + ' ' + ws.getDate() + ' – ' + MS[we.getMonth()].substr(0,3) + ' ' + we.getDate() + ', ' + we.getFullYear();
-  preview.style.color = '#0073EA';
-  btn.disabled = false;
-  btn.style.opacity = '1';
-}
-
-function doDateJump() {
-  var val = (el('dj-input') || {}).value;
-  if (!val) return;
-  var d = new Date(val + 'T00:00:00');
-  if (isNaN(d)) return;
-  closeDateJumper();
-  if (_djTarget === 'warehouse') {
-    whDate = d;
-    renderWarehouse();
-  } else if (_djTarget === 'matrix') {
-    // For the availability matrix in the booking configurator
-    // Calculate how many weeks offset from today
-    var today = new Date();
-    today.setHours(0,0,0,0);
-    var diffDays = Math.round((weekMon(d) - weekMon(today)) / 86400000);
-    var diffWeeks = Math.round(diffDays / 7);
-    cfgMatrixOffset = Math.max(0, diffWeeks);
-    if (el('cfg-avail-body')) cfgBuildMatrix();
-  } else {
-    curDate = d;
-    renderActiveMod();
-  }
-}
-
-function djQuick(weeksOffset) {
-  var d = addDays(weekMon(new Date()), weeksOffset * 7);
-  el('dj-input').value = d2s(d);
-  djPreview(d2s(d));
-}
-
-// Allow Enter key to confirm
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && el('dj-backdrop') && el('dj-backdrop').style.display !== 'none') {
-    closeDateJumper();
-  }
-  if (e.key === 'Enter' && el('dj-backdrop') && el('dj-backdrop').style.display !== 'none') {
-    if (!el('dj-go-btn').disabled) doDateJump();
-  }
-});
-
-
-
-function openDateJumper(target) {
-  _djTarget = target || 'main';
-  var backdrop = el('dj-backdrop');
-  backdrop.style.display = 'flex';
-  var input = el('dj-input');
-  // Pre-fill with current date for that target
-  var today = new Date();
-  if (target === 'warehouse') {
-    input.value = d2s(whDate || today);
-  } else {
-    input.value = d2s(curDate || today);
-  }
-  djPreview(input.value);
-  setTimeout(function(){ input.focus(); }, 50);
-}
-
-function closeDateJumper() {
-  el('dj-backdrop').style.display = 'none';
-}
-
-function djPreview(val) {
-  var btn = el('dj-go-btn');
-  var preview = el('dj-preview');
-  if (!val) {
-    preview.textContent = '';
-    btn.disabled = true;
-    btn.style.opacity = '.5';
-    return;
-  }
-  var d = new Date(val + 'T00:00:00');
-  if (isNaN(d)) {
-    preview.textContent = '';
-    btn.disabled = true;
-    btn.style.opacity = '.5';
-    return;
-  }
-  var ws = weekMon(d);
-  var we = addDays(ws, 6);
-  preview.textContent = 'Week of ' + MS[ws.getMonth()].substr(0,3) + ' ' + ws.getDate() + ' – ' + MS[we.getMonth()].substr(0,3) + ' ' + we.getDate() + ', ' + we.getFullYear();
-  preview.style.color = '#0073EA';
-  btn.disabled = false;
-  btn.style.opacity = '1';
-}
-
-function doDateJump() {
-  var val = (el('dj-input') || {}).value;
-  if (!val) return;
-  var d = new Date(val + 'T00:00:00');
-  if (isNaN(d)) return;
-  closeDateJumper();
-  if (_djTarget === 'warehouse') {
-    whDate = d;
-    renderWarehouse();
-  } else if (_djTarget === 'matrix') {
-    // For the availability matrix in the booking configurator
-    // Calculate how many weeks offset from today
-    var today = new Date();
-    today.setHours(0,0,0,0);
-    var diffDays = Math.round((weekMon(d) - weekMon(today)) / 86400000);
-    var diffWeeks = Math.round(diffDays / 7);
-    cfgMatrixOffset = Math.max(0, diffWeeks);
-    if (el('cfg-avail-body')) cfgBuildMatrix();
-  } else {
-    curDate = d;
-    renderActiveMod();
-  }
-}
-
-function djQuick(weeksOffset) {
-  var d = addDays(weekMon(new Date()), weeksOffset * 7);
-  el('dj-input').value = d2s(d);
-  djPreview(d2s(d));
-}
-
-// Allow Enter key to confirm
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape' && el('dj-backdrop') && el('dj-backdrop').style.display !== 'none') {
-    closeDateJumper();
-  }
-  if (e.key === 'Enter' && el('dj-backdrop') && el('dj-backdrop').style.display !== 'none') {
-    if (!el('dj-go-btn').disabled) doDateJump();
-  }
-});
-
-</script>
-
-
-</body>
-</html>
-// ══════════════════════════════════════════════════════════════════════
-// INVENTORY COMPLETION SCREEN
-// ══════════════════════════════════════════════════════════════════════
-
-function dvOpenInvCompletion(jobId) {
-  dvCurrentJobId = jobId;
-  dvShowScreen('dv-screen-inv-complete');
-  dvRenderInvCompletion(jobId);
-}
-
-// 5 client acknowledgement prompts before signatures become available
-var INV_CLIENT_PROMPTS = [
-  'I confirm that I have been present during the inventory process and have had the opportunity to review all items recorded.',
-  'I acknowledge that the item descriptions, conditions and damage codes shown in this inventory are accurate to the best of my knowledge.',
-  'I understand that any pre-existing damage noted on items is recorded for both parties\' protection and does not affect the agreed move price.',
-  'I confirm that any items marked for disposal have been agreed verbally with the crew and I authorise their removal.',
-  'I agree that this signed inventory will form the condition record for this move and will be used as the reference document in the event of any damage claim.',
-];
-
-function dvRenderInvCompletion(jobId) {
-  var j = jobs.filter(function(x){return x.id===jobId;})[0];
-  if (!j) return;
-  var inv = (j.crewData && j.crewData.inventory) || {items:[]};
-  var items = inv.items || [];
-  var confirmed = inv.clientPrompts || {};   // {0:true, 1:true, ...}
-  var confirmedCount = Object.keys(confirmed).filter(function(k){return confirmed[k];}).length;
-  var allPromptsDone = confirmedCount === INV_CLIENT_PROMPTS.length;
-
-  var h = dvDarkHeader('Complete Inventory', j.client + ' · ' + items.length + ' items',
-    'dvOpenInventory(\'' + jobId + '\')');
-  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 100px">';
-
-  // Summary strip
-  var totalCuft = items.reduce(function(t,it){ return t + ((it.volume&&it.volume.cuft)||0); }, 0);
-  h += '<div style="background:#EBF4FF;border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-around">';
-  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:#0073EA">' + items.length + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Items</div></div>';
-  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:#0073EA">' + totalCuft.toFixed(0) + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Cu.ft</div></div>';
-  var dmgCount = items.filter(function(it){return it.damages&&it.damages.codes&&it.damages.codes.length;}).length;
-  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:' + (dmgCount?'#E44258':'#00C875') + '">' + dmgCount + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Damage</div></div>';
-  h += '</div>';
-
-  // Client acknowledgements
-  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px;letter-spacing:.6px">Client Acknowledgements</div>';
-  h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:16px">';
-
-  INV_CLIENT_PROMPTS.forEach(function(prompt, i) {
-    var done = !!confirmed[i];
-    var isNext = !done && (i === 0 || !!confirmed[i-1]);
-    var locked = !done && !isNext;
-
-    var bgCol  = done ? '#E6FFF5' : (isNext ? '#fff' : '#F9F9F9');
-    var border = done ? '1px solid #D1FAE5' : (isNext ? '1px solid #E3E7F0' : '1px solid #DDE8F0');
-    var cursor = (isNext && !done) ? 'cursor:pointer;' : '';
-    var clickFn = isNext ? 'dvInvConfirmPrompt(\'' + jobId + '\',' + i + ')' : '';
-
-    h += '<div onclick="' + clickFn + '" style="padding:13px 16px;border-bottom:' + border + ';background:' + bgCol + ';' + cursor + 'display:flex;align-items:flex-start;gap:12px">';
-
-    // Check circle
-    h += '<div style="width:24px;height:24px;border-radius:50%;border:2px solid ' + (done?'#00C875':(isNext?'#0073EA':'#C8C5BE')) + ';background:' + (done?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">';
-    if (done) h += '<span style="color:#fff;font-size:12px">✓</span>';
-    else if (!locked) h += '<span style="color:#0073EA;font-size:12px;font-weight:900">' + (i+1) + '</span>';
-    h += '</div>';
-
-    h += '<div style="flex:1">';
-    h += '<div style="font-size:13px;line-height:1.5;color:' + (locked?'#C8C5BE':(done?'#00A86B':'#1C2333')) + '">' + esc(prompt) + '</div>';
-    if (isNext) h += '<div style="font-size:11px;font-weight:700;color:#0073EA;margin-top:6px">Tap to confirm →</div>';
-    if (done)   h += '<div style="font-size:11px;font-weight:700;color:#00A86B;margin-top:4px">✓ Confirmed</div>';
-    h += '</div>';
-    h += '</div>';
-  });
-  h += '</div>';
-
-  // Progress bar for prompts
-  h += '<div style="background:#EEF4F9;border-radius:8px;padding:8px 14px;margin-bottom:16px;display:flex;align-items:center;gap:12px">';
-  h += '<div style="flex:1;background:#E3E7F0;border-radius:20px;height:6px"><div style="background:' + (allPromptsDone?'#00C875':'#0073EA') + ';border-radius:20px;height:6px;width:' + Math.round(confirmedCount/INV_CLIENT_PROMPTS.length*100) + '%"></div></div>';
-  h += '<div style="font-size:12px;font-weight:800;color:#1C2333">' + confirmedCount + '/' + INV_CLIENT_PROMPTS.length + ' confirmed</div>';
-  h += '</div>';
-
-  // Signatures — only shown once all prompts done
-  if (allPromptsDone) {
-    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px;letter-spacing:.6px">Signatures</div>';
-    ['Crew','Client'].forEach(function(who){
-      var cid = 'inv-' + who.toLowerCase() + '-sig';
-      h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
-      h += '<div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:8px">' + who + ' Signature</div>';
-      h += '<canvas id="' + cid + '" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
-      h += '<button onclick="dvClearCanvas(\'' + cid + '\')" style="margin-top:6px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:5px 14px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button>';
-      h += '</div>';
-    });
-    h += '<button onclick="dvCompleteInventory(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">✓ Sign & Complete Inventory</button>';
-  } else {
-    h += '<div style="background:#EEF4F9;border-radius:12px;padding:14px;text-align:center;color:#B0BEC5">';
-    h += '<div style="font-size:24px;margin-bottom:8px">🔒</div>';
-    h += '<div style="font-size:13px;font-weight:700">Signatures unlock after all ' + INV_CLIENT_PROMPTS.length + ' acknowledgements</div>';
-    h += '<div style="font-size:12px;margin-top:4px">' + (INV_CLIENT_PROMPTS.length - confirmedCount) + ' remaining</div>';
-    h += '</div>';
-  }
-
-  h += '</div>';
-  el('dv-inv-complete-body').innerHTML = h;
-  if (allPromptsDone) {
-    setTimeout(function(){
-      dvInitSigPad('inv-crew-sig');
-      dvInitSigPad('inv-client-sig');
-    }, 80);
-  }
-}
-
-function dvInvConfirmPrompt(jobId, idx) {
-  var j = jobs.filter(function(x){return x.id===jobId;})[0];
-  if (!j) return;
-  if (!j.crewData) j.crewData = {};
-  if (!j.crewData.inventory) j.crewData.inventory = {items:[]};
-  if (!j.crewData.inventory.clientPrompts) j.crewData.inventory.clientPrompts = {};
-  j.crewData.inventory.clientPrompts[idx] = true;
-  saveData('job', j.id, j);
-  dvRenderInvCompletion(jobId);
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// FORMS LIBRARY
-// ══════════════════════════════════════════════════════════════════════
-
-function dvOpenFormsLibrary(jobId) {
-  dvCurrentJobId = jobId;
-  dvShowScreen('dv-screen-forms');
-  dvRenderFormsLibrary(jobId);
-}
-
-var DV_FORMS_LIBRARY = [
-  {
-    id: 'damage_waiver',
-    label: 'Damage Waiver',
-    icon: '🛡',
-    sub: 'Client waives liability for specific pre-existing conditions',
-    status: 'Placeholder — form coming soon',
-    col: '#E44258'
-  },
-  {
-    id: 'long_walk',
-    label: 'Long Walk / Long Carry Form',
-    icon: '🚶',
-    sub: 'Record excess distance from vehicle to property',
-    status: 'Placeholder — form coming soon',
-    col: '#FF9F1A'
-  },
-  {
-    id: 'specialist_items',
-    label: 'Specialist Items Declaration',
-    icon: '💎',
-    sub: 'High value / antique / fragile item agreement',
-    status: 'Placeholder — form coming soon',
-    col: '#9B59B6'
-  },
-  {
-    id: 'third_party',
-    label: 'Third Party Access Form',
-    icon: '🔑',
-    sub: 'Authorisation for crew to access property without client present',
-    status: 'Placeholder — form coming soon',
-    col: '#0073EA'
-  },
-  {
-    id: 'packing_exclusion',
-    label: 'Packing Exclusion Notice',
-    icon: '📦',
-    sub: 'Items client is packing themselves — liability exclusion',
-    status: 'Placeholder — form coming soon',
-    col: '#00A86B'
-  },
-];
-
-function dvRenderFormsLibrary(jobId) {
-  var j = jobs.filter(function(x){return x.id===jobId;})[0];
-  if (!j) return;
-  var h = dvDarkHeader('Forms Library', j.client, 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
-  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 90px">';
-  h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#9A5600">⚠ Forms are currently placeholders. Full digital form capture is coming — content for each form will be added shortly.</div>';
-  DV_FORMS_LIBRARY.forEach(function(form) {
-    h += '<div style="background:#fff;border-radius:12px;margin-bottom:10px;padding:14px 16px;border-left:4px solid ' + form.col + ';display:flex;align-items:center;gap:14px">';
-    h += '<div style="width:42px;height:42px;border-radius:10px;background:' + form.col + '22;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">' + form.icon + '</div>';
-    h += '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1C2333">' + form.label + '</div>';
-    h += '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + form.sub + '</div>';
-    h += '<div style="font-size:11px;font-weight:600;color:' + form.col + ';margin-top:5px">→ ' + form.status + '</div>';
-    h += '</div></div>';
-  });
-  h += '</div>';
-  el('dv-forms-body').innerHTML = h;
-}
-
-// ══════════════════════════════════════════════════════════════════════
-// PROPERTY WALKAROUND
-// ══════════════════════════════════════════════════════════════════════
-
-function dvOpenWalkaround(jobId) {
-  dvCurrentJobId = jobId;
-  dvShowScreen('dv-screen-walkaround');
-  dvRenderWalkaround(jobId);
-}
-
-var DV_WALKAROUND_TYPES = [
-  {id:'wall_scratch',  label:'Wall — Scratch / Scuff',  icon:'🪟', col:'#FF9F1A'},
-  {id:'wall_hole',     label:'Wall — Hole / Dent',       icon:'🔲', col:'#E44258'},
-  {id:'floor_scratch', label:'Floor — Scratch / Gouge',  icon:'🪵', col:'#FF9F1A'},
-  {id:'floor_stain',   label:'Floor — Stain / Mark',     icon:'💧', col:'#9B59B6'},
-  {id:'door_chip',     label:'Door Frame — Chip / Crack',icon:'🚪', col:'#E44258'},
-  {id:'ceiling',       label:'Ceiling — Mark / Damage',  icon:'☁',  col:'#7A849E'},
-  {id:'banister',      label:'Banister / Rail — Damage', icon:'🪜', col:'#FF9F1A'},
-  {id:'skirting',      label:'Skirting Board — Damage',  icon:'📐', col:'#9B59B6'},
-  {id:'tile',          label:'Tile — Crack / Chip',      icon:'🔷', col:'#0073EA'},
-  {id:'window',        label:'Window — Crack / Chip',    icon:'🪟', col:'#E44258'},
-  {id:'other',         label:'Other Property Damage',    icon:'⚠',  col:'#7A849E'},
-];
-
-var _waJobId   = null;
-var _waPhotos  = {};    // {tempId: b64}
-var _waAiLoading = false;
-
-function dvRenderWalkaround(jobId) {
-  var j = jobs.filter(function(x){return x.id===jobId;})[0];
-  if (!j) return;
-  if (!j.crewData) j.crewData = {};
-  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[], completedAt:null};
-  var wa   = j.crewData.walkaround;
-  var done = !!wa.completedAt;
-  var dmgs = wa.damages || [];
-  _waJobId = jobId;
-
-  var h = dvDarkHeader('Property Walkaround', j.client + ' — ' + (j.origin||'Property'), 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
-  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 100px">';
-
-  if (done) {
-    h += '<div style="background:#E6FFF5;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Walkaround complete · ' + dvNiceDate(new Date(wa.completedAt)) + ' · ' + esc(wa.completedBy||'') + '</div>';
-  } else {
-    h += '<div style="background:#EBF4FF;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#0073EA">Walk around the property and record any pre-existing damage before work begins. Tap <strong>+ Add Damage</strong> for each item found.</div>';
-  }
-
-  // Damage list
-  if (dmgs.length) {
-    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:8px;letter-spacing:.5px">' + dmgs.length + ' damage' + (dmgs.length===1?'':'s') + ' recorded</div>';
-    dmgs.forEach(function(dmg, di) {
-      var typeObj = DV_WALKAROUND_TYPES.filter(function(t){return t.id===dmg.type;})[0] || {icon:'⚠',col:'#7A849E',label:dmg.type};
-      h += '<div style="background:#fff;border-radius:12px;margin-bottom:8px;overflow:hidden;border-left:4px solid ' + typeObj.col + '">';
-      h += '<div style="padding:10px 14px;display:flex;align-items:flex-start;gap:10px">';
-      h += '<span style="font-size:20px;flex-shrink:0">' + typeObj.icon + '</span>';
-      h += '<div style="flex:1">';
-      h += '<div style="font-size:12px;font-weight:800;color:' + typeObj.col + '">' + esc(typeObj.label) + '</div>';
-      if (dmg.location) h += '<div style="font-size:12px;color:#1C2333;margin-top:2px">📍 ' + esc(dmg.location) + '</div>';
-      if (dmg.notes)    h += '<div style="font-size:12px;color:#7A849E;margin-top:2px">' + esc(dmg.notes) + '</div>';
-      if (dmg.aiDesc)   h += '<div style="font-size:11px;color:#0073EA;margin-top:2px">✦ ' + esc(dmg.aiDesc) + '</div>';
-      h += '</div>';
-      if (!done) h += '<button onclick="dvWaDeleteDamage(\'' + jobId + '\',' + di + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
-      h += '</div>';
-      // Photos
-      if (dmg.photos && dmg.photos.length) {
-        h += '<div style="padding:0 14px 10px;display:flex;gap:6px;flex-wrap:wrap">';
-        dmg.photos.forEach(function(p){ h += '<img src="' + p + '" style="width:60px;height:60px;object-fit:cover;border-radius:8px">'; });
-        h += '</div>';
-      }
-      h += '</div>';
-    });
-  } else if (!done) {
-    h += '<div style="background:#EEF4F9;border-radius:12px;padding:24px;text-align:center;margin-bottom:16px">';
-    h += '<div style="font-size:32px;margin-bottom:8px">🏠</div>';
-    h += '<div style="font-size:14px;font-weight:700;color:#7A849E">No damage recorded yet</div>';
-    h += '<div style="font-size:12px;color:#B0BEC5;margin-top:4px">Tap + Add Damage to record any issues</div>';
-    h += '</div>';
-  }
-
-  // Add damage button
-  if (!done) {
-    h += '<button onclick="dvWaOpenAddDamage(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:12px">+ Add Damage</button>';
-    h += '<button onclick="dvWaComplete(\'' + jobId + '\')" style="width:100%;background:' + (dmgs.length?'#00C875':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:' + (dmgs.length?'pointer':'not-allowed') + '">' + (dmgs.length?'✓ Complete Walkaround':'Complete Walkaround (no damage is also valid)') + '</button>';
-    // Allow completing with no damage too
-    if (!dmgs.length) {
-      h += '<button onclick="dvWaComplete(\'' + jobId + '\')" style="width:100%;margin-top:8px;background:#00C875;color:#fff;border:none;border-radius:12px;padding:13px;font-size:13px;font-weight:700;cursor:pointer">✓ Complete — No Damage Found</button>';
-    }
-  }
-
-  h += '</div>';
-  el('dv-walkaround-body').innerHTML = h;
-}
-
-// Add damage modal — rendered inline as a slide-up panel
-function dvWaOpenAddDamage(jobId) {
-  var panel = el('dv-wa-panel');
-  if (!panel) return;
-  _waJobId = jobId;
-  var h = '<div style="background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 40px;max-width:520px;margin:0 auto">';
-  h += '<div style="width:40px;height:4px;background:#E3E7F0;border-radius:2px;margin:0 auto 16px"></div>';
-  h += '<div style="font-size:14px;font-weight:800;color:#1C2333;margin-bottom:14px">Add Property Damage</div>';
-
-  // Type selector
-  h += '<div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:8px">Damage Type</div>';
-  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">';
-  DV_WALKAROUND_TYPES.forEach(function(t) {
-    h += '<div onclick="dvWaSelectType(\'' + t.id + '\')" id="wa-type-' + t.id + '" style="padding:8px;border-radius:8px;border:2px solid #E3E7F0;cursor:pointer;display:flex;align-items:center;gap:8px">';
-    h += '<span>' + t.icon + '</span><span style="font-size:12px;font-weight:600;color:#4A5568">' + t.label + '</span></div>';
-  });
-  h += '</div>';
-
-  // Location input
-  h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Location in Property</div>';
-  h += '<input id="wa-location" placeholder="e.g. Hallway, 1st floor landing, master bedroom..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;box-sizing:border-box"></div>';
-
-  // Notes
-  h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Description</div>';
-  h += '<textarea id="wa-notes" rows="2" placeholder="Describe the damage..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box"></textarea></div>';
-
-  // Photo + AI
-  h += '<div style="margin-bottom:14px">';
-  h += '<input id="wa-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="dvWaPhotoSelected(this)">';
-  h += '<div style="display:flex;gap:8px">';
-  h += '<button onclick="el(\'wa-photo-input\').click()" style="flex:1;background:#EBF4FF;border:2px dashed #0073EA;border-radius:10px;padding:12px;cursor:pointer;color:#0073EA;font-weight:700;font-size:13px">📷 Take Photo<br><span style="font-size:11px;font-weight:400;opacity:.7">AI will describe damage</span></button>';
-  h += '</div>';
-  h += '<div id="wa-photo-preview"></div>';
-  h += '</div>';
-
-  h += '<button onclick="dvWaSaveDamage(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer">Save Damage Record</button>';
-  h += '<button onclick="dvWaClosePanel()" style="width:100%;margin-top:8px;background:none;border:1px solid #E3E7F0;border-radius:12px;padding:12px;font-size:13px;color:#7A849E;cursor:pointer">Cancel</button>';
-  h += '</div>';
-
-  panel.innerHTML = h;
-  panel.style.display = 'block';
-  panel.style.position = 'fixed';
-  panel.style.bottom = '0';
-  panel.style.left = '0';
-  panel.style.right = '0';
-  panel.style.zIndex = '999';
-  panel.style.background = 'rgba(0,0,0,.4)';
-  panel.style.top = '0';
-  panel.style.display = 'flex';
-  panel.style.alignItems = 'flex-end';
-  window._waSelectedType = null;
-  window._waPhotoB64 = null;
-  window._waAiDesc = null;
-}
-
-function dvWaSelectType(typeId) {
-  window._waSelectedType = typeId;
-  DV_WALKAROUND_TYPES.forEach(function(t) {
-    var el2 = el('wa-type-' + t.id);
-    if (!el2) return;
-    var active = t.id === typeId;
-    el2.style.borderColor = active ? t.col : '#E3E7F0';
-    el2.style.background  = active ? (t.col + '22') : 'transparent';
-  });
-}
-
-function dvWaPhotoSelected(input) {
-  var file = input.files && input.files[0];
-  if (!file) return;
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    window._waPhotoB64 = e.target.result;
-    var prev = el('wa-photo-preview');
-    if (prev) {
-      prev.innerHTML = '<div style="position:relative;margin-top:8px"><img src="' + e.target.result + '" style="width:100%;max-height:150px;object-fit:cover;border-radius:8px"><div id="wa-ai-status" style="margin-top:6px;font-size:12px;color:#0073EA;font-weight:600">✦ Analysing damage with AI…</div></div>';
-    }
-    dvWaRunAi(e.target.result);
-  };
-  reader.readAsDataURL(file);
-}
-
-function dvWaRunAi(b64) {
-  var apiKey = APP_SETTINGS && APP_SETTINGS.claudeApiKey;
-  var imgData = b64.split(',')[1];
-  var mediaType = b64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
-  var prompt = 'You are a property damage assessment assistant for a removals company. Look at this photo and in 1-2 short sentences describe: (1) what type of property surface or feature is damaged, (2) the nature and approximate severity of the damage. Be factual and concise. Format: "[Surface]: [damage description]". Example: "Hallway wall: shallow scratch approx 30cm long, paint surface only".';
-  var body = JSON.stringify({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 120,
-    messages: [{role:'user', content:[{type:'image',source:{type:'base64',media_type:mediaType,data:imgData}},{type:'text',text:prompt}]}]
-  });
-  var headers = {'Content-Type':'application/json'};
-  var url = '/api/claude';
-  if (apiKey) { url = 'https://api.anthropic.com/v1/messages'; headers['x-api-key'] = apiKey; headers['anthropic-version'] = '2023-06-01'; headers['anthropic-dangerous-allow-browser'] = 'true'; }
-  fetch(url, {method:'POST', headers:headers, credentials:apiKey?undefined:'include', body:body})
-    .then(function(r){return r.json();})
-    .then(function(data){
-      var blocks = data.content || (data.result && data.result.content) || [];
-      var txt = blocks.filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
-      window._waAiDesc = txt.trim();
-      var statusEl = el('wa-ai-status');
-      if (statusEl) statusEl.innerHTML = '✦ AI: <em>' + esc(window._waAiDesc) + '</em>';
-      // Auto-fill notes if empty
-      var notesEl = el('wa-notes');
-      if (notesEl && !notesEl.value) notesEl.value = window._waAiDesc;
-    })
-    .catch(function(){ var statusEl = el('wa-ai-status'); if (statusEl) statusEl.innerHTML = 'AI unavailable — enter notes manually'; });
-}
-
-function dvWaSaveDamage(jobId) {
-  var j = jobs.filter(function(x){return x.id===jobId;})[0];
-  if (!j) return;
-  var type     = window._waSelectedType;
-  var location = (el('wa-location')||{}).value || '';
-  var notes    = (el('wa-notes')||{}).value || '';
-  if (!type) { toast('Select a damage type'); return; }
-  if (!location && !notes) { toast('Add a location or description'); return; }
-  if (!j.crewData) j.crewData = {};
-  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[]};
-  j.crewData.walkaround.damages.push({
-    type:     type,
-    location: location,
-    notes:    notes,
-    aiDesc:   window._waAiDesc || null,
-    photos:   window._waPhotoB64 ? [window._waPhotoB64] : [],
-    recordedAt: new Date().toISOString(),
-    recordedBy: window._driverName || 'Crew'
-  });
-  saveData('job', j.id, j);
-  dvWaClosePanel();
-  dvRenderWalkaround(jobId);
-  toast('✓ Damage recorded');
-}
-
-function dvWaClosePanel() {
-  var panel = el('dv-wa-panel');
-  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
-  window._waSelectedType = null;
-  window._waPhotoB64 = null;
-  window._waAiDesc = null;
-}
-
-function dvWaDeleteDamage(jobId, idx) {
-  var j = jobs.filter(function(x){return x.id===jobId;})[0];
-  if (!j || !j.crewData || !j.crewData.walkaround) return;
-  j.crewData.walkaround.damages.splice(idx, 1);
-  saveData('job', j.id, j);
-  dvRenderWalkaround(jobId);
-}
-
-function dvWaComplete(jobId) {
-  var j = jobs.filter(function(x){return x.id===jobId;})[0];
-  if (!j) return;
-  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[]};
-  j.crewData.walkaround.completedAt = new Date().toISOString();
-  j.crewData.walkaround.completedBy = window._driverName || 'Crew';
-  saveData('job', j.id, j);
-  toast('✓ Property walkaround complete');
-  dvShowScreen('dv-screen-job');
-  dvRenderJobDetail(jobId);
-}
-
-<script>
-// ══════════════════════════════════════════════════════════════════
-// AZURE STATIC WEB APPS EASY AUTH
-// Auth is handled entirely server-side by Azure — no MSAL library,
-// no redirects in browser JS, no storage issues, works on all browsers.
-// Azure redirects unauthenticated users to Microsoft login automatically.
-// On return, /.auth/me returns the signed-in user's claims as JSON.
-// ══════════════════════════════════════════════════════════════════
-
-var MSAL_SP_OBJ_ID = 'cdcdfdaf-dc23-4c22-a86c-02002eccfc42';
-var GRAPH_SCOPES   = ['User.Read', 'User.ReadBasic.All', 'Directory.Read.All'];
-
-async function easyAuthBoot() {
-  var li = document.getElementById('msal-wall-logo');
-  if (li && typeof APP_DEFAULT_LOGO !== 'undefined') li.src = APP_DEFAULT_LOGO;
-  var wallMsg = document.getElementById('msal-wall-msg');
-  if (wallMsg) wallMsg.textContent = 'Checking sign-in…';
-
-  try {
-    var resp = await fetch('/.auth/me');
-    console.log('[Auth] /.auth/me status:', resp.status);
-
-    var data = null;
-    try { data = await resp.json(); } catch(e) {}
-    console.log('[Auth] /.auth/me response:', JSON.stringify(data));
-
-    var principal = data && data.clientPrincipal;
-
-    if (!principal || !principal.userId) {
-      // Not signed in — send straight to Microsoft login
-      console.log('[Auth] No principal — redirecting to login');
-      window.location.href = '/.auth/login/aad?post_login_redirect_uri=/';
-      return;
-    }
-
-    console.log('[Auth] Signed in:', principal.userDetails);
-    console.log('[Auth] Roles:', principal.userRoles);
-
-    // Build msalUser object in the same shape the rest of the app expects
-    // Claims come as array of {typ, val} objects
-    var claims = {};
-    (principal.claims || []).forEach(function(c) {
-      claims[c.typ] = c.val;
-    });
-
-    var appRoles = principal.userRoles.filter(function(r) {
-      return r !== 'authenticated' && r !== 'anonymous';
-    });
-
-    window.msalUser = {
-      name:        claims['name'] || claims['preferred_username'] || principal.userDetails || 'User',
-      email:       principal.userDetails || claims['preferred_username'] || '',
-      oid:         claims['oid'] || claims['http://schemas.microsoft.com/identity/claims/objectidentifier'] || '',
-      roles:       appRoles,
-      accessToken: null, // Easy Auth manages tokens server-side
-    };
-
-    console.log('[Auth] User object:', window.msalUser);
-
-    // Easy Auth Simple mode doesn't pass app roles through userRoles.
-    // Until role mapping via API is configured, grant Admin to all authenticated users.
-    // TODO: replace with a roles API endpoint when needed.
-    if (window.msalUser.roles.length === 0) {
-      window.msalUser.roles = ['Admin'];
-      console.log('[Auth] No app roles from Easy Auth — defaulting to Admin for authenticated user');
-    }
-
-    // Apply UI immediately — don't wait for token
-    if (typeof updateSidebarLogo     === 'function') updateSidebarLogo();
-    if (typeof easyAuthUpdateSidebar === 'function') easyAuthUpdateSidebar();
-    if (typeof initAdminRole         === 'function') initAdminRole();
-    if (typeof applyRoleGating       === 'function') applyRoleGating();
-
-    // Wire logout
-    var logoutBtn = document.querySelector('.sb-logout');
-    if (logoutBtn) {
-      logoutBtn.onclick = function() {
-        window.location.href = '/.auth/logout?post_logout_redirect_uri=/';
-      };
-    }
-
-    // Hide login wall — user is in
-    var wall = document.getElementById('msal-login-wall');
-    if (wall) wall.style.display = 'none';
-    console.log('[Auth] Wall hidden — app open');
-
-    // Get Graph token in background for avatar + crew sync (non-blocking)
-    fetch('/.auth/token').then(function(r) {
-      return r.ok ? r.json() : null;
-    }).then(function(tokenData) {
-      if (tokenData && tokenData.access_token) {
-        window.msalUser.accessToken = tokenData.access_token;
-        easyAuthLoadAvatar(tokenData.access_token).catch(function(e) {
-          console.warn('[Auth] Avatar:', e.message);
-        });
-        msalSyncCrew(tokenData.access_token).catch(function(e) {
-          console.warn('[Auth] Crew sync:', e.message);
-        });
-      }
-    }).catch(function(e) {
-      console.warn('[Auth] Token fetch non-fatal:', e.message);
-    });
-
-  } catch(err) {
-    console.error('[Auth] Boot error:', err.message);
-    // Show error on the wall with a direct link
-    var wallMsg = document.getElementById('msal-wall-msg');
-    var sp = document.getElementById('msal-spinner');
-    var btn = document.getElementById('msal-retry-btn');
-    if (wallMsg) wallMsg.textContent = 'Sign-in error: ' + err.message;
-    if (sp) sp.style.display = 'none';
-    if (btn) { btn.style.display = 'block'; btn.textContent = 'Try Again'; }
-  }
-}
-
-async function easyAuthLoadAvatar(token) {
-  var h = { 'Authorization': 'Bearer ' + token };
-  // Load full profile
-  try {
-    var p = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName,jobTitle', { headers: h }).then(function(r) { return r.json(); });
-    if (window.msalUser) {
-      window.msalUser.displayName = p.displayName || window.msalUser.name;
-      window.msalUser.email       = p.mail || p.userPrincipalName || window.msalUser.email;
-    }
-    if (typeof easyAuthUpdateSidebar === 'function') easyAuthUpdateSidebar();
-  } catch(e) { console.warn('[Auth] Profile:', e); }
-  // Load photo
-  try {
-    var pr = await fetch('https://graph.microsoft.com/v1.0/me/photos/96x96/$value', { headers: h });
-    if (pr.ok) {
-      var blob = await pr.blob();
-      var uri  = await new Promise(function(res) {
-        var rd = new FileReader();
-        rd.onload = function(e) { res(e.target.result); };
-        rd.readAsDataURL(blob);
-      });
-      if (window.msalUser) window.msalUser.avatarDataUri = uri;
-      if (typeof easyAuthUpdateSidebar === 'function') easyAuthUpdateSidebar();
-    }
-  } catch(e) { console.warn('[Auth] Photo:', e); }
-}
-
-function easyAuthUpdateSidebar() {
-  var u = window.msalUser; if (!u) return;
-  var name = u.displayName || u.name || 'User';
-  var role = (u.roles && u.roles[0]) || u.jobTitle || 'Staff';
-  var ne = document.getElementById('sb-uname-display');
-  var re = document.getElementById('sb-urole-display');
-  var ae = document.getElementById('sb-av-initials');
-  if (ne) ne.textContent = name;
-  if (re) re.textContent = role;
-  if (ae) {
-    if (u.avatarDataUri) {
-      ae.innerHTML = '<img src="' + u.avatarDataUri + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block">';
-      ae.style.background = 'none';
-    } else {
-      ae.textContent = name.split(' ').map(function(n) { return n[0] || ''; }).join('').slice(0, 2).toUpperCase();
-    }
-  }
-}
-
-// Keep msalUpdateSidebarUser as alias so existing code still works
-var msalUpdateSidebarUser = easyAuthUpdateSidebar;
-
-function applyRoleGating() {
-  var roles = (window.msalUser && window.msalUser.roles) || [];
-  var has = function(r) { return roles.indexOf(r) >= 0; };
-  var isAdmin    = has('Admin');
-  var isManager  = has('Manager')     || isAdmin;
-  var isCoord    = has('Coordinator') || isManager;
-  var isFinance  = has('Finance')     || isManager;
-  var isSurveyor = has('Surveyor')    || isCoord;
-  var isCrew     = has('Driver')      || has('Porter');
-  // Dev fallback: no roles = full access
-  if (roles.length === 0) {
-    isAdmin=isManager=isCoord=isFinance=isSurveyor=true;
-    console.warn('[Auth] No roles found — granting full access (dev/fallback mode)');
-  }
-  function gate(id, show) { var e = document.getElementById(id); if (e) e.style.display = show ? '' : 'none'; }
-  gate('nb-dashboard', isCoord);  gate('nb-calendar',  isCoord);
-  gate('nb-bookings',  isCoord);  gate('nb-crew',      isManager);
-  gate('nb-warehouse', isCoord);  gate('nb-finance',   isFinance);
-  gate('nb-surveys',   isSurveyor); gate('nb-storage', isCoord);
-  gate('nb-settings',  isManager); gate('stab-admin',  isAdmin);
-  if (isCrew && !isCoord) { if (typeof dvShowCrewPicker === 'function') dvShowCrewPicker(); }
-}
-
-async function msalSyncCrew(token) {
-  var h = { 'Authorization': 'Bearer ' + token };
-  try {
-    var resp   = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '/appRoleAssignedTo', { headers: h }).then(function(r) { return r.json(); });
-    if (!resp || !resp.value) return;
-    var spResp = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '?$select=appRoles', { headers: h }).then(function(r) { return r.json(); });
-    var roleMap = {};
-    ((spResp && spResp.appRoles) || []).forEach(function(r) { roleMap[r.id] = r.value; });
-    var crewList = resp.value.filter(function(a) { var rn = roleMap[a.appRoleId] || ''; return rn === 'Driver' || rn === 'Porter'; });
-    if (!crewList.length) return;
-    var crewFromEntra = await Promise.all(crewList.map(async function(a) {
-      var uid = a.principalId, rn = roleMap[a.appRoleId];
-      var u = await fetch('https://graph.microsoft.com/v1.0/users/' + uid + '?$select=displayName,mail,userPrincipalName', { headers: h }).then(function(r) { return r.json(); }).catch(function() { return {}; });
-      var photo = '';
-      try { var pr = await fetch('https://graph.microsoft.com/v1.0/users/' + uid + '/photos/96x96/$value', { headers: h }); if (pr.ok) { var b = await pr.blob(); photo = await new Promise(function(res) { var rd = new FileReader(); rd.onload = function(e) { res(e.target.result); }; rd.readAsDataURL(b); }); } } catch(e) {}
-      var stored = (APP_SETTINGS.crewRates && APP_SETTINGS.crewRates[uid]) || {};
-      return { oid: uid, name: (u.displayName || a.principalDisplayName || 'Unknown').toUpperCase(), role: rn, email: u.mail || u.userPrincipalName || '', photo: photo, col: stored.col || '#0073EA', employed: stored.employed !== undefined ? stored.employed : true, chargeRate: stored.chargeRate || 220, rate: stored.rate || 175, ni: stored.ni || 13.8, pension: stored.pension || 3, holiday: stored.holiday || 12.07 };
-    }));
-    var entraOids = crewFromEntra.map(function(c) { return c.oid; });
-    CREW = crewFromEntra.concat(CREW.filter(function(c) { return !c.oid || entraOids.indexOf(c.oid) < 0; }));
-    console.log('[Auth] Crew synced:', crewFromEntra.length, 'members');
-    if (typeof renderSettingsCrew === 'function') renderSettingsCrew();
-  } catch(e) {
-    console.warn('[Auth] Crew sync error:', e.message);
-  }
-}
-
-// Boot
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', easyAuthBoot);
-} else {
-  easyAuthBoot();
-}
-</script>E html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -3074,7 +8,7 @@ if (document.readyState === 'loading') {
 <meta http-equiv="Expires" content="0">
 <title>OPS MANAGER</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<!-- Easy Auth: no client-side auth library needed -->
+<!-- Easy Auth: no client-side library needed -->
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;font-family:'DM Sans',sans-serif;font-size:13.5px;background:#CBDDE9;color:#1C2333}
@@ -8106,7 +5040,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v75 — 5 Mar 2026';
+var APP_VERSION = 'v76 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -21750,7 +18684,626 @@ document.addEventListener('keydown', function(e) {
 });
 
 </script>
+<script>
+// ══════════════════════════════════════════════════════════════════
+// AZURE STATIC WEB APPS EASY AUTH
+// Auth handled server-side by Azure. No MSAL, no redirects in JS.
+// Works on all browsers including Safari.
+// ══════════════════════════════════════════════════════════════════
 
+var MSAL_SP_OBJ_ID = 'cdcdfdaf-dc23-4c22-a86c-02002eccfc42';
+
+async function easyAuthBoot() {
+  var li = document.getElementById('msal-wall-logo');
+  if (li && typeof APP_DEFAULT_LOGO !== 'undefined') li.src = APP_DEFAULT_LOGO;
+  var wallMsg = document.getElementById('msal-wall-msg');
+  if (wallMsg) wallMsg.textContent = 'Checking sign-in…';
+
+  try {
+    var resp = await fetch('/.auth/me');
+    console.log('[Auth] /.auth/me status:', resp.status);
+    var data = await resp.json();
+    console.log('[Auth] principal:', JSON.stringify(data));
+    var principal = data && data.clientPrincipal;
+
+    if (!principal || !principal.userId) {
+      console.log('[Auth] No session — redirecting to Microsoft login');
+      window.location.href = '/.auth/login/aad?post_login_redirect_uri=/';
+      return;
+    }
+
+    console.log('[Auth] Signed in as:', principal.userDetails);
+
+    // Build user object
+    var claims = {};
+    (principal.claims || []).forEach(function(c) { claims[c.typ] = c.val; });
+    var appRoles = (principal.userRoles || []).filter(function(r) {
+      return r !== 'authenticated' && r !== 'anonymous';
+    });
+    // Easy Auth Simple mode doesn't pass app roles — default to Admin
+    if (appRoles.length === 0) appRoles = ['Admin'];
+
+    window.msalUser = {
+      name:        claims['name'] || principal.userDetails || 'User',
+      email:       principal.userDetails || '',
+      oid:         claims['oid'] || '',
+      roles:       appRoles,
+      accessToken: null,
+    };
+
+    // Apply UI immediately
+    if (typeof updateSidebarLogo     === 'function') updateSidebarLogo();
+    if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
+    if (typeof initAdminRole         === 'function') initAdminRole();
+    if (typeof applyRoleGating       === 'function') applyRoleGating();
+
+    // Wire logout
+    var lb = document.querySelector('.sb-logout');
+    if (lb) lb.onclick = function() {
+      window.location.href = '/.auth/logout?post_logout_redirect_uri=/';
+    };
+
+    // Hide wall
+    var wall = document.getElementById('msal-login-wall');
+    if (wall) wall.style.display = 'none';
+    console.log('[Auth] Logged in — wall hidden');
+
+    // Get Graph token for avatar + crew sync (background, non-blocking)
+    fetch('/.auth/token').then(function(r) {
+      return r.ok ? r.json() : null;
+    }).then(function(td) {
+      if (!td || !td.access_token) return;
+      window.msalUser.accessToken = td.access_token;
+      msalLoadGraphProfile(td.access_token).catch(function(){});
+      var r = window.msalUser.roles || [];
+      if (r.indexOf('Admin') >= 0 || r.indexOf('Manager') >= 0) {
+        msalSyncCrew(td.access_token).catch(function(){});
+      }
+    }).catch(function(){});
+
+  } catch(err) {
+    console.error('[Auth] Error:', err.message);
+    var sp = document.getElementById('msal-spinner');
+    var bt = document.getElementById('msal-retry-btn');
+    var wm = document.getElementById('msal-wall-msg');
+    if (sp) sp.style.display = 'none';
+    if (wm) wm.textContent = 'Sign in with your Microsoft 365 account';
+    if (bt) { bt.style.display = 'block'; bt.textContent = 'Sign In with Microsoft 365'; bt.onclick = function() { window.location.href = '/.auth/login/aad'; }; }
+  }
+}
+
+async function msalLoadGraphProfile(token) {
+  var h = { 'Authorization': 'Bearer ' + token };
+  try {
+    var p = await fetch('https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName,jobTitle', { headers: h }).then(function(r) { return r.json(); });
+    if (window.msalUser) {
+      window.msalUser.displayName = p.displayName || window.msalUser.name;
+      window.msalUser.email = p.mail || p.userPrincipalName || window.msalUser.email;
+    }
+    if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
+  } catch(e) {}
+  try {
+    var pr = await fetch('https://graph.microsoft.com/v1.0/me/photos/96x96/$value', { headers: h });
+    if (pr.ok) {
+      var blob = await pr.blob();
+      var uri = await new Promise(function(res) { var rd = new FileReader(); rd.onload = function(e) { res(e.target.result); }; rd.readAsDataURL(blob); });
+      if (window.msalUser) window.msalUser.avatarDataUri = uri;
+      if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
+    }
+  } catch(e) {}
+}
+
+function msalUpdateSidebarUser() {
+  var u = window.msalUser; if (!u) return;
+  var name = u.displayName || u.name || 'User';
+  var role = (u.roles && u.roles[0]) || 'Staff';
+  var ne = document.getElementById('sb-uname-display');
+  var re = document.getElementById('sb-urole-display');
+  var ae = document.getElementById('sb-av-initials');
+  if (ne) ne.textContent = name;
+  if (re) re.textContent = role;
+  if (ae) {
+    if (u.avatarDataUri) {
+      ae.innerHTML = '<img src="' + u.avatarDataUri + '" style="width:32px;height:32px;border-radius:50%;object-fit:cover;display:block">';
+      ae.style.background = 'none';
+    } else {
+      ae.textContent = name.split(' ').map(function(n){return n[0]||'';}).join('').slice(0,2).toUpperCase();
+    }
+  }
+}
+
+function applyRoleGating() {
+  var roles = (window.msalUser && window.msalUser.roles) || [];
+  var has = function(r) { return roles.indexOf(r) >= 0; };
+  var isAdmin = has('Admin'), isManager = has('Manager') || isAdmin;
+  var isCoord = has('Coordinator') || isManager, isFinance = has('Finance') || isManager;
+  var isSurveyor = has('Surveyor') || isCoord, isCrew = has('Driver') || has('Porter');
+  if (roles.length === 0) { isAdmin=isManager=isCoord=isFinance=isSurveyor=true; }
+  function gate(id, show) { var e = document.getElementById(id); if (e) e.style.display = show ? '' : 'none'; }
+  gate('nb-dashboard', isCoord); gate('nb-calendar', isCoord); gate('nb-bookings', isCoord);
+  gate('nb-crew', isManager); gate('nb-warehouse', isCoord); gate('nb-finance', isFinance);
+  gate('nb-surveys', isSurveyor); gate('nb-storage', isCoord);
+  gate('nb-settings', isManager); gate('stab-admin', isAdmin);
+  if (isCrew && !isCoord) { if (typeof dvShowCrewPicker === 'function') dvShowCrewPicker(); }
+}
+
+async function msalSyncCrew(token) {
+  var h = { 'Authorization': 'Bearer ' + token };
+  try {
+    var resp = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '/appRoleAssignedTo', { headers: h }).then(function(r) { return r.json(); });
+    if (!resp || !resp.value) return;
+    var spResp = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '?$select=appRoles', { headers: h }).then(function(r) { return r.json(); });
+    var roleMap = {};
+    ((spResp && spResp.appRoles) || []).forEach(function(r) { roleMap[r.id] = r.value; });
+    var crewList = resp.value.filter(function(a) { var rn = roleMap[a.appRoleId]||''; return rn==='Driver'||rn==='Porter'; });
+    if (!crewList.length) return;
+    var crew = await Promise.all(crewList.map(async function(a) {
+      var uid = a.principalId, rn = roleMap[a.appRoleId];
+      var u = await fetch('https://graph.microsoft.com/v1.0/users/'+uid+'?$select=displayName,mail,userPrincipalName', {headers:h}).then(function(r){return r.json();}).catch(function(){return {};});
+      var photo = '';
+      try { var pr = await fetch('https://graph.microsoft.com/v1.0/users/'+uid+'/photos/96x96/$value',{headers:h}); if(pr.ok){var b=await pr.blob();photo=await new Promise(function(res){var rd=new FileReader();rd.onload=function(e){res(e.target.result);};rd.readAsDataURL(b);});} } catch(e) {}
+      var stored = (APP_SETTINGS.crewRates && APP_SETTINGS.crewRates[uid]) || {};
+      return { oid:uid, name:(u.displayName||a.principalDisplayName||'Unknown').toUpperCase(), role:rn, email:u.mail||u.userPrincipalName||'', photo:photo, col:stored.col||'#0073EA', employed:stored.employed!==undefined?stored.employed:true, chargeRate:stored.chargeRate||220, rate:stored.rate||175, ni:stored.ni||13.8, pension:stored.pension||3, holiday:stored.holiday||12.07 };
+    }));
+    var oids = crew.map(function(c){return c.oid;});
+    CREW = crew.concat(CREW.filter(function(c){return !c.oid||oids.indexOf(c.oid)<0;}));
+    if (typeof renderSettingsCrew === 'function') renderSettingsCrew();
+  } catch(e) { console.warn('[Auth] Crew sync:', e.message); }
+}
+
+// Boot on load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', easyAuthBoot);
+} else {
+  easyAuthBoot();
+}
+</script>
 
 </body>
-</html>
+</html
+// ══════════════════════════════════════════════════════════════════════
+// INVENTORY COMPLETION SCREEN
+// ══════════════════════════════════════════════════════════════════════
+
+function dvOpenInvCompletion(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-inv-complete');
+  dvRenderInvCompletion(jobId);
+}
+
+// 5 client acknowledgement prompts before signatures become available
+var INV_CLIENT_PROMPTS = [
+  'I confirm that I have been present during the inventory process and have had the opportunity to review all items recorded.',
+  'I acknowledge that the item descriptions, conditions and damage codes shown in this inventory are accurate to the best of my knowledge.',
+  'I understand that any pre-existing damage noted on items is recorded for both parties\' protection and does not affect the agreed move price.',
+  'I confirm that any items marked for disposal have been agreed verbally with the crew and I authorise their removal.',
+  'I agree that this signed inventory will form the condition record for this move and will be used as the reference document in the event of any damage claim.',
+];
+
+function dvRenderInvCompletion(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  var inv = (j.crewData && j.crewData.inventory) || {items:[]};
+  var items = inv.items || [];
+  var confirmed = inv.clientPrompts || {};   // {0:true, 1:true, ...}
+  var confirmedCount = Object.keys(confirmed).filter(function(k){return confirmed[k];}).length;
+  var allPromptsDone = confirmedCount === INV_CLIENT_PROMPTS.length;
+
+  var h = dvDarkHeader('Complete Inventory', j.client + ' · ' + items.length + ' items',
+    'dvOpenInventory(\'' + jobId + '\')');
+  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 100px">';
+
+  // Summary strip
+  var totalCuft = items.reduce(function(t,it){ return t + ((it.volume&&it.volume.cuft)||0); }, 0);
+  h += '<div style="background:#EBF4FF;border-radius:12px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-around">';
+  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:#0073EA">' + items.length + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Items</div></div>';
+  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:#0073EA">' + totalCuft.toFixed(0) + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Cu.ft</div></div>';
+  var dmgCount = items.filter(function(it){return it.damages&&it.damages.codes&&it.damages.codes.length;}).length;
+  h += '<div style="text-align:center"><div style="font-size:22px;font-weight:900;color:' + (dmgCount?'#E44258':'#00C875') + '">' + dmgCount + '</div><div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase">Damage</div></div>';
+  h += '</div>';
+
+  // Client acknowledgements
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px;letter-spacing:.6px">Client Acknowledgements</div>';
+  h += '<div style="background:#fff;border-radius:12px;overflow:hidden;margin-bottom:16px">';
+
+  INV_CLIENT_PROMPTS.forEach(function(prompt, i) {
+    var done = !!confirmed[i];
+    var isNext = !done && (i === 0 || !!confirmed[i-1]);
+    var locked = !done && !isNext;
+
+    var bgCol  = done ? '#E6FFF5' : (isNext ? '#fff' : '#F9F9F9');
+    var border = done ? '1px solid #D1FAE5' : (isNext ? '1px solid #E3E7F0' : '1px solid #DDE8F0');
+    var cursor = (isNext && !done) ? 'cursor:pointer;' : '';
+    var clickFn = isNext ? 'dvInvConfirmPrompt(\'' + jobId + '\',' + i + ')' : '';
+
+    h += '<div onclick="' + clickFn + '" style="padding:13px 16px;border-bottom:' + border + ';background:' + bgCol + ';' + cursor + 'display:flex;align-items:flex-start;gap:12px">';
+
+    // Check circle
+    h += '<div style="width:24px;height:24px;border-radius:50%;border:2px solid ' + (done?'#00C875':(isNext?'#0073EA':'#C8C5BE')) + ';background:' + (done?'#00C875':'transparent') + ';display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px">';
+    if (done) h += '<span style="color:#fff;font-size:12px">✓</span>';
+    else if (!locked) h += '<span style="color:#0073EA;font-size:12px;font-weight:900">' + (i+1) + '</span>';
+    h += '</div>';
+
+    h += '<div style="flex:1">';
+    h += '<div style="font-size:13px;line-height:1.5;color:' + (locked?'#C8C5BE':(done?'#00A86B':'#1C2333')) + '">' + esc(prompt) + '</div>';
+    if (isNext) h += '<div style="font-size:11px;font-weight:700;color:#0073EA;margin-top:6px">Tap to confirm →</div>';
+    if (done)   h += '<div style="font-size:11px;font-weight:700;color:#00A86B;margin-top:4px">✓ Confirmed</div>';
+    h += '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+
+  // Progress bar for prompts
+  h += '<div style="background:#EEF4F9;border-radius:8px;padding:8px 14px;margin-bottom:16px;display:flex;align-items:center;gap:12px">';
+  h += '<div style="flex:1;background:#E3E7F0;border-radius:20px;height:6px"><div style="background:' + (allPromptsDone?'#00C875':'#0073EA') + ';border-radius:20px;height:6px;width:' + Math.round(confirmedCount/INV_CLIENT_PROMPTS.length*100) + '%"></div></div>';
+  h += '<div style="font-size:12px;font-weight:800;color:#1C2333">' + confirmedCount + '/' + INV_CLIENT_PROMPTS.length + ' confirmed</div>';
+  h += '</div>';
+
+  // Signatures — only shown once all prompts done
+  if (allPromptsDone) {
+    h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:10px;letter-spacing:.6px">Signatures</div>';
+    ['Crew','Client'].forEach(function(who){
+      var cid = 'inv-' + who.toLowerCase() + '-sig';
+      h += '<div style="background:#fff;border-radius:12px;padding:14px;margin-bottom:12px">';
+      h += '<div style="font-size:10px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:8px">' + who + ' Signature</div>';
+      h += '<canvas id="' + cid + '" width="488" height="110" style="width:100%;border:2px solid #E3E7F0;border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>';
+      h += '<button onclick="dvClearCanvas(\'' + cid + '\')" style="margin-top:6px;background:none;border:1px solid #E3E7F0;border-radius:6px;padding:5px 14px;font-size:11px;color:#7A849E;cursor:pointer">Clear</button>';
+      h += '</div>';
+    });
+    h += '<button onclick="dvCompleteInventory(\'' + jobId + '\')" style="width:100%;background:#00C875;color:#fff;border:none;border-radius:12px;padding:15px;font-size:15px;font-weight:800;cursor:pointer">✓ Sign & Complete Inventory</button>';
+  } else {
+    h += '<div style="background:#EEF4F9;border-radius:12px;padding:14px;text-align:center;color:#B0BEC5">';
+    h += '<div style="font-size:24px;margin-bottom:8px">🔒</div>';
+    h += '<div style="font-size:13px;font-weight:700">Signatures unlock after all ' + INV_CLIENT_PROMPTS.length + ' acknowledgements</div>';
+    h += '<div style="font-size:12px;margin-top:4px">' + (INV_CLIENT_PROMPTS.length - confirmedCount) + ' remaining</div>';
+    h += '</div>';
+  }
+
+  h += '</div>';
+  el('dv-inv-complete-body').innerHTML = h;
+  if (allPromptsDone) {
+    setTimeout(function(){
+      dvInitSigPad('inv-crew-sig');
+      dvInitSigPad('inv-client-sig');
+    }, 80);
+  }
+}
+
+function dvInvConfirmPrompt(jobId, idx) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.inventory) j.crewData.inventory = {items:[]};
+  if (!j.crewData.inventory.clientPrompts) j.crewData.inventory.clientPrompts = {};
+  j.crewData.inventory.clientPrompts[idx] = true;
+  saveData('job', j.id, j);
+  dvRenderInvCompletion(jobId);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// FORMS LIBRARY
+// ══════════════════════════════════════════════════════════════════════
+
+function dvOpenFormsLibrary(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-forms');
+  dvRenderFormsLibrary(jobId);
+}
+
+var DV_FORMS_LIBRARY = [
+  {
+    id: 'damage_waiver',
+    label: 'Damage Waiver',
+    icon: '🛡',
+    sub: 'Client waives liability for specific pre-existing conditions',
+    status: 'Placeholder — form coming soon',
+    col: '#E44258'
+  },
+  {
+    id: 'long_walk',
+    label: 'Long Walk / Long Carry Form',
+    icon: '🚶',
+    sub: 'Record excess distance from vehicle to property',
+    status: 'Placeholder — form coming soon',
+    col: '#FF9F1A'
+  },
+  {
+    id: 'specialist_items',
+    label: 'Specialist Items Declaration',
+    icon: '💎',
+    sub: 'High value / antique / fragile item agreement',
+    status: 'Placeholder — form coming soon',
+    col: '#9B59B6'
+  },
+  {
+    id: 'third_party',
+    label: 'Third Party Access Form',
+    icon: '🔑',
+    sub: 'Authorisation for crew to access property without client present',
+    status: 'Placeholder — form coming soon',
+    col: '#0073EA'
+  },
+  {
+    id: 'packing_exclusion',
+    label: 'Packing Exclusion Notice',
+    icon: '📦',
+    sub: 'Items client is packing themselves — liability exclusion',
+    status: 'Placeholder — form coming soon',
+    col: '#00A86B'
+  },
+];
+
+function dvRenderFormsLibrary(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  var h = dvDarkHeader('Forms Library', j.client, 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 90px">';
+  h += '<div style="background:#FFF5E0;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#9A5600">⚠ Forms are currently placeholders. Full digital form capture is coming — content for each form will be added shortly.</div>';
+  DV_FORMS_LIBRARY.forEach(function(form) {
+    h += '<div style="background:#fff;border-radius:12px;margin-bottom:10px;padding:14px 16px;border-left:4px solid ' + form.col + ';display:flex;align-items:center;gap:14px">';
+    h += '<div style="width:42px;height:42px;border-radius:10px;background:' + form.col + '22;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0">' + form.icon + '</div>';
+    h += '<div style="flex:1"><div style="font-size:14px;font-weight:700;color:#1C2333">' + form.label + '</div>';
+    h += '<div style="font-size:11.5px;color:#7A849E;margin-top:2px">' + form.sub + '</div>';
+    h += '<div style="font-size:11px;font-weight:600;color:' + form.col + ';margin-top:5px">→ ' + form.status + '</div>';
+    h += '</div></div>';
+  });
+  h += '</div>';
+  el('dv-forms-body').innerHTML = h;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PROPERTY WALKAROUND
+// ══════════════════════════════════════════════════════════════════════
+
+function dvOpenWalkaround(jobId) {
+  dvCurrentJobId = jobId;
+  dvShowScreen('dv-screen-walkaround');
+  dvRenderWalkaround(jobId);
+}
+
+var DV_WALKAROUND_TYPES = [
+  {id:'wall_scratch',  label:'Wall — Scratch / Scuff',  icon:'🪟', col:'#FF9F1A'},
+  {id:'wall_hole',     label:'Wall — Hole / Dent',       icon:'🔲', col:'#E44258'},
+  {id:'floor_scratch', label:'Floor — Scratch / Gouge',  icon:'🪵', col:'#FF9F1A'},
+  {id:'floor_stain',   label:'Floor — Stain / Mark',     icon:'💧', col:'#9B59B6'},
+  {id:'door_chip',     label:'Door Frame — Chip / Crack',icon:'🚪', col:'#E44258'},
+  {id:'ceiling',       label:'Ceiling — Mark / Damage',  icon:'☁',  col:'#7A849E'},
+  {id:'banister',      label:'Banister / Rail — Damage', icon:'🪜', col:'#FF9F1A'},
+  {id:'skirting',      label:'Skirting Board — Damage',  icon:'📐', col:'#9B59B6'},
+  {id:'tile',          label:'Tile — Crack / Chip',      icon:'🔷', col:'#0073EA'},
+  {id:'window',        label:'Window — Crack / Chip',    icon:'🪟', col:'#E44258'},
+  {id:'other',         label:'Other Property Damage',    icon:'⚠',  col:'#7A849E'},
+];
+
+var _waJobId   = null;
+var _waPhotos  = {};    // {tempId: b64}
+var _waAiLoading = false;
+
+function dvRenderWalkaround(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[], completedAt:null};
+  var wa   = j.crewData.walkaround;
+  var done = !!wa.completedAt;
+  var dmgs = wa.damages || [];
+  _waJobId = jobId;
+
+  var h = dvDarkHeader('Property Walkaround', j.client + ' — ' + (j.origin||'Property'), 'dvShowScreen(\'dv-screen-job\');dvRenderJobDetail(\'' + jobId + '\')');
+  h += '<div style="max-width:520px;margin:0 auto;padding:14px 16px 100px">';
+
+  if (done) {
+    h += '<div style="background:#E6FFF5;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#00A86B">✓ Walkaround complete · ' + dvNiceDate(new Date(wa.completedAt)) + ' · ' + esc(wa.completedBy||'') + '</div>';
+  } else {
+    h += '<div style="background:#EBF4FF;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#0073EA">Walk around the property and record any pre-existing damage before work begins. Tap <strong>+ Add Damage</strong> for each item found.</div>';
+  }
+
+  // Damage list
+  if (dmgs.length) {
+    h += '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#7A849E;margin-bottom:8px;letter-spacing:.5px">' + dmgs.length + ' damage' + (dmgs.length===1?'':'s') + ' recorded</div>';
+    dmgs.forEach(function(dmg, di) {
+      var typeObj = DV_WALKAROUND_TYPES.filter(function(t){return t.id===dmg.type;})[0] || {icon:'⚠',col:'#7A849E',label:dmg.type};
+      h += '<div style="background:#fff;border-radius:12px;margin-bottom:8px;overflow:hidden;border-left:4px solid ' + typeObj.col + '">';
+      h += '<div style="padding:10px 14px;display:flex;align-items:flex-start;gap:10px">';
+      h += '<span style="font-size:20px;flex-shrink:0">' + typeObj.icon + '</span>';
+      h += '<div style="flex:1">';
+      h += '<div style="font-size:12px;font-weight:800;color:' + typeObj.col + '">' + esc(typeObj.label) + '</div>';
+      if (dmg.location) h += '<div style="font-size:12px;color:#1C2333;margin-top:2px">📍 ' + esc(dmg.location) + '</div>';
+      if (dmg.notes)    h += '<div style="font-size:12px;color:#7A849E;margin-top:2px">' + esc(dmg.notes) + '</div>';
+      if (dmg.aiDesc)   h += '<div style="font-size:11px;color:#0073EA;margin-top:2px">✦ ' + esc(dmg.aiDesc) + '</div>';
+      h += '</div>';
+      if (!done) h += '<button onclick="dvWaDeleteDamage(\'' + jobId + '\',' + di + ')" style="background:none;border:none;color:#E44258;font-size:16px;cursor:pointer;padding:4px;flex-shrink:0">✕</button>';
+      h += '</div>';
+      // Photos
+      if (dmg.photos && dmg.photos.length) {
+        h += '<div style="padding:0 14px 10px;display:flex;gap:6px;flex-wrap:wrap">';
+        dmg.photos.forEach(function(p){ h += '<img src="' + p + '" style="width:60px;height:60px;object-fit:cover;border-radius:8px">'; });
+        h += '</div>';
+      }
+      h += '</div>';
+    });
+  } else if (!done) {
+    h += '<div style="background:#EEF4F9;border-radius:12px;padding:24px;text-align:center;margin-bottom:16px">';
+    h += '<div style="font-size:32px;margin-bottom:8px">🏠</div>';
+    h += '<div style="font-size:14px;font-weight:700;color:#7A849E">No damage recorded yet</div>';
+    h += '<div style="font-size:12px;color:#B0BEC5;margin-top:4px">Tap + Add Damage to record any issues</div>';
+    h += '</div>';
+  }
+
+  // Add damage button
+  if (!done) {
+    h += '<button onclick="dvWaOpenAddDamage(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:12px">+ Add Damage</button>';
+    h += '<button onclick="dvWaComplete(\'' + jobId + '\')" style="width:100%;background:' + (dmgs.length?'#00C875':'#B0BEC5') + ';color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:800;cursor:' + (dmgs.length?'pointer':'not-allowed') + '">' + (dmgs.length?'✓ Complete Walkaround':'Complete Walkaround (no damage is also valid)') + '</button>';
+    // Allow completing with no damage too
+    if (!dmgs.length) {
+      h += '<button onclick="dvWaComplete(\'' + jobId + '\')" style="width:100%;margin-top:8px;background:#00C875;color:#fff;border:none;border-radius:12px;padding:13px;font-size:13px;font-weight:700;cursor:pointer">✓ Complete — No Damage Found</button>';
+    }
+  }
+
+  h += '</div>';
+  el('dv-walkaround-body').innerHTML = h;
+}
+
+// Add damage modal — rendered inline as a slide-up panel
+function dvWaOpenAddDamage(jobId) {
+  var panel = el('dv-wa-panel');
+  if (!panel) return;
+  _waJobId = jobId;
+  var h = '<div style="background:#fff;border-radius:16px 16px 0 0;padding:16px 16px 40px;max-width:520px;margin:0 auto">';
+  h += '<div style="width:40px;height:4px;background:#E3E7F0;border-radius:2px;margin:0 auto 16px"></div>';
+  h += '<div style="font-size:14px;font-weight:800;color:#1C2333;margin-bottom:14px">Add Property Damage</div>';
+
+  // Type selector
+  h += '<div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:8px">Damage Type</div>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">';
+  DV_WALKAROUND_TYPES.forEach(function(t) {
+    h += '<div onclick="dvWaSelectType(\'' + t.id + '\')" id="wa-type-' + t.id + '" style="padding:8px;border-radius:8px;border:2px solid #E3E7F0;cursor:pointer;display:flex;align-items:center;gap:8px">';
+    h += '<span>' + t.icon + '</span><span style="font-size:12px;font-weight:600;color:#4A5568">' + t.label + '</span></div>';
+  });
+  h += '</div>';
+
+  // Location input
+  h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Location in Property</div>';
+  h += '<input id="wa-location" placeholder="e.g. Hallway, 1st floor landing, master bedroom..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;box-sizing:border-box"></div>';
+
+  // Notes
+  h += '<div style="margin-bottom:12px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;margin-bottom:5px">Description</div>';
+  h += '<textarea id="wa-notes" rows="2" placeholder="Describe the damage..." style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;resize:none;box-sizing:border-box"></textarea></div>';
+
+  // Photo + AI
+  h += '<div style="margin-bottom:14px">';
+  h += '<input id="wa-photo-input" type="file" accept="image/*" capture="environment" style="display:none" onchange="dvWaPhotoSelected(this)">';
+  h += '<div style="display:flex;gap:8px">';
+  h += '<button onclick="el(\'wa-photo-input\').click()" style="flex:1;background:#EBF4FF;border:2px dashed #0073EA;border-radius:10px;padding:12px;cursor:pointer;color:#0073EA;font-weight:700;font-size:13px">📷 Take Photo<br><span style="font-size:11px;font-weight:400;opacity:.7">AI will describe damage</span></button>';
+  h += '</div>';
+  h += '<div id="wa-photo-preview"></div>';
+  h += '</div>';
+
+  h += '<button onclick="dvWaSaveDamage(\'' + jobId + '\')" style="width:100%;background:#0073EA;color:#fff;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:800;cursor:pointer">Save Damage Record</button>';
+  h += '<button onclick="dvWaClosePanel()" style="width:100%;margin-top:8px;background:none;border:1px solid #E3E7F0;border-radius:12px;padding:12px;font-size:13px;color:#7A849E;cursor:pointer">Cancel</button>';
+  h += '</div>';
+
+  panel.innerHTML = h;
+  panel.style.display = 'block';
+  panel.style.position = 'fixed';
+  panel.style.bottom = '0';
+  panel.style.left = '0';
+  panel.style.right = '0';
+  panel.style.zIndex = '999';
+  panel.style.background = 'rgba(0,0,0,.4)';
+  panel.style.top = '0';
+  panel.style.display = 'flex';
+  panel.style.alignItems = 'flex-end';
+  window._waSelectedType = null;
+  window._waPhotoB64 = null;
+  window._waAiDesc = null;
+}
+
+function dvWaSelectType(typeId) {
+  window._waSelectedType = typeId;
+  DV_WALKAROUND_TYPES.forEach(function(t) {
+    var el2 = el('wa-type-' + t.id);
+    if (!el2) return;
+    var active = t.id === typeId;
+    el2.style.borderColor = active ? t.col : '#E3E7F0';
+    el2.style.background  = active ? (t.col + '22') : 'transparent';
+  });
+}
+
+function dvWaPhotoSelected(input) {
+  var file = input.files && input.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    window._waPhotoB64 = e.target.result;
+    var prev = el('wa-photo-preview');
+    if (prev) {
+      prev.innerHTML = '<div style="position:relative;margin-top:8px"><img src="' + e.target.result + '" style="width:100%;max-height:150px;object-fit:cover;border-radius:8px"><div id="wa-ai-status" style="margin-top:6px;font-size:12px;color:#0073EA;font-weight:600">✦ Analysing damage with AI…</div></div>';
+    }
+    dvWaRunAi(e.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+function dvWaRunAi(b64) {
+  var apiKey = APP_SETTINGS && APP_SETTINGS.claudeApiKey;
+  var imgData = b64.split(',')[1];
+  var mediaType = b64.startsWith('data:image/png') ? 'image/png' : 'image/jpeg';
+  var prompt = 'You are a property damage assessment assistant for a removals company. Look at this photo and in 1-2 short sentences describe: (1) what type of property surface or feature is damaged, (2) the nature and approximate severity of the damage. Be factual and concise. Format: "[Surface]: [damage description]". Example: "Hallway wall: shallow scratch approx 30cm long, paint surface only".';
+  var body = JSON.stringify({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 120,
+    messages: [{role:'user', content:[{type:'image',source:{type:'base64',media_type:mediaType,data:imgData}},{type:'text',text:prompt}]}]
+  });
+  var headers = {'Content-Type':'application/json'};
+  var url = '/api/claude';
+  if (apiKey) { url = 'https://api.anthropic.com/v1/messages'; headers['x-api-key'] = apiKey; headers['anthropic-version'] = '2023-06-01'; headers['anthropic-dangerous-allow-browser'] = 'true'; }
+  fetch(url, {method:'POST', headers:headers, credentials:apiKey?undefined:'include', body:body})
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var blocks = data.content || (data.result && data.result.content) || [];
+      var txt = blocks.filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('');
+      window._waAiDesc = txt.trim();
+      var statusEl = el('wa-ai-status');
+      if (statusEl) statusEl.innerHTML = '✦ AI: <em>' + esc(window._waAiDesc) + '</em>';
+      // Auto-fill notes if empty
+      var notesEl = el('wa-notes');
+      if (notesEl && !notesEl.value) notesEl.value = window._waAiDesc;
+    })
+    .catch(function(){ var statusEl = el('wa-ai-status'); if (statusEl) statusEl.innerHTML = 'AI unavailable — enter notes manually'; });
+}
+
+function dvWaSaveDamage(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  var type     = window._waSelectedType;
+  var location = (el('wa-location')||{}).value || '';
+  var notes    = (el('wa-notes')||{}).value || '';
+  if (!type) { toast('Select a damage type'); return; }
+  if (!location && !notes) { toast('Add a location or description'); return; }
+  if (!j.crewData) j.crewData = {};
+  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[]};
+  j.crewData.walkaround.damages.push({
+    type:     type,
+    location: location,
+    notes:    notes,
+    aiDesc:   window._waAiDesc || null,
+    photos:   window._waPhotoB64 ? [window._waPhotoB64] : [],
+    recordedAt: new Date().toISOString(),
+    recordedBy: window._driverName || 'Crew'
+  });
+  saveData('job', j.id, j);
+  dvWaClosePanel();
+  dvRenderWalkaround(jobId);
+  toast('✓ Damage recorded');
+}
+
+function dvWaClosePanel() {
+  var panel = el('dv-wa-panel');
+  if (panel) { panel.style.display = 'none'; panel.innerHTML = ''; }
+  window._waSelectedType = null;
+  window._waPhotoB64 = null;
+  window._waAiDesc = null;
+}
+
+function dvWaDeleteDamage(jobId, idx) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j || !j.crewData || !j.crewData.walkaround) return;
+  j.crewData.walkaround.damages.splice(idx, 1);
+  saveData('job', j.id, j);
+  dvRenderWalkaround(jobId);
+}
+
+function dvWaComplete(jobId) {
+  var j = jobs.filter(function(x){return x.id===jobId;})[0];
+  if (!j) return;
+  if (!j.crewData.walkaround) j.crewData.walkaround = {damages:[]};
+  j.crewData.walkaround.completedAt = new Date().toISOString();
+  j.crewData.walkaround.completedBy = window._driverName || 'Crew';
+  saveData('job', j.id, j);
+  toast('✓ Property walkaround complete');
+  dvShowScreen('dv-screen-job');
+  dvRenderJobDetail(jobId);
+}
+
+>
