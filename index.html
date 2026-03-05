@@ -1252,7 +1252,7 @@ textarea.fi{resize:vertical;min-height:60px}
     max-width:380px;text-align:center"></div>
   <button id="msal-retry-btn" onclick="msalLogin()" style="display:none;margin-top:16px;
     padding:10px 24px;background:#fff;color:#2872A1;border:none;border-radius:8px;
-    font-size:14px;font-weight:700;cursor:pointer">Sign In with Microsoft</button>
+    font-size:14px;font-weight:700;cursor:pointer;letter-spacing:.2px">Sign In with Microsoft 365</button>
 </div>
 <style>
 @keyframes msalSpin { to { transform:rotate(360deg) } }
@@ -5041,7 +5041,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v66 — 5 Mar 2026';
+var APP_VERSION = 'v67 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18687,9 +18687,8 @@ document.addEventListener('keydown', function(e) {
 </script>
 <script>
 // ══════════════════════════════════════════════════════════════════
-// MICROSOFT 365 AUTHENTICATION  —  MSAL.js v2  POPUP mode
-// Popup avoids all redirect loop issues entirely.
-// Microsoft login opens in a popup, returns token directly.
+// MICROSOFT 365 AUTH — MSAL v2, redirect mode, Safari-safe
+// Uses cookies for state (bypasses Safari ITP storage blocking)
 // ══════════════════════════════════════════════════════════════════
 
 var MSAL_CLIENT_ID = '8c6c6e1d-3d50-4fa5-8700-49989764860f';
@@ -18697,71 +18696,180 @@ var MSAL_TENANT_ID = '52c88d8a-2382-40ad-afef-c6cb5d98820e';
 var MSAL_SP_OBJ_ID = 'cdcdfdaf-dc23-4c22-a86c-02002eccfc42';
 var GRAPH_SCOPES   = ['User.Read', 'User.ReadBasic.All', 'Directory.Read.All'];
 
-var _msalApp  = null;
-var _msalBusy = false;
+// Use the exact origin — no trailing slash
+var MSAL_REDIRECT  = window.location.origin;
+
+var _msalApp = null;
 
 function msalWallMsg(msg) {
   var e = document.getElementById('msal-wall-msg');
   if (e) e.textContent = msg;
 }
-
-function msalShowError(msg, showBtn) {
-  console.error('[MSAL] Error:', msg);
+function msalShowError(msg) {
+  console.error('[MSAL]', msg);
   var e  = document.getElementById('msal-wall-error');
   var b  = document.getElementById('msal-retry-btn');
   var sp = document.getElementById('msal-spinner');
   if (e)  { e.style.display = 'block'; e.textContent = msg; }
-  if (b && showBtn !== false)  b.style.display = 'block';
+  if (b)  b.style.display = 'block';
   if (sp) sp.style.display = 'none';
 }
-
 function msalHideWall() {
-  var wall = document.getElementById('msal-login-wall');
-  if (wall) wall.style.display = 'none';
+  var w = document.getElementById('msal-login-wall');
+  if (w) w.style.display = 'none';
 }
 
-// Called by the "Sign In" button and on first load if no session found
-async function msalLogin() {
-  if (typeof msal === 'undefined') {
-    msalShowError('Microsoft sign-in library failed to load. Please refresh the page.');
-    return;
-  }
-  // Re-initialise _msalApp fresh if needed (clears any stuck interaction state)
+// Wipe ALL storage so no stale interaction state can block us
+function msalClearStorage() {
   try {
+    // Preserve app data
+    var saved = localStorage.getItem('opsdata');
     localStorage.clear();
     sessionStorage.clear();
-    // Re-load preserved app data
-    if (typeof lsLoad === 'function') lsLoad();
-  } catch(e) {}
-
-  try {
-    _msalApp = new msal.PublicClientApplication({
-      auth: {
-        clientId:  MSAL_CLIENT_ID,
-        authority: 'https://login.microsoftonline.com/' + MSAL_TENANT_ID,
-      },
-      cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
+    if (saved) localStorage.setItem('opsdata', saved);
+    // Clear MSAL cookies
+    document.cookie.split(';').forEach(function(c) {
+      var k = c.trim().split('=')[0];
+      if (k && (k.indexOf('msal') >= 0 || k.indexOf('x-ms') >= 0)) {
+        document.cookie = k + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+      }
     });
-    console.log('[MSAL] Fresh app instance created for login');
-    msalWallMsg('Opening Microsoft sign-in…');
-    var tokenResp = await _msalApp.acquireTokenPopup({ scopes: GRAPH_SCOPES });
-    await msalHandleToken(tokenResp);
-  } catch(e) {
-    console.warn('[MSAL] Popup failed:', e.name, e.message);
-    if (e.name === 'BrowserAuthError' && e.message.indexOf('popup_window_error') >= 0) {
-      msalShowError('Popup was blocked. Please allow popups for this site, then click Sign In again.');
-    } else if (e.message && (e.message.indexOf('user_cancelled') >= 0 || e.message.indexOf('cancelled') >= 0)) {
-      msalShowError('Sign-in was cancelled. Click Sign In to try again.');
-    } else if (e.message && e.message.indexOf('interaction_in_progress') >= 0) {
-      // Still stuck — tell user exactly what to do
-      msalShowError('Browser sign-in state is stuck. Please close this tab, open a new one, and try again. If the problem persists, clear your browser cache.');
-    } else {
-      msalShowError('Sign-in failed: ' + (e.message || e.name));
+  } catch(e) {}
+}
+
+function msalMakeApp() {
+  return new msal.PublicClientApplication({
+    auth: {
+      clientId:    MSAL_CLIENT_ID,
+      authority:   'https://login.microsoftonline.com/' + MSAL_TENANT_ID,
+      redirectUri: MSAL_REDIRECT,
+      navigateToLoginRequestUrl: false,
+    },
+    cache: {
+      cacheLocation:          'localStorage',
+      storeAuthStateInCookie: true,  // Safari ITP fallback — uses cookies for state
+    },
+    system: {
+      allowRedirectInIframe: false,
     }
+  });
+}
+
+// Called by the Sign In button
+function msalLogin() {
+  msalClearStorage();
+  try {
+    _msalApp = msalMakeApp();
+    msalWallMsg('Redirecting to Microsoft…');
+    _msalApp.loginRedirect({
+      scopes:  GRAPH_SCOPES,
+      prompt:  'select_account',
+    });
+  } catch(e) {
+    msalShowError('Could not start sign-in: ' + e.message);
   }
 }
 
-// Process a token response and boot the app
+async function msalBoot() {
+  var li = document.getElementById('msal-wall-logo');
+  if (li && typeof APP_DEFAULT_LOGO !== 'undefined') li.src = APP_DEFAULT_LOGO;
+
+  if (typeof msal === 'undefined') {
+    msalShowError('Sign-in library failed to load. Please refresh the page.');
+    return;
+  }
+
+  console.log('[MSAL] Boot. redirectUri:', MSAL_REDIRECT);
+  console.log('[MSAL] URL:', window.location.href);
+
+  // Detect if we are returning from a Microsoft redirect
+  // (hash or search will contain 'code=' or 'error=')
+  var url     = window.location.href;
+  var hasCode = url.indexOf('code=') >= 0 || url.indexOf('error=') >= 0;
+
+  if (hasCode) {
+    // We're returning from Microsoft — process the redirect
+    msalWallMsg('Completing sign-in…');
+    console.log('[MSAL] Detected redirect return — processing token');
+    // Clear stale state EXCEPT the current redirect params
+    // (don't wipe cookies here — MSAL needs them to verify state)
+    try {
+      var saved = localStorage.getItem('opsdata');
+      // Only clear non-redirect MSAL keys
+      var keep = {};
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (k === 'opsdata' || (k && k.indexOf('msal') >= 0)) keep[k] = localStorage.getItem(k);
+      }
+      localStorage.clear();
+      Object.keys(keep).forEach(function(k) { localStorage.setItem(k, keep[k]); });
+    } catch(e) {}
+  } else {
+    // Fresh load — wipe everything stale
+    msalClearStorage();
+  }
+
+  try {
+    _msalApp = msalMakeApp();
+
+    // Must always call this — processes the redirect token if present
+    msalWallMsg('Checking sign-in…');
+    var redirectResult = await _msalApp.handleRedirectPromise().catch(function(e) {
+      console.warn('[MSAL] handleRedirectPromise failed:', e.name, e.message);
+      return null;
+    });
+
+    console.log('[MSAL] Redirect result:', redirectResult ? 'got token' : 'none');
+
+    var account = null;
+    if (redirectResult && redirectResult.account) {
+      account = redirectResult.account;
+    } else {
+      var accounts = _msalApp.getAllAccounts();
+      console.log('[MSAL] Cached accounts:', accounts.length);
+      account = accounts[0] || null;
+    }
+
+    if (!account) {
+      // No session — show the Sign In button, don't auto-redirect
+      // (auto-redirect caused the loop — user must click)
+      msalWallMsg('Please sign in with your Microsoft 365 account');
+      var sp = document.getElementById('msal-spinner');
+      var bt = document.getElementById('msal-retry-btn');
+      if (sp) sp.style.display = 'none';
+      if (bt) { bt.style.display = 'block'; bt.textContent = 'Sign In with Microsoft'; }
+      console.log('[MSAL] No account — showing sign in button');
+      return;
+    }
+
+    // Get token silently
+    msalWallMsg('Getting your access token…');
+    var tokenResp = null;
+    try {
+      tokenResp = await _msalApp.acquireTokenSilent({
+        scopes:  GRAPH_SCOPES,
+        account: account,
+      });
+      console.log('[MSAL] Silent token OK');
+    } catch(silentErr) {
+      console.warn('[MSAL] Silent failed:', silentErr.name);
+      if (silentErr.name === 'InteractionRequiredAuthError') {
+        msalWallMsg('Refreshing your session…');
+        // Use redirect (not popup) for interaction — Safari-safe
+        _msalApp.acquireTokenRedirect({ scopes: GRAPH_SCOPES, account: account });
+        return;
+      }
+      throw silentErr;
+    }
+
+    await msalHandleToken(tokenResp);
+
+  } catch(err) {
+    console.error('[MSAL] Boot error:', err.name, err.message);
+    msalShowError('Sign-in error: ' + (err.message || err.name));
+  }
+}
+
 async function msalHandleToken(tokenResp) {
   var claims = tokenResp.idTokenClaims || {};
   window.msalUser = {
@@ -18771,111 +18879,35 @@ async function msalHandleToken(tokenResp) {
     roles:       claims.roles || [],
     accessToken: tokenResp.accessToken,
   };
-  console.log('[MSAL] Signed in:', window.msalUser.email, '| roles:', window.msalUser.roles);
+  console.log('[MSAL] Signed in:', window.msalUser.email, 'roles:', window.msalUser.roles);
 
-  // Load Graph profile + avatar (non-blocking)
   msalLoadGraphProfile(tokenResp.accessToken).catch(function(e) {
-    console.warn('[MSAL] Graph load failed (non-fatal):', e.message);
+    console.warn('[MSAL] Graph (non-fatal):', e.message);
   });
 
-  // Apply UI
   if (typeof updateSidebarLogo     === 'function') updateSidebarLogo();
   if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
   if (typeof initAdminRole         === 'function') initAdminRole();
   if (typeof applyRoleGating       === 'function') applyRoleGating();
 
-  // Wire logout button
   var logoutBtn = document.querySelector('.sb-logout');
   if (logoutBtn) {
     logoutBtn.onclick = function() {
-      _msalApp.logoutPopup().then(function() {
-        window.msalUser = null;
-        window.location.reload();
-      }).catch(function() { window.location.reload(); });
+      msalClearStorage();
+      _msalApp.logoutRedirect({ postLogoutRedirectUri: MSAL_REDIRECT });
     };
   }
 
   msalHideWall();
 
-  // Background crew sync
   var r = window.msalUser.roles || [];
   if (r.indexOf('Admin') >= 0 || r.indexOf('Manager') >= 0) {
     msalSyncCrew(tokenResp.accessToken).catch(function(e) {
-      console.warn('[MSAL] Crew sync skipped:', e.message);
+      console.warn('[MSAL] Crew sync:', e.message);
     });
   }
 }
 
-async function msalBoot() {
-  if (_msalBusy) return;
-  _msalBusy = true;
-
-  var li = document.getElementById('msal-wall-logo');
-  if (li && typeof APP_DEFAULT_LOGO !== 'undefined') li.src = APP_DEFAULT_LOGO;
-
-  if (typeof msal === 'undefined') {
-    msalShowError('Microsoft sign-in library failed to load. Please refresh.');
-    return;
-  }
-
-  // Wipe ALL stale MSAL state. Preserve only app data keys (opsdata, APP_*).
-  // This is the only reliable fix for "interaction_in_progress" errors.
-  try {
-    var preserve = {};
-    for (var i = 0; i < localStorage.length; i++) {
-      var k = localStorage.key(i);
-      if (k && (k === 'opsdata' || k.indexOf('APP_') === 0)) {
-        preserve[k] = localStorage.getItem(k);
-      }
-    }
-    localStorage.clear();
-    sessionStorage.clear();
-    Object.keys(preserve).forEach(function(k) { localStorage.setItem(k, preserve[k]); });
-    console.log('[MSAL] Storage cleared. Preserved keys:', Object.keys(preserve));
-  } catch(e) {
-    console.warn('[MSAL] Could not clear storage:', e.message);
-  }
-
-  _msalApp = new msal.PublicClientApplication({
-    auth: {
-      clientId:  MSAL_CLIENT_ID,
-      authority: 'https://login.microsoftonline.com/' + MSAL_TENANT_ID,
-      // No redirectUri needed for popup mode
-    },
-    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: true },
-  });
-
-  // Check for an existing cached session first (SSO — silent)
-  msalWallMsg('Checking for existing session…');
-  var accounts = _msalApp.getAllAccounts();
-  console.log('[MSAL] Cached accounts:', accounts.length);
-
-  if (accounts.length > 0) {
-    // Try to get a token silently using the cached session
-    try {
-      msalWallMsg('Signing you in…');
-      var tokenResp = await _msalApp.acquireTokenSilent({
-        scopes:  GRAPH_SCOPES,
-        account: accounts[0],
-      });
-      console.log('[MSAL] Silent token OK for', accounts[0].username);
-      await msalHandleToken(tokenResp);
-      return;
-    } catch(silentErr) {
-      console.warn('[MSAL] Silent token failed:', silentErr.name, '— falling back to popup');
-      // Silent failed — fall through to popup below
-    }
-  }
-
-  // No cached session or silent failed — show Sign In button
-  msalWallMsg('Please sign in with your Microsoft 365 account');
-  var btn = document.getElementById('msal-retry-btn');
-  var sp  = document.getElementById('msal-spinner');
-  if (btn) { btn.style.display = 'block'; btn.textContent = 'Sign In with Microsoft'; }
-  if (sp)  sp.style.display = 'none';
-}
-
-// ── Graph profile + avatar ─────────────────────────────────────────
 async function msalLoadGraphProfile(token) {
   var h = { 'Authorization': 'Bearer ' + token };
   try {
@@ -18886,7 +18918,7 @@ async function msalLoadGraphProfile(token) {
       window.msalUser.jobTitle    = p.jobTitle || '';
     }
     if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
-  } catch(e) { console.warn('[MSAL] Profile fetch:', e); }
+  } catch(e) { console.warn('[MSAL] Profile:', e); }
   try {
     var pr = await fetch('https://graph.microsoft.com/v1.0/me/photos/96x96/$value', { headers: h });
     if (pr.ok) {
@@ -18895,10 +18927,9 @@ async function msalLoadGraphProfile(token) {
       if (window.msalUser) window.msalUser.avatarDataUri = uri;
       if (typeof msalUpdateSidebarUser === 'function') msalUpdateSidebarUser();
     }
-  } catch(e) { console.warn('[MSAL] Photo fetch:', e); }
+  } catch(e) { console.warn('[MSAL] Photo:', e); }
 }
 
-// ── Sidebar user card ─────────────────────────────────────────────
 function msalUpdateSidebarUser() {
   var u = window.msalUser; if (!u) return;
   var name = u.displayName || u.name || 'User';
@@ -18918,7 +18949,6 @@ function msalUpdateSidebarUser() {
   }
 }
 
-// ── Role gating ───────────────────────────────────────────────────
 function applyRoleGating() {
   var roles = (window.msalUser && window.msalUser.roles) || [];
   var has = function(r) { return roles.indexOf(r) >= 0; };
@@ -18928,7 +18958,7 @@ function applyRoleGating() {
   var isFinance  = has('Finance')     || isManager;
   var isSurveyor = has('Surveyor')    || isCoord;
   var isCrew     = has('Driver')      || has('Porter');
-  if (roles.length === 0) { isAdmin=isManager=isCoord=isFinance=isSurveyor=true; console.warn('[MSAL] No roles in token — full access granted (dev fallback)'); }
+  if (roles.length === 0) { isAdmin=isManager=isCoord=isFinance=isSurveyor=true; console.warn('[MSAL] No roles — full access (dev fallback)'); }
   function gate(id, show) { var e = document.getElementById(id); if (e) e.style.display = show ? '' : 'none'; }
   gate('nb-dashboard', isCoord);  gate('nb-calendar',  isCoord);
   gate('nb-bookings',  isCoord);  gate('nb-crew',      isManager);
@@ -18938,7 +18968,6 @@ function applyRoleGating() {
   if (isCrew && !isCoord) { if (typeof dvShowCrewPicker === 'function') dvShowCrewPicker(); }
 }
 
-// ── Crew sync ─────────────────────────────────────────────────────
 async function msalSyncCrew(token) {
   var h = { 'Authorization': 'Bearer ' + token };
   var resp   = await fetch('https://graph.microsoft.com/v1.0/servicePrincipals/' + MSAL_SP_OBJ_ID + '/appRoleAssignedTo', { headers: h }).then(function(r) { return r.json(); });
@@ -18962,13 +18991,14 @@ async function msalSyncCrew(token) {
   if (typeof renderSettingsCrew === 'function') renderSettingsCrew();
 }
 
-// ── Boot ──────────────────────────────────────────────────────────
+// Boot on load
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', msalBoot);
 } else {
   msalBoot();
 }
 </script>
+
 </body>
 </html
 // ══════════════════════════════════════════════════════════════════════
