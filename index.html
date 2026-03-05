@@ -5041,7 +5041,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v67 — 5 Mar 2026';
+var APP_VERSION = 'v68 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -18757,7 +18757,10 @@ function msalMakeApp() {
 
 // Called by the Sign In button
 function msalLogin() {
-  msalClearStorage();
+  // DO NOT clear storage here — MSAL writes its nonce/state/pkce to
+  // storage immediately before redirecting. Clearing it would mean
+  // MSAL can't verify the token when Microsoft redirects back.
+  // Storage is only cleared on fresh load (no code= in URL).
   try {
     _msalApp = msalMakeApp();
     msalWallMsg('Redirecting to Microsoft…');
@@ -18766,6 +18769,7 @@ function msalLogin() {
       prompt:  'select_account',
     });
   } catch(e) {
+    console.error('[MSAL] loginRedirect failed:', e.name, e.message);
     msalShowError('Could not start sign-in: ' + e.message);
   }
 }
@@ -18788,25 +18792,15 @@ async function msalBoot() {
   var hasCode = url.indexOf('code=') >= 0 || url.indexOf('error=') >= 0;
 
   if (hasCode) {
-    // We're returning from Microsoft — process the redirect
+    // Returning from Microsoft with an auth code.
+    // DO NOT touch storage at all — MSAL needs its nonce/state/pkce
+    // exactly as it wrote them before the redirect to verify the token.
     msalWallMsg('Completing sign-in…');
-    console.log('[MSAL] Detected redirect return — processing token');
-    // Clear stale state EXCEPT the current redirect params
-    // (don't wipe cookies here — MSAL needs them to verify state)
-    try {
-      var saved = localStorage.getItem('opsdata');
-      // Only clear non-redirect MSAL keys
-      var keep = {};
-      for (var i = 0; i < localStorage.length; i++) {
-        var k = localStorage.key(i);
-        if (k === 'opsdata' || (k && k.indexOf('msal') >= 0)) keep[k] = localStorage.getItem(k);
-      }
-      localStorage.clear();
-      Object.keys(keep).forEach(function(k) { localStorage.setItem(k, keep[k]); });
-    } catch(e) {}
+    console.log('[MSAL] Detected redirect return — leaving storage intact for token verification');
   } else {
-    // Fresh load — wipe everything stale
+    // Fresh load with no auth code — safe to clear stale state
     msalClearStorage();
+    console.log('[MSAL] Fresh load — cleared stale storage');
   }
 
   try {
@@ -18819,7 +18813,14 @@ async function msalBoot() {
       return null;
     });
 
-    console.log('[MSAL] Redirect result:', redirectResult ? 'got token' : 'none');
+    if (redirectResult) {
+      console.log('[MSAL] handleRedirectPromise: got token for', redirectResult.account && redirectResult.account.username);
+    } else {
+      console.log('[MSAL] handleRedirectPromise: null — hasCode was:', hasCode);
+      if (hasCode) {
+        console.warn('[MSAL] Had code= in URL but got no token — likely state mismatch. Storage keys:', Object.keys(localStorage).filter(function(k){return k.indexOf('msal')>=0;}));
+      }
+    }
 
     var account = null;
     if (redirectResult && redirectResult.account) {
