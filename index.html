@@ -5140,7 +5140,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v91 — 5 Mar 2026';
+var APP_VERSION = 'v92 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -11893,7 +11893,7 @@ var DB_READY   = false;
 var DB_OFFLINE = false;
 
 // ── LOCAL STORAGE FALLBACK ───────────────────────────────────────────────
-var STORAGE_KEY = 'opsmanager_v1';
+var STORAGE_KEY = 'opsmanager_v3_mar2026';
 
 function lsSave() {
   try {
@@ -11916,7 +11916,9 @@ function lsLoad() {
     var d = JSON.parse(raw);
     if (d.jobs)            jobs            = d.jobs;
     if (d.JOURNEYS)        JOURNEYS        = d.JOURNEYS;
-    if (d.STORAGE_RECORDS) STORAGE_RECORDS = d.STORAGE_RECORDS;
+    if (d.STORAGE_RECORDS && d.STORAGE_RECORDS.length > 0 && d.STORAGE_RECORDS[0].containers) {
+      STORAGE_RECORDS = d.STORAGE_RECORDS;
+    }
     if (d.WH_ACTIVITIES)   WH_ACTIVITIES   = d.WH_ACTIVITIES;
     if (d.bookings)        bookings        = d.bookings;
     if (d.CLIENT_JOBS)     CLIENT_JOBS     = d.CLIENT_JOBS;
@@ -12224,7 +12226,9 @@ function importDataBackup() {
         if (!confirm('Import will replace ALL current data. Continue?')) return;
         if (d.jobs)            jobs            = d.jobs;
         if (d.JOURNEYS)        JOURNEYS        = d.JOURNEYS;
-        if (d.STORAGE_RECORDS) STORAGE_RECORDS = d.STORAGE_RECORDS;
+        if (d.STORAGE_RECORDS && d.STORAGE_RECORDS.length > 0 && d.STORAGE_RECORDS[0].containers) {
+      STORAGE_RECORDS = d.STORAGE_RECORDS;
+    }
         if (d.WH_ACTIVITIES)   WH_ACTIVITIES   = d.WH_ACTIVITIES;
         if (d.bookings)        bookings        = d.bookings;
     if (d.CLIENT_JOBS)     CLIENT_JOBS     = d.CLIENT_JOBS;
