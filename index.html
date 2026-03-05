@@ -5040,7 +5040,7 @@ var TWILIO_CONFIG = {
 };
 
 // ── App-wide cost of sale + maps settings ─────────────────────────────
-var APP_VERSION = 'v80 — 5 Mar 2026';
+var APP_VERSION = 'v81 — 5 Mar 2026';
 
 var APP_SETTINGS = {
   companyLogo: '',  // base64 data URI or URL — set in Admin Settings
@@ -12606,7 +12606,7 @@ function dvRenderJobDetail(jobId) {
     label: 'Job Sheet', sub: 'Full briefing — all job details', icon: '📄',
     status: (cd.jobSheetViewed ? 'Viewed' : 'Tap to open'),
     done: !!cd.jobSheetViewed,
-    fn: 'dvOpenJobSheet(\'' + j.id + '\')'
+    fn: 'dvOpenJobSheet("' + j.id + '")'
   });
 
   // 2. Pre-job checklist (always)
@@ -12615,7 +12615,7 @@ function dvRenderJobDetail(jobId) {
     label: 'Pre-Job Checklist', sub: 'Vehicle walk-round, PPE, load', icon: '🔍',
     status: cl.completedAt ? ('Done · ' + (cl.completedBy||'')) : 'Not started',
     done: !!cl.completedAt,
-    fn: 'dvOpenPrecheck(\'' + j.id + '\')'
+    fn: 'dvOpenPrecheck("' + j.id + '")'
   });
 
   // 2b. Property walkaround (origin jobs only)
@@ -12626,7 +12626,7 @@ function dvRenderJobDetail(jobId) {
       label: 'Property Walkaround', sub: 'Record pre-existing damage to property on arrival', icon: '🏠',
       status: wa.completedAt ? (waDmgCount + ' item' + (waDmgCount===1?'':'s') + ' noted · Done') : (waDmgCount ? waDmgCount + ' recorded — not complete' : 'Not started'),
       done: !!wa.completedAt,
-      fn: 'dvOpenWalkaround(\'' + j.id + '\')'
+      fn: 'dvOpenWalkaround("' + j.id + '")'
     });
   }
 
@@ -12636,18 +12636,13 @@ function dvRenderJobDetail(jobId) {
       label: 'Warehouse Loading Sheet', sub: 'Items to collect — reverse load order', icon: '🏭',
       status: (cd.warehouseLoaded ? 'Confirmed loaded' : 'Required before departure'),
       done: !!cd.warehouseLoaded,
-      fn: 'dvOpenWarehouseLoad(\'' + j.id + '\')'
+      fn: 'dvOpenWarehouseLoad("' + j.id + '")'
     });
   }
 
   // 4. Mileage
   var ml = cd.mileage || {};
-  formDefs.push({
-    label: 'Mileage Record', sub: 'Start & end odometer', icon: '🛣',
-    status: (ml.endOdo ? ml.startOdo + '→' + ml.endOdo + ' = ' + (ml.endOdo-ml.startOdo) + ' mi' : (ml.startOdo ? 'Started: ' + ml.startOdo : 'Not started')),
-    done: !!(ml.startOdo && ml.endOdo),
-    fn: 'dvOpenMileage(\'' + j.id + '\')'
-  });
+  // Mileage now in pre-job checklist
 
   // 5. Inventory / condition report (origin jobs)
   if (isOrigin) {
@@ -12657,7 +12652,7 @@ function dvRenderJobDetail(jobId) {
       label: 'Inventory / Condition Report', sub: 'Record items with condition at collection', icon: '📋',
       status: inv.completedAt ? (itemCount + ' items · Signed') : (itemCount ? itemCount + ' items added — not complete' : 'Not started'),
       done: !!inv.completedAt,
-      fn: 'dvOpenInventory(\'' + j.id + '\')'
+      fn: 'dvOpenInventory("' + j.id + '")'
     });
   }
 
@@ -12668,7 +12663,7 @@ function dvRenderJobDetail(jobId) {
       label: 'Delivery Sign-Off', sub: 'Confirm delivery, client signature', icon: '✍',
       status: del.completedAt ? ('Signed — ' + (del.signedBy||'client')) : 'Not started',
       done: !!del.completedAt,
-      fn: 'dvOpenDelivery(\'' + j.id + '\')'
+      fn: 'dvOpenDelivery("' + j.id + '")'
     });
   }
 
@@ -12678,11 +12673,11 @@ function dvRenderJobDetail(jobId) {
     label: 'Job Sign-Off', sub: 'Final crew + client sign-off to close job', icon: '✅',
     status: so.completedAt ? ('Completed · ' + (so.signedBy||'')) : 'Not started',
     done: !!so.completedAt,
-    fn: 'dvOpenSignoff(\'' + j.id + '\')'
+    fn: 'dvOpenSignoff("' + j.id + '")'
   });
 
   // Forms library button (always shown as action, not in formDefs)
-  var formsActionHtml = dvActionButton('📝 Forms Library', 'Damage waiver, long walk, specialist forms', 'dvOpenFormsLibrary(\'' + j.id + '\')', '#9B59B6');
+  var formsActionHtml = dvActionButton('📝 Forms Library', 'Damage waiver, long walk, specialist forms', 'dvOpenFormsLibrary("' + j.id + '")', '#9B59B6');
 
   // Completed forms sink to bottom, pending stay at top
   var pendingForms = formDefs.filter(function(f){ return !f.done; });
@@ -13123,6 +13118,19 @@ function dvRenderPrecheck(jobId) {
   });
   h += '</div>';
 
+  // Mileage inside precheck
+  h += '<div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:14px">';
+  h += '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#7A849E;margin-bottom:12px">🚐 Mileage Record</div>';
+  h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">';
+  h += '<div><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">Start Odometer</div>';
+  h += '<input id="dv-pc-odo-start" type="number" inputmode="numeric" value="' + (cl.startOdo||'') + '" placeholder="e.g. 45231" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:14px;font-weight:700;box-sizing:border-box"></div>';
+  h += '<div><div style="font-size:11px;font-weight:700;color:#7A849E;margin-bottom:4px">End Odometer</div>';
+  h += '<input id="dv-pc-odo-end" type="number" inputmode="numeric" value="' + (cl.endOdo||'') + '" placeholder="e.g. 45318" style="width:100%;border:1.5px solid #E3E7F0;border-radius:8px;padding:9px 10px;font-size:14px;font-weight:700;box-sizing:border-box"></div>';
+  h += '</div>';
+  var pcMiles = (cl.startOdo && cl.endOdo && cl.endOdo > cl.startOdo) ? (cl.endOdo - cl.startOdo) + ' miles' : '';
+  h += '<div style="font-size:13px;font-weight:700;color:#0073EA;min-height:18px">' + (pcMiles ? '✓ ' + pcMiles + ' recorded' : '') + '</div>';
+  h += '</div>';
+
   h += '<div style="margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:#7A849E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Notes</div>';
   h += '<textarea id="dv-precheck-notes" rows="3" style="width:100%;border:1.5px solid #E3E7F0;border-radius:10px;padding:10px 12px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box" placeholder="Any issues...">' + esc(cl.notes||'') + '</textarea></div>';
 
@@ -13149,7 +13157,9 @@ function dvCompleteChecklist(jobId) {
   if (!j) return;
   if (!j.crewData) j.crewData = {};
   if (!j.crewData.checklist) j.crewData.checklist = { items: {} };
-  j.crewData.checklist.notes = (el('dv-precheck-notes')||{}).value || '';
+  j.crewData.checklist.notes    = (el('dv-precheck-notes')||{}).value || '';
+  j.crewData.checklist.startOdo = parseInt((el('dv-pc-odo-start')||{}).value||'0',10) || 0;
+  j.crewData.checklist.endOdo   = parseInt((el('dv-pc-odo-end')||{}).value||'0',10)   || 0;
   j.crewData.checklist.completedAt = new Date().toISOString();
   j.crewData.checklist.completedBy = window._driverName || 'Crew';
   saveData('job', j.id, j);
